@@ -112,7 +112,7 @@ static int g_pending_sharp = 0;
 /* ── File browser ─────────────────────────────────────────────────────── */
 
 #define MAX_BROWSE 64
-static char g_browse_files[MAX_BROWSE][128];
+static char g_browse_files[MAX_BROWSE][280];
 static int  g_browse_count = 0;
 
 static void scan_music(void) {
@@ -123,7 +123,7 @@ static void scan_music(void) {
     while ((e = readdir(d)) && g_browse_count < MAX_BROWSE) {
         int len = (int)strlen(e->d_name);
         if (len > 4 && strcmp(e->d_name + len - 4, ".mus") == 0) {
-            snprintf(g_browse_files[g_browse_count++], 128,
+            snprintf(g_browse_files[g_browse_count++], 280,
                      "assets/music/%s", e->d_name);
         }
     }
@@ -131,10 +131,10 @@ static void scan_music(void) {
     for (int i = 0; i < g_browse_count - 1; i++)
         for (int j = i + 1; j < g_browse_count; j++)
             if (strcmp(g_browse_files[i], g_browse_files[j]) > 0) {
-                char t[128];
-                memcpy(t,               g_browse_files[i], 128);
-                memcpy(g_browse_files[i], g_browse_files[j], 128);
-                memcpy(g_browse_files[j], t,               128);
+                char t[280];
+                memcpy(t,               g_browse_files[i], 280);
+                memcpy(g_browse_files[i], g_browse_files[j], 280);
+                memcpy(g_browse_files[j], t,               280);
             }
 }
 

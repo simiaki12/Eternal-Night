@@ -28,14 +28,18 @@ static int   n_entries = 0;
 
 /* ---- directory scan ---- */
 
+/* longest dir prefix is "assets/sprites/" = 15 chars; leave 16 to be safe */
+#define MAX_NAME (MAX_PATH - 16)
+
 static void set_output(Entry *e) {
     const char *base = strrchr(e->input, '/');
     base = base ? base + 1 : e->input;
-    char name[MAX_PATH];
-    strncpy(name, base, MAX_PATH - 1);
+    const char *dir = e->tile_mode ? "assets/tiles" : "assets/sprites";
+    char name[MAX_NAME];
+    strncpy(name, base, MAX_NAME - 1);
+    name[MAX_NAME - 1] = '\0';
     char *dot = strrchr(name, '.');
     if (dot) strcpy(dot, e->tile_mode ? ".til" : ".bin");
-    const char *dir = e->tile_mode ? "assets/tiles" : "assets/sprites";
     snprintf(e->output, MAX_PATH, "%s/%s", dir, name);
 }
 
@@ -43,7 +47,7 @@ static void scan_dir(const char *dir) {
     DIR *d = opendir(dir);
     if (!d) return;
     struct dirent *ent;
-    char path[MAX_PATH];
+    char path[MAX_PATH * 2];
     while ((ent = readdir(d)) != NULL && n_entries < MAX_PNGS) {
         if (ent->d_name[0] == '.') continue;
         snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);

@@ -11,14 +11,19 @@
  *   1 / 2 / 3 / 4    — select voice (Melody / Harmony / Bass / Perc)
  *
  * Build: make music_editor_gui
+ *   Ctrl+S — save as .mus
+ *   Space  — play / stop
+ *   [ / ]  — BPM -5 / +5
  */
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mmsystem.h>
+#include <commdlg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 /* ── Logical canvas ───────────────────────────────────────────────────── */
 #define LOGICAL_W  640
@@ -48,6 +53,7 @@ static Note g_notes[MAX_PLACED];
 static int  g_note_count  = 0;
 static int  g_cur_voice   = 0;
 static int  g_scroll_tick = 0;   /* leftmost visible tick */
+static int  g_bpm         = 120;
 
 /* placement drag state */
 static int  g_placing    = 0;
@@ -90,9 +96,12 @@ static int       g_winH = LOGICAL_H;
 #define SR          22050
 #define NOTE_SAMPS  (SR * 3 / 4)   /* 750 ms */
 
-static HWAVEOUT  g_wo  = NULL;
-static WAVEHDR   g_hdr = {0};
+static HWAVEOUT  g_wo           = NULL;
+static WAVEHDR   g_hdr          = {0};
 static int16_t   g_buf[NOTE_SAMPS];
+static int16_t  *g_play_buf     = NULL;
+static int       g_playing_full = 0;
+static int       g_play_total   = 0;   /* samples in g_play_buf */
 
 /* ── Selection highlight ──────────────────────────────────────────────── */
 static int g_sel = -1;   /* MIDI note of highlighted row; -1 = none */
@@ -157,6 +166,30 @@ static int logical_to_midi(int lx, int ly) {
     return NOTE_HI-1 - ly/ROW_H;
 }
 
+/* ── Synthesis ────────────────────────────────────────────────────────── */
+/*  0=Melody: triangle   1=Harmony: 25% pulse   2=Bass: sawtooth   3=Perc: noise */
+static float synth_wave(int voice, float ph, uint32_t *seed) {
+    switch (voice & 3) {
+    case 0: return ph < 0.5f ? 4.0f*ph - 1.0f : 3.0f - 4.0f*ph;
+    case 1: return ph < 0.5f ? 1.0f : -1.0f;
+    case 2: return 2.0f*ph - 1.0f;
+    default:
+        *seed = *seed * 1664525u + 1013904223u;
+        return (float)(int32_t)*seed / 2147483648.0f;
+    }
+}
+
+/* Fill adsr params and vol for a voice; ns may be clamped for perc */
+static void voice_params(int voice, int *ns,
+                          float *vol, int *atk, int *dcy, float *sus, int *rel) {
+    switch (voice & 3) {
+    case 0: *vol=0.28f; *atk=SR/100; *dcy=SR/20;  *sus=0.65f; *rel=(*ns>SR/4?SR/5:*ns/4); break;
+    case 1: *vol=0.18f; *atk=SR/30;  *dcy=SR/10;  *sus=0.70f; *rel=(*ns>SR/3?SR/4:*ns/3); break;
+    case 2: *vol=0.24f; *atk=SR/400; *dcy=SR/25;  *sus=0.80f; *rel=(*ns>SR/5?SR/8:*ns/4); break;
+    default:*vol=0.22f; *atk=SR/500; *dcy=SR/8;   *sus=0.00f; *rel=1; *ns=SR/8; break;
+    }
+}
+
 /* ── Audio ────────────────────────────────────────────────────────────── */
 static void audio_stop(void) {
     if (!g_wo) return;
@@ -164,31 +197,293 @@ static void audio_stop(void) {
     waveOutUnprepareHeader(g_wo, &g_hdr, sizeof(WAVEHDR));
     waveOutClose(g_wo);
     g_wo = NULL;
+    free(g_play_buf); g_play_buf = NULL;
+    g_playing_full = 0;
+    KillTimer(g_hwnd, 1);
 }
 
-static void audio_play(float freq) {
+static void play_all(void) {
     audio_stop();
-    const int   atk       = SR/100;
-    const int   dcy       = SR/20;
-    const float sus       = 0.65f;
-    const int   rel_start = NOTE_SAMPS - SR/5;
-    float ph=0.0f, ph_inc=freq/(float)SR;
-    for (int i=0; i<NOTE_SAMPS; i++) {
-        float amp;
-        if      (i < atk)         amp = (float)i/atk;
-        else if (i < atk+dcy)     amp = 1.0f-(1.0f-sus)*(float)(i-atk)/dcy;
-        else if (i < rel_start)   amp = sus;
-        else                      amp = sus*(1.0f-(float)(i-rel_start)/(NOTE_SAMPS-rel_start));
-        ph += ph_inc; if (ph>=1.0f) ph-=1.0f;
-        float s = ph<0.5f ? 4.0f*ph-1.0f : 3.0f-4.0f*ph;
-        g_buf[i] = (int16_t)(s*amp*22000.0f);
+    if (g_note_count == 0) return;
+
+    int max_tick = 0;
+    for (int i = 0; i < g_note_count; i++) {
+        int end = g_notes[i].tick + g_notes[i].len;
+        if (end > max_tick) max_tick = end;
     }
-    WAVEFORMATEX fmt = {WAVE_FORMAT_PCM,1,SR,SR*2,2,16,0};
-    if (waveOutOpen(&g_wo,WAVE_MAPPER,&fmt,0,0,CALLBACK_NULL)!=MMSYSERR_NOERROR) return;
-    memset(&g_hdr,0,sizeof(g_hdr));
-    g_hdr.lpData=(LPSTR)g_buf; g_hdr.dwBufferLength=NOTE_SAMPS*2;
-    waveOutPrepareHeader(g_wo,&g_hdr,sizeof(WAVEHDR));
-    waveOutWrite(g_wo,&g_hdr,sizeof(WAVEHDR));
+
+    int spt   = (SR * 60) / (g_bpm * SUBDIVS);
+    int total = max_tick * spt + SR;
+
+    g_play_buf = calloc(total, sizeof(int16_t));
+    if (!g_play_buf) return;
+
+    for (int ni = 0; ni < g_note_count; ni++) {
+        Note *n = &g_notes[ni];
+        if (n->midi < NOTE_LO || n->midi >= NOTE_HI) continue;
+
+        float freq  = g_freq[n->midi - NOTE_LO];
+        int   ns    = n->len * spt;
+        int   start = n->tick * spt;
+        int   v     = n->voice & 3;
+
+        float vol; int atk, dcy, rel; float sus;
+        voice_params(v, &ns, &vol, &atk, &dcy, &sus, &rel);
+        int rs = ns - rel;
+        if (rs < atk + dcy) rs = atk + dcy;
+
+        uint32_t seed = (uint32_t)(ni * 2654435761u + 1);
+        float ph = 0.0f, ph_inc = freq / (float)SR, lp = 0.0f;
+        for (int i = 0; i < ns && start + i < total; i++) {
+            float amp;
+            if      (i < atk)       amp = (float)i / atk;
+            else if (i < atk + dcy) amp = 1.0f - (1.0f - sus) * (float)(i - atk) / dcy;
+            else if (i < rs)        amp = sus;
+            else                    amp = sus * (1.0f - (float)(i - rs) / rel);
+            if (amp < 0.0f) amp = 0.0f;
+
+            ph += ph_inc; if (ph >= 1.0f) ph -= 1.0f;
+            float s = synth_wave(v, ph, &seed);
+            if (v == 1) { lp = lp * 0.40f + s * 0.60f; s = lp; }  /* soften square  */
+            if (v == 2) { lp = lp * 0.55f + s * 0.45f; s = lp; }  /* warm the saw   */
+
+            int32_t mix = g_play_buf[start + i] + (int32_t)(s * amp * vol * 32767.0f);
+            if (mix >  32767) mix =  32767;
+            if (mix < -32768) mix = -32768;
+            g_play_buf[start + i] = (int16_t)mix;
+        }
+    }
+
+    WAVEFORMATEX fmt = {WAVE_FORMAT_PCM, 1, SR, SR*2, 2, 16, 0};
+    if (waveOutOpen(&g_wo, WAVE_MAPPER, &fmt, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) {
+        free(g_play_buf); g_play_buf = NULL; return;
+    }
+    memset(&g_hdr, 0, sizeof(g_hdr));
+    g_hdr.lpData         = (LPSTR)g_play_buf;
+    g_hdr.dwBufferLength = total * sizeof(int16_t);
+    waveOutPrepareHeader(g_wo, &g_hdr, sizeof(WAVEHDR));
+    waveOutWrite(g_wo, &g_hdr, sizeof(WAVEHDR));
+    g_play_total   = total;
+    g_playing_full = 1;
+    SetTimer(g_hwnd, 1, 40, NULL);   /* ~25fps redraw */
+}
+
+static void audio_play(float freq, int voice) {
+    audio_stop();
+    int   ns  = NOTE_SAMPS;
+    float vol; int atk, dcy, rel; float sus;
+    voice_params(voice, &ns, &vol, &atk, &dcy, &sus, &rel);
+    int rel_start = ns - rel;
+    if (rel_start < atk + dcy) rel_start = atk + dcy;
+    uint32_t seed = 12345;
+    float ph = 0.0f, ph_inc = freq / (float)SR, lp = 0.0f;
+    for (int i = 0; i < ns; i++) {
+        float amp;
+        if      (i < atk)         amp = (float)i / atk;
+        else if (i < atk + dcy)   amp = 1.0f - (1.0f-sus) * (float)(i-atk) / dcy;
+        else if (i < rel_start)   amp = sus;
+        else                      amp = sus * (1.0f - (float)(i-rel_start) / rel);
+        if (amp < 0.0f) amp = 0.0f;
+        ph += ph_inc; if (ph >= 1.0f) ph -= 1.0f;
+        float s = synth_wave(voice, ph, &seed);
+        if (voice == 1) { lp = lp * 0.40f + s * 0.60f; s = lp; }
+        if (voice == 2) { lp = lp * 0.55f + s * 0.45f; s = lp; }
+        g_buf[i] = (int16_t)(s * amp * 22000.0f);
+    }
+    WAVEFORMATEX fmt = {WAVE_FORMAT_PCM, 1, SR, SR*2, 2, 16, 0};
+    if (waveOutOpen(&g_wo, WAVE_MAPPER, &fmt, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) return;
+    memset(&g_hdr, 0, sizeof(g_hdr));
+    g_hdr.lpData = (LPSTR)g_buf; g_hdr.dwBufferLength = ns * 2;
+    waveOutPrepareHeader(g_wo, &g_hdr, sizeof(WAVEHDR));
+    waveOutWrite(g_wo, &g_hdr, sizeof(WAVEHDR));
+}
+
+/* ── .mus export ─────────────────────────────────────────────────────── */
+#define MUS_MAGIC "MUS0"
+
+/* Duration table: ticks (16th notes) → DUR_* value */
+static const int k_dur_ticks[7] = { 16, 12, 8, 6, 4, 3, 2 };
+static const int k_dur_val[7]   = {  0,  3, 1, 4, 2, 6, 5 }; /* WN DH HN DQ QN DE EN */
+
+static int nearest_dur(int ticks) {
+    int best = 6, bestd = 9999;
+    for (int i = 0; i < 7; i++) {
+        int d = k_dur_ticks[i] - ticks; if (d < 0) d = -d;
+        if (d < bestd) { bestd = d; best = i; }
+    }
+    return best;
+}
+
+static void save_mus(const char *path) {
+    typedef struct { uint8_t pitch, dur; } MNote;
+    static MNote out[NUM_VOICES][255];
+    int          out_n[NUM_VOICES];
+
+    for (int v = 0; v < NUM_VOICES; v++) {
+        out_n[v] = 0;
+
+        /* collect + sort notes for this voice by tick */
+        Note sorted[MAX_PLACED]; int cnt = 0;
+        for (int i = 0; i < g_note_count; i++)
+            if (g_notes[i].voice == v) sorted[cnt++] = g_notes[i];
+        for (int i = 0; i < cnt-1; i++)
+            for (int j = i+1; j < cnt; j++)
+                if (sorted[j].tick < sorted[i].tick)
+                    { Note t=sorted[i]; sorted[i]=sorted[j]; sorted[j]=t; }
+
+        int cur = 0;
+        for (int i = 0; i < cnt && out_n[v] < 250; i++) {
+            /* fill gap with rests (greedy largest-fit) */
+            int gap = sorted[i].tick - cur;
+            while (gap > 0 && out_n[v] < 254) {
+                int di = 6;
+                for (int d = 0; d < 7; d++) if (k_dur_ticks[d] <= gap) { di = d; break; }
+                out[v][out_n[v]++] = (MNote){ 255, (uint8_t)k_dur_val[di] };
+                gap -= k_dur_ticks[di];
+            }
+            int di = nearest_dur(sorted[i].len);
+            out[v][out_n[v]++] = (MNote){ (uint8_t)sorted[i].midi, (uint8_t)k_dur_val[di] };
+            cur = sorted[i].tick + k_dur_ticks[di];
+        }
+    }
+
+    FILE *f = fopen(path, "wb");
+    if (!f) { MessageBoxA(g_hwnd, "Could not write file.", "Save failed", MB_ICONERROR); return; }
+
+    /* title = filename without extension */
+    char title[32] = {0};
+    const char *base = path;
+    for (const char *p = path; *p; p++) if (*p=='/'||*p=='\\') base = p+1;
+    strncpy(title, base, 31);
+    char *dot = strchr(title, '.'); if (dot) *dot = 0;
+
+    uint8_t bpm    = (uint8_t)g_bpm;
+    uint8_t arr[64]= {0};              /* single section 0 */
+    uint8_t al=1, sc=1;
+
+    uint8_t wave[4]     = { 0, 1, 2, 3 };
+    uint8_t atk_ms[4]   = { 10, 33,  3,  2 };
+    uint8_t dcy_10ms[4] = {  5, 10,  4, 13 };
+    uint8_t sus_pct[4]  = { 65, 70, 80,  0 };
+    uint8_t rel_ms[4]   = {200,250,125, 10 };
+    uint8_t gate_pct[4] = { 90, 90, 90, 60 };
+
+    fwrite(MUS_MAGIC,  1,  4, f);
+    fwrite(title,      1, 32, f);
+    fwrite(&bpm,       1,  1, f);
+    fwrite(&al,        1,  1, f);
+    fwrite(arr,        1, 64, f);
+    fwrite(&sc,        1,  1, f);
+    fwrite(wave,       1,  4, f);
+    fwrite(atk_ms,     1,  4, f);
+    fwrite(dcy_10ms,   1,  4, f);
+    fwrite(sus_pct,    1,  4, f);
+    fwrite(rel_ms,     1,  4, f);
+    fwrite(gate_pct,   1,  4, f);
+
+    for (int v = 0; v < NUM_VOICES; v++) {
+        uint8_t nc = (uint8_t)out_n[v];
+        fwrite(&nc, 1, 1, f);
+        for (int i = 0; i < out_n[v]; i++) {
+            fwrite(&out[v][i].pitch, 1, 1, f);
+            fwrite(&out[v][i].dur,   1, 1, f);
+        }
+    }
+    fclose(f);
+}
+
+static char g_save_path[260] = "";
+
+static void open_mus(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { MessageBoxA(g_hwnd, "Could not open file.", "Open failed", MB_ICONERROR); return; }
+
+    char magic[4]; fread(magic, 1, 4, f);
+    if (memcmp(magic, MUS_MAGIC, 4) != 0) {
+        fclose(f);
+        MessageBoxA(g_hwnd, "Not a valid .mus file.", "Open failed", MB_ICONERROR);
+        return;
+    }
+
+    char    title[32]; fread(title, 1, 32, f);
+    uint8_t bpm, arr_len; fread(&bpm, 1, 1, f); fread(&arr_len, 1, 1, f);
+    uint8_t arr[64];       fread(arr,   1, 64, f);
+    uint8_t sec_count;     fread(&sec_count, 1, 1, f);
+    uint8_t skip[24];      fread(skip, 1, 24, f);   /* voice params */
+
+    typedef struct { uint8_t pitch, dur; } MNote;
+    static MNote secs[32][NUM_VOICES][255];
+    static int   sec_nc[32][NUM_VOICES];
+
+    for (int s = 0; s < sec_count && s < 32; s++)
+        for (int v = 0; v < NUM_VOICES; v++) {
+            uint8_t nc; fread(&nc, 1, 1, f);
+            sec_nc[s][v] = nc;
+            for (int i = 0; i < nc; i++) {
+                fread(&secs[s][v][i].pitch, 1, 1, f);
+                fread(&secs[s][v][i].dur,   1, 1, f);
+            }
+        }
+    fclose(f);
+
+    /* DUR_WN=0 DUR_HN=1 DUR_QN=2 DUR_DH=3 DUR_DQ=4 DUR_EN=5 DUR_DE=6 */
+    static const int dur_ticks[7] = { 16, 8, 4, 12, 6, 2, 3 };
+
+    g_note_count  = 0;
+    g_bpm         = bpm;
+    g_scroll_tick = 0;
+
+    for (int v = 0; v < NUM_VOICES; v++) {
+        int tick = 0;
+        for (int si = 0; si < arr_len; si++) {
+            int s = arr[si];
+            if (s >= sec_count) continue;
+            for (int i = 0; i < sec_nc[s][v] && g_note_count < MAX_PLACED; i++) {
+                uint8_t pitch = secs[s][v][i].pitch;
+                uint8_t dur   = secs[s][v][i].dur;
+                int     len   = (dur < 7) ? dur_ticks[dur] : 4;
+                if (pitch != 255 && pitch >= NOTE_LO && pitch < NOTE_HI)
+                    g_notes[g_note_count++] = (Note){ pitch, tick, len, v };
+                tick += len;
+            }
+        }
+    }
+
+    strncpy(g_save_path, path, sizeof(g_save_path) - 1);
+}
+
+static void do_open(void) {
+    OPENFILENAMEA ofn = {0};
+    char path[260] = "";
+    ofn.lStructSize     = sizeof(ofn);
+    ofn.hwndOwner       = g_hwnd;
+    ofn.lpstrFilter     = "Music Files\0*.mus\0All Files\0*.*\0";
+    ofn.lpstrFile       = path;
+    ofn.nMaxFile        = sizeof(path);
+    ofn.lpstrDefExt     = "mus";
+    ofn.lpstrInitialDir = "assets/music";
+    ofn.Flags           = OFN_FILEMUSTEXIST;
+    if (GetOpenFileNameA(&ofn))
+        open_mus(path);
+}
+
+static void do_save(void) {
+    if (g_save_path[0]) { save_mus(g_save_path); return; }
+
+    OPENFILENAMEA ofn = {0};
+    char path[260] = "untitled.mus";
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = g_hwnd;
+    ofn.lpstrFilter = "Music Files\0*.mus\0All Files\0*.*\0";
+    ofn.lpstrFile   = path;
+    ofn.nMaxFile    = sizeof(path);
+    ofn.lpstrDefExt = "mus";
+    ofn.lpstrInitialDir = "assets/music";
+    ofn.Flags       = OFN_OVERWRITEPROMPT;
+    if (GetSaveFileNameA(&ofn)) {
+        strncpy(g_save_path, path, sizeof(g_save_path)-1);
+        save_mus(g_save_path);
+    }
 }
 
 /* ── Rendering ────────────────────────────────────────────────────────── */
@@ -238,6 +533,22 @@ static void draw(void) {
         fill_rect(nx,   y+1,  nw,     ROW_H-2, nc);     /* body            */
         fill_rect(nx,   y+1,  nw,     1,        nc_hi);  /* top edge        */
         fill_rect(nx,   y+1,  1,      ROW_H-2,  nc_hi);  /* left edge       */
+    }
+
+    /* Playhead */
+    if (g_playing_full && g_wo) {
+        MMTIME mmt = {0}; mmt.wType = TIME_SAMPLES;
+        waveOutGetPosition(g_wo, &mmt, sizeof(mmt));
+        int spt = (SR * 60) / (g_bpm * SUBDIVS);
+        int cur_tick = (int)mmt.u.sample / (spt > 0 ? spt : 1);
+        /* auto-scroll: keep playhead in the right 3/4 of the view */
+        int vis = (LOGICAL_W - PIANO_W) / SUBDIV_W;
+        if (cur_tick >= g_scroll_tick + vis - SUBDIVS)
+            g_scroll_tick = cur_tick - vis / 4;
+        if (g_scroll_tick < 0) g_scroll_tick = 0;
+        int px = tick_to_px(cur_tick);
+        if (px >= PIANO_W && px < LOGICAL_W)
+            fill_rect(px, 0, 2, N_ROWS * ROW_H, rgb(220, 40, 40));
     }
 
     /* Pass 4: row separators and octave-C markers */
@@ -302,14 +613,15 @@ static void draw(void) {
         int sy = N_ROWS*ROW_H;
         char buf[160];
         if (g_sel>=NOTE_LO && g_sel<NOTE_HI) {
-            sprintf(buf, "  [%d] %-7s  \xb7  %s%d  MIDI %d  %.1f Hz  \xb7  %d notes",
+            sprintf(buf, "  [%d] %-7s  \xb7  %s%d  %.1f Hz  \xb7  BPM:%d  \xb7  %d notes  \xb7  SPACE=%s  [/]=bpm",
                     g_cur_voice+1, vnames[g_cur_voice],
                     semitone_name(g_sel), g_sel/12-1,
-                    g_sel, g_freq[g_sel-NOTE_LO],
-                    g_note_count);
+                    g_freq[g_sel-NOTE_LO], g_bpm,
+                    g_note_count, g_wo ? "stop" : "play");
         } else {
-            sprintf(buf, "  [%d] %-7s  \xb7  %d notes  \xb7  LClick=place  RClick=erase  1-4=voice  Wheel=scroll",
-                    g_cur_voice+1, vnames[g_cur_voice], g_note_count);
+            sprintf(buf, "  [%d] %-7s  \xb7  BPM:%d  \xb7  %d notes  \xb7  SPACE=%s  [/]=bpm  1-4=voice",
+                    g_cur_voice+1, vnames[g_cur_voice], g_bpm, g_note_count,
+                    g_wo ? "stop" : "play");
         }
         SetTextColor(g_dc, RGB(120,165,240));
         TextOutA(g_dc, 0, sy+1, buf, (int)strlen(buf));
@@ -359,7 +671,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         int tick = px_to_tick(lx);
         g_sel = midi;
         if (midi>=NOTE_LO && midi<NOTE_HI)
-            audio_play(g_freq[midi-NOTE_LO]);
+            audio_play(g_freq[midi-NOTE_LO], g_cur_voice);
         /* Place note only when clicking in the grid area (not the piano strip) */
         if (lx>=PIANO_W && midi>=NOTE_LO && midi<NOTE_HI && tick>=0) {
             if (find_note(midi,tick)<0 && g_note_count<MAX_PLACED) {
@@ -422,8 +734,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case '2': g_cur_voice=1; break;
         case '3': g_cur_voice=2; break;
         case '4': g_cur_voice=3; break;
+        case VK_SPACE: if (g_wo) audio_stop(); else play_all(); break;
+        case 'S': if (GetKeyState(VK_CONTROL) & 0x8000) do_save(); break;
+        case 'O': if (GetKeyState(VK_CONTROL) & 0x8000) { audio_stop(); do_open(); } break;
+        case 0xDB: if (g_bpm > 40)  g_bpm -= 5; break;  /* [ */
+        case 0xDD: if (g_bpm < 240) g_bpm += 5; break;  /* ] */
         }
         if (g_scroll_tick<0) g_scroll_tick=0;
+        draw(); present();
+        return 0;
+
+    case WM_TIMER:
+        if (g_playing_full && g_wo && (g_hdr.dwFlags & WHDR_DONE))
+            audio_stop();
         draw(); present();
         return 0;
 
