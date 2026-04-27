@@ -4,7 +4,7 @@ CC_HOST  = gcc
 CFLAGS   = -Wall -Wextra -std=c11 -I src/core -I src/gameplay -I src/world -I src/ui -I src/data
 DEBUGFLAGS   = -g
 RELEASEFLAGS = -Os -flto
-LDFLAGS        = -lgdi32 -lwinmm -mwindows
+LDFLAGS        = -lgdi32 -lwinmm -lmsimg32 -mwindows
 LDFLAGS_STATIC = $(LDFLAGS) -static-libgcc
 
 SRC    = $(shell find src -name '*.c')
