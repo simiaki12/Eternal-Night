@@ -13,11 +13,11 @@ static int       g_winW = 0;
 static int       g_winH = 0;
 
 /* ── CRT post-processing ── */
-int g_crtScanlines = 0;
-int g_crtBleed     = 0;
-int g_crtBlur      = 0;
-int g_crtVignette  = 0;
-int g_crtGrid      = 0;
+int g_crtScanlines = 1;
+int g_crtBleed     = 1;
+int g_crtBlur      = 1;
+int g_crtVignette  = 1;
+int g_crtGrid      = 1;
 
 static uint8_t  *g_vigBuf  = NULL; /* precomputed vignette factors [0..255] */
 static uint32_t *g_tempBuf = NULL; /* scratch buffer for bleed/blur passes  */
@@ -51,7 +51,22 @@ static void crtInitBuffers(void) {
         for (int x = 0; x < gfxWidth; x++) {
             int dx = x - cx;
             long long distSq = (long long)dx*dx + (long long)dy*dy;
-            int f = (int)(255 - distSq * 127 / maxDistSq);
+            float nx = (float)dx / cx;
+            float ny = (float)dy / cy;
+            float dist = sqrtf(nx*nx + ny*ny); // normalized radial distance [0..~1.4]
+
+            float radius = 0.33f;   // inner "safe zone" (middle third-ish)
+            float maxDist = 1.0f;   // where full vignette kicks in
+
+            float t = (dist - radius) / (maxDist - radius);
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+
+            // Shape the curve (stronger edges, flat center)
+            t = t * t * t; // quadratic (try t*t*t for even harsher edges)
+
+            int minBright = 180; // how dark edges get
+            int f = (int)(255 - t * (255 - minBright));
             if (f < 0) f = 0;
             g_vigBuf[y * gfxWidth + x] = (uint8_t)f;
         }
@@ -85,9 +100,17 @@ static void applyCRT(void) {
                 uint32_t c = g_tempBuf[y * gfxWidth + x];
                 uint32_t l = g_tempBuf[y * gfxWidth + x - 1];
                 uint32_t r = g_tempBuf[y * gfxWidth + x + 1];
-                int rr = (((c>>16)&255)*2 + ((l>>16)&255) + ((r>>16)&255)) >> 2;
-                int gg = (((c>> 8)&255)*2 + ((l>> 8)&255) + ((r>> 8)&255)) >> 2;
-                int bb = ((c&255)*2        + (l&255)       + (r&255))       >> 2;
+                int cr = (c>>16)&255, cg = (c>>8)&255, cb = c&255;
+                int lr = (l>>16)&255, lg = (l>>8)&255, lb = l&255;
+                int rr_ = (r>>16)&255, rg = (r>>8)&255, rb = r&255;
+
+                int rr = cr + (lr + rr_) / 6;
+                int gg = cg + (lg + rg) / 6;
+                int bb = cb + (lb + rb) / 6;
+
+                if (rr > 255) rr = 255;
+                if (gg > 255) gg = 255;
+                if (bb > 255) bb = 255;
                 g_pixels[y * gfxWidth + x] = ((uint32_t)rr<<16)|((uint32_t)gg<<8)|(uint32_t)bb;
             }
         }
