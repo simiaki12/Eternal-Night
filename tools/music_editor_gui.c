@@ -133,9 +133,35 @@ static void fill_rect(int x, int y, int w, int h, uint32_t c) {
             g_pix[py*LOGICAL_W+px] = c;
 }
 
+/* ── Valid durations (16th-note ticks) — must match save/load tables ─── */
+static const int k_valid_lens[]  = { 2, 3, 4, 6, 8, 12, 16 };
+static const char *k_dur_names[] = { "EN","DE","QN","DQ","HN","DH","WN" };
+#define N_VALID_LENS 7
+
+static int snap_len(int ticks) {
+    if (ticks <= 0) return 2;
+    int best = 2, bestd = 9999;
+    for (int i = 0; i < N_VALID_LENS; i++) {
+        int d = k_valid_lens[i] - ticks; if (d < 0) d = -d;
+        if (d < bestd) { bestd = d; best = k_valid_lens[i]; }
+    }
+    return best;
+}
+
+static const char *dur_name(int ticks) {
+    int best = 0, bestd = 9999;
+    for (int i = 0; i < N_VALID_LENS; i++) {
+        int d = k_valid_lens[i] - ticks; if (d < 0) d = -d;
+        if (d < bestd) { bestd = d; best = i; }
+    }
+    return k_dur_names[best];
+}
+
 /* ── Time ↔ pixel coordinate conversion ──────────────────────────────── */
 static int tick_to_px(int tick) { return PIANO_W + (tick - g_scroll_tick) * SUBDIV_W; }
 static int px_to_tick(int lx)   { int gx=lx-PIANO_W; return gx<0 ? -1 : g_scroll_tick+gx/SUBDIV_W; }
+/* snap start to EN=2 grid so gaps are always representable */
+static int px_to_tick_snapped(int lx) { int t=px_to_tick(lx); return t<0 ? -1 : (t/2)*2; }
 
 /* ── Note ops ─────────────────────────────────────────────────────────── */
 static int find_note(int midi, int tick) {
@@ -612,7 +638,13 @@ static void draw(void) {
         static const char *vnames[4] = {"Melody","Harmony","Bass","Perc"};
         int sy = N_ROWS*ROW_H;
         char buf[160];
-        if (g_sel>=NOTE_LO && g_sel<NOTE_HI) {
+        if (g_placing && g_place_idx >= 0) {
+            Note *pn = &g_notes[g_place_idx];
+            sprintf(buf, "  [%d] %-7s  \xb7  %s%d  \xb7  %s (%d/16ths)  \xb7  drag to resize",
+                    g_cur_voice+1, vnames[g_cur_voice],
+                    semitone_name(pn->midi), pn->midi/12-1,
+                    dur_name(pn->len), pn->len);
+        } else if (g_sel>=NOTE_LO && g_sel<NOTE_HI) {
             sprintf(buf, "  [%d] %-7s  \xb7  %s%d  %.1f Hz  \xb7  BPM:%d  \xb7  %d notes  \xb7  SPACE=%s  [/]=bpm",
                     g_cur_voice+1, vnames[g_cur_voice],
                     semitone_name(g_sel), g_sel/12-1,
@@ -668,7 +700,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         int lx, ly;
         screen_to_logical((int)(short)LOWORD(lp), (int)(short)HIWORD(lp), &lx, &ly);
         int midi = logical_to_midi(lx, ly);
-        int tick = px_to_tick(lx);
+        int tick = px_to_tick_snapped(lx);
         g_sel = midi;
         if (midi>=NOTE_LO && midi<NOTE_HI)
             audio_play(g_freq[midi-NOTE_LO], g_cur_voice);
@@ -676,7 +708,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (lx>=PIANO_W && midi>=NOTE_LO && midi<NOTE_HI && tick>=0) {
             if (find_note(midi,tick)<0 && g_note_count<MAX_PLACED) {
                 int i = g_note_count++;
-                g_notes[i]   = (Note){ midi, tick, SUBDIVS, g_cur_voice };
+                g_notes[i]   = (Note){ midi, tick, 4, g_cur_voice }; /* QN default */
                 g_placing    = 1;
                 g_place_idx  = i;
                 g_place_base = tick;
@@ -690,11 +722,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (g_placing && g_place_idx>=0 && (wp & MK_LBUTTON)) {
             int lx, ly;
             screen_to_logical((int)(short)LOWORD(lp), (int)(short)HIWORD(lp), &lx, &ly);
-            int tick = px_to_tick(lx);
+            int tick = px_to_tick_snapped(lx);
             if (tick>=0) {
-                int len = tick - g_place_base + 1;
-                if (len<1) len=1;
-                g_notes[g_place_idx].len = len;
+                int raw = tick - g_place_base + 2; /* +2: minimum EN covers one snapped step */
+                int snapped = snap_len(raw);
+                g_notes[g_place_idx].len = snapped;
                 draw(); present();
             }
         }
