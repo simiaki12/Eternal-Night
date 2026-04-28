@@ -5,6 +5,13 @@
 
 extern int gfxWidth, gfxHeight;
 
+/* CRT post-processing toggles (0 = off, 1 = on) */
+extern int g_crtScanlines;
+extern int g_crtBleed;
+extern int g_crtBlur;
+extern int g_crtVignette;
+extern int g_crtGrid;
+
 void     gfxInit(HWND hwnd, int w, int h);
 void     gfxResize(int w, int h);
 void     gfxPresent(HWND hwnd);

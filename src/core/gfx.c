@@ -1,6 +1,7 @@
 #include "gfx.h"
 #include "font8x8_basic.h"
 #include <string.h>
+#include <stdlib.h>
 
 int gfxWidth  = 0;
 int gfxHeight = 0;
@@ -10,6 +11,123 @@ static HBITMAP   g_backBmp;
 static uint32_t* g_pixels;
 static int       g_winW = 0;
 static int       g_winH = 0;
+
+/* ── CRT post-processing ── */
+int g_crtScanlines = 1;
+int g_crtBleed     = 1;
+int g_crtBlur      = 1;
+int g_crtVignette  = 1;
+int g_crtGrid      = 1;
+
+static uint8_t  *g_vigBuf  = NULL; /* precomputed vignette factors [0..255] */
+static uint32_t *g_tempBuf = NULL; /* scratch buffer for bleed/blur passes  */
+
+/* Screen-space CRT overlay (scanlines + pixel grid) — rebuilt when anything changes */
+static HBITMAP g_slBmp      = NULL;
+static HDC     g_slDC       = NULL;
+static int     g_slW        = 0;
+static int     g_slH        = 0;
+static int     g_slLastScan = -1;
+static int     g_slLastGrid = -1;
+
+/* Composite buffer — game stretch + overlay composed here before single blit */
+static HBITMAP g_compBmp = NULL;
+static HDC     g_compDC  = NULL;
+static int     g_compW   = 0;
+static int     g_compH   = 0;
+
+static void crtInitBuffers(void) {
+    int n = gfxWidth * gfxHeight;
+    g_vigBuf  = malloc(n);
+    g_tempBuf = malloc(n * sizeof(uint32_t));
+    if (!g_vigBuf || !g_tempBuf) return;
+
+    /* Precompute vignette: center=255, corners≈128 (quadratic falloff). */
+    int cx = gfxWidth  / 2;
+    int cy = gfxHeight / 2;
+    long long maxDistSq = (long long)cx*cx + (long long)cy*cy;
+    for (int y = 0; y < gfxHeight; y++) {
+        int dy = y - cy;
+        for (int x = 0; x < gfxWidth; x++) {
+            int dx = x - cx;
+            long long distSq = (long long)dx*dx + (long long)dy*dy;
+            float nx = (float)dx / cx;
+            float ny = (float)dy / cy;
+            float dist = sqrtf(nx*nx + ny*ny); // normalized radial distance [0..~1.4]
+
+            float radius = 0.33f;   // inner "safe zone" (middle third-ish)
+            float maxDist = 1.0f;   // where full vignette kicks in
+
+            float t = (dist - radius) / (maxDist - radius);
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+
+            // Shape the curve (stronger edges, flat center)
+            t = t * t * t; // quadratic (try t*t*t for even harsher edges)
+
+            int minBright = 180; // how dark edges get
+            int f = (int)(255 - t * (255 - minBright));
+            if (f < 0) f = 0;
+            g_vigBuf[y * gfxWidth + x] = (uint8_t)f;
+        }
+    }
+}
+
+static void applyCRT(void) {
+    int n = gfxWidth * gfxHeight;
+
+    /* Color bleed: R smears from left neighbor, B from right (chromatic). */
+    if (g_crtBleed && g_tempBuf) {
+        memcpy(g_tempBuf, g_pixels, n * sizeof(uint32_t));
+        for (int y = 0; y < gfxHeight; y++) {
+            for (int x = 1; x < gfxWidth - 1; x++) {
+                uint32_t c = g_tempBuf[y * gfxWidth + x];
+                uint32_t l = g_tempBuf[y * gfxWidth + x - 1];
+                uint32_t r = g_tempBuf[y * gfxWidth + x + 1];
+                int rr = (((c>>16)&255)*3 + ((l>>16)&255)) >> 2;
+                int gg =  ((c>> 8)&255);
+                int bb = ((c&255)*3 + (r&255)) >> 2;
+                g_pixels[y * gfxWidth + x] = ((uint32_t)rr<<16)|((uint32_t)gg<<8)|(uint32_t)bb;
+            }
+        }
+    }
+
+    /* Blur: gentle horizontal phosphor blur (2:1:1 weighted). */
+    if (g_crtBlur && g_tempBuf) {
+        memcpy(g_tempBuf, g_pixels, n * sizeof(uint32_t));
+        for (int y = 0; y < gfxHeight; y++) {
+            for (int x = 1; x < gfxWidth - 1; x++) {
+                uint32_t c = g_tempBuf[y * gfxWidth + x];
+                uint32_t l = g_tempBuf[y * gfxWidth + x - 1];
+                uint32_t r = g_tempBuf[y * gfxWidth + x + 1];
+                int cr = (c>>16)&255, cg = (c>>8)&255, cb = c&255;
+                int lr = (l>>16)&255, lg = (l>>8)&255, lb = l&255;
+                int rr_ = (r>>16)&255, rg = (r>>8)&255, rb = r&255;
+
+                int rr = cr + (lr + rr_) / 6;
+                int gg = cg + (lg + rg) / 6;
+                int bb = cb + (lb + rb) / 6;
+
+                if (rr > 255) rr = 255;
+                if (gg > 255) gg = 255;
+                if (bb > 255) bb = 255;
+                g_pixels[y * gfxWidth + x] = ((uint32_t)rr<<16)|((uint32_t)gg<<8)|(uint32_t)bb;
+            }
+        }
+    }
+
+    /* Vignette: multiply each pixel by precomputed factor. */
+    if (g_crtVignette && g_vigBuf) {
+        for (int i = 0; i < n; i++) {
+            uint32_t c = g_pixels[i];
+            int f = g_vigBuf[i];
+            int rr = ((c>>16)&255)*f>>8;
+            int gg = ((c>> 8)&255)*f>>8;
+            int bb = ( c     &255)*f>>8;
+            g_pixels[i] = ((uint32_t)rr<<16)|((uint32_t)gg<<8)|(uint32_t)bb;
+        }
+    }
+}
 
 void gfxInit(HWND hwnd, int w, int h) {
     gfxWidth  = w;
@@ -31,9 +149,11 @@ void gfxInit(HWND hwnd, int w, int h) {
 
     g_backBmp = CreateDIBSection(g_backDC, &bmi, DIB_RGB_COLORS, (void**)&g_pixels, NULL, 0);
     SelectObject(g_backDC, g_backBmp);
+    crtInitBuffers();
 }
 
 void gfxPresent(HWND hwnd) {
+    applyCRT();
     HDC hdc = GetDC(hwnd);
 
     /* Letterbox: scale logical buffer into window preserving aspect ratio */
@@ -48,19 +168,71 @@ void gfxPresent(HWND hwnd) {
     int offX = (g_winW - dstW) / 2;
     int offY = (g_winH - dstH) / 2;
 
-    /* Fill black bars */
+    /* Composite buffer: resize when destination changes. */
+    if (dstW != g_compW || dstH != g_compH) {
+        if (g_compBmp) { DeleteObject(g_compBmp); g_compBmp = NULL; }
+        if (g_compDC)  { DeleteDC(g_compDC);      g_compDC  = NULL; }
+        g_compDC  = CreateCompatibleDC(hdc);
+        g_compBmp = CreateCompatibleBitmap(hdc, dstW, dstH);
+        SelectObject(g_compDC, g_compBmp);
+        g_compW = dstW; g_compH = dstH;
+    }
+
+    /* 1. Stretch game buffer into composite. */
+    SetStretchBltMode(g_compDC, COLORONCOLOR);
+    StretchBlt(g_compDC, 0, 0, dstW, dstH, g_backDC, 0, 0, gfxWidth, gfxHeight, SRCCOPY);
+
+    /* 2. Overlay: scanlines (odd rows) + pixel grid (odd columns). */
+    if (g_crtScanlines || g_crtGrid) {
+        if (dstW != g_slW || dstH != g_slH ||
+            g_crtScanlines != g_slLastScan || g_crtGrid != g_slLastGrid) {
+            if (g_slBmp) { DeleteObject(g_slBmp); g_slBmp = NULL; }
+            if (g_slDC)  { DeleteDC(g_slDC);      g_slDC  = NULL; }
+            g_slW = dstW; g_slH = dstH;
+            g_slLastScan = g_crtScanlines; g_slLastGrid = g_crtGrid;
+
+            BITMAPINFO bmi = {0};
+            bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+            bmi.bmiHeader.biWidth       = dstW;
+            bmi.bmiHeader.biHeight      = -dstH;
+            bmi.bmiHeader.biPlanes      = 1;
+            bmi.bmiHeader.biBitCount    = 32;
+            bmi.bmiHeader.biCompression = BI_RGB;
+            uint32_t *sl;
+            g_slDC  = CreateCompatibleDC(hdc);
+            g_slBmp = CreateDIBSection(g_slDC, &bmi, DIB_RGB_COLORS, (void**)&sl, NULL, 0);
+            SelectObject(g_slDC, g_slBmp);
+
+            const int SA = g_crtScanlines ? 89 : 0;
+            const int GA = g_crtGrid      ? 89 : 0;
+            for (int y = 0; y < dstH; y++) {
+                int da = (y & 1) ? SA : 0;
+                for (int x = 0; x < dstW; x++) {
+                    int ca = (x & 1) ? GA : 0;
+                    int a;
+                    if      (!da) a = ca;
+                    else if (!ca) a = da;
+                    else          a = 255 - (255-da)*(255-ca)/255;
+                    sl[y * dstW + x] = (uint32_t)a << 24;
+                }
+            }
+        }
+        BLENDFUNCTION bf = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+        AlphaBlend(g_compDC, 0, 0, dstW, dstH, g_slDC, 0, 0, dstW, dstH, bf);
+    }
+
+    /* 3. Single blit of the fully-composed frame to the window. */
     HBRUSH black = GetStockObject(BLACK_BRUSH);
     if (offX > 0) {
-        RECT r = {0, 0, offX, g_winH};             FillRect(hdc, &r, black);
-        r = (RECT){offX + dstW, 0, g_winW, g_winH}; FillRect(hdc, &r, black);
+        RECT r = {0, 0, offX, g_winH};              FillRect(hdc, &r, black);
+        r = (RECT){offX+dstW, 0, g_winW, g_winH};   FillRect(hdc, &r, black);
     }
     if (offY > 0) {
         RECT r = {0, 0, g_winW, offY};              FillRect(hdc, &r, black);
-        r = (RECT){0, offY + dstH, g_winW, g_winH}; FillRect(hdc, &r, black);
+        r = (RECT){0, offY+dstH, g_winW, g_winH};   FillRect(hdc, &r, black);
     }
+    BitBlt(hdc, offX, offY, dstW, dstH, g_compDC, 0, 0, SRCCOPY);
 
-    SetStretchBltMode(hdc, COLORONCOLOR);
-    StretchBlt(hdc, offX, offY, dstW, dstH, g_backDC, 0, 0, gfxWidth, gfxHeight, SRCCOPY);
     ReleaseDC(hwnd, hdc);
 }
 
@@ -72,6 +244,12 @@ void gfxResize(int w, int h) {
 }
 
 void gfxShutdown(void) {
+    free(g_vigBuf);
+    free(g_tempBuf);
+    if (g_slBmp)   DeleteObject(g_slBmp);
+    if (g_slDC)    DeleteDC(g_slDC);
+    if (g_compBmp) DeleteObject(g_compBmp);
+    if (g_compDC)  DeleteDC(g_compDC);
     DeleteObject(g_backBmp);
     DeleteDC(g_backDC);
 }

@@ -4,7 +4,7 @@ CC_HOST  = gcc
 CFLAGS   = -Wall -Wextra -std=c11 -I src/core -I src/gameplay -I src/world -I src/ui -I src/data
 DEBUGFLAGS   = -g
 RELEASEFLAGS = -Os -flto
-LDFLAGS        = -lgdi32 -lwinmm -mwindows
+LDFLAGS        = -lgdi32 -lwinmm -lmsimg32 -mwindows
 LDFLAGS_STATIC = $(LDFLAGS) -static-libgcc
 
 SRC    = $(shell find src -name '*.c')
@@ -142,7 +142,15 @@ seed_npcs:
 	$(CC_HOST) -std=c11 -Os tools/seed_npcs.c -o build/seed_npcs
 	./build/seed_npcs
 
-tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor img_conv img_conv_ui bw_conv rle
+music_editor:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/music_editor.c -o build/music_editor -lncurses
+
+music_editor_gui:
+	mkdir -p build
+	$(CC) -std=c11 -Os tools/music_editor_gui.c -o build/music_editor_gui.exe -lgdi32 -lwinmm -lcomdlg32 -mwindows
+
+tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui
 
 clean:
 	rm -rf build data.pak

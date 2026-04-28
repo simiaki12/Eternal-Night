@@ -197,7 +197,7 @@ void renderMainMenu(void) {
     PakData *frame = &g_bgFrames[g_bgFrame];
     if (frame->data)
         drawBWAt(0, 0, gfxWidth, gfxHeight, frame->data, frame->size,
-                 rgb(0,0,0), rgb(120,50,50));
+                 rgb(0,0,0), rgb(200,100,100));
 
     if (!g_logoImg.data) g_logoImg = pakRead("assets/ui/logo.bin");
     drawBWAt(cx - 120, startY - 48, 240, 48, g_logoImg.data, g_logoImg.size, rgb(255, 0, 0), rgb(0,0,0));
@@ -208,7 +208,7 @@ void renderMainMenu(void) {
         int sel      = (i == g_sel);
         int disabled = (i == 1 && !hasSave);
         uint32_t color = disabled ? rgb(80, 80, 80) :
-                         sel      ? rgb(255, 255, 100) : rgb(180, 180, 180);
+                         sel      ? rgb(255, 255, 100) : rgb(255, 255, 255);
         char buf[32];
         snprintf(buf, sizeof(buf), "%s%s", sel ? "> " : "  ", g_labels[i]);
         int labelW  = (int)(strlen(g_labels[i]) * 8 * 2);

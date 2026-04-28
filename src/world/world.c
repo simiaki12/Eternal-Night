@@ -12,6 +12,7 @@
 #include "npcs.h"
 #include "tiles8x8.h"
 #include "pak.h"
+#include "shop.h"
 
 /* ── iso tile images, lazy-loaded on first render ── */
 #define TIMG_GRASS       0
@@ -206,6 +207,7 @@ void updateWorld(void) {
 
 void handleWorldInput(int key) {
     if (key == 'I') { state = STATE_INVENTORY; return; }
+    if (key == 'B') { enterShop(STATE_WORLD);  return; }
     if (key == 'E') { npcTryInteract(); return; }
     if (g_moving) return;
 
@@ -341,7 +343,7 @@ void renderWorld(void) {
                 int tileH  = (int)((const uint8_t *)td->data)[1];
                 int draw_y = cy + TILE_H - tileH * 2;
                 uint8_t alpha = 255;
-                if (sum > playerSum && !IS_GFX_PASSABLE(gfx)) {
+                if (tileH > TILE_H / 2 && sum > playerSum) {
                     if (abs(cx - plrScreenX) < TILE_W / 2 + 16 && draw_y < plrScreenY + 16)
                         alpha = 100;
                 }

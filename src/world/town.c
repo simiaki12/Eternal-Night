@@ -8,6 +8,7 @@
 #include "skills.h"
 #include "gfx.h"
 #include "quests.h"
+#include "shop.h"
 
 DialogState dialogSt;
 TownState   townSt;
@@ -96,8 +97,10 @@ done:
 
 /* ----------------------------------------------------------------------- */
 
-static const char *townOptions[] = { "Talk", "Rest", "Leave" };
-#define TOWN_OPTION_COUNT 3
+static const char *townOptions[] = { "Talk", "Rest", "Shop", "Leave" };
+#define TOWN_OPTION_COUNT 4
+
+static DWORD g_restMsgEnd = 0;
 
 void startTown(void) {
     townSt.selected = 0;
@@ -131,9 +134,13 @@ void handleTownInput(int key) {
             break;
         case VK_RETURN:
             switch (townSt.selected) {
-                case 0: startDialog(0, STATE_TOWN); break;
-                case 1: player.hp = player.maxHp;   break;
-                case 2: state = STATE_WORLD;        break;
+                case 0: startDialog(0, STATE_TOWN);          break;
+                case 1:
+                    player.hp    = player.maxHp;
+                    g_restMsgEnd = GetTickCount() + 2500;
+                    break;
+                case 2: enterShop(STATE_TOWN);               break;
+                case 3: state = STATE_WORLD;                 break;
             }
             break;
         case VK_ESCAPE:
@@ -212,6 +219,9 @@ void renderTown(void) {
         drawText(x, y, buf, color, 2);
         y += lineH;
     }
+
+    if (g_restMsgEnd && GetTickCount() < g_restMsgEnd)
+        drawText(x, y + 8, "Health restored to full!", rgb(80, 220, 80), 2);
 }
 
 void renderDialog(void) {

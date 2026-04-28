@@ -30,7 +30,7 @@ int main() {
     if (fs::is_directory("assets")) {
         for (auto &entry : fs::recursive_directory_iterator("assets")) {
             auto ext = entry.path().extension();
-            if (ext == ".bin" || ext == ".til")
+            if (ext == ".bin" || ext == ".til" || ext == ".mus")
                 mapBins.push_back(normPath(entry.path().string()));
         }
         std::sort(mapBins.begin(), mapBins.end());
