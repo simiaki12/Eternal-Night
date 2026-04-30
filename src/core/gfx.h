@@ -16,6 +16,8 @@ void     gfxInit(HWND hwnd, int w, int h);
 void     gfxResize(int w, int h);
 void     gfxPresent(HWND hwnd);
 void     gfxShutdown(void);
+int      gfxIsFullscreen(void);
+void     gfxSetFullscreen(int full);
 
 uint32_t rgb(uint8_t r, uint8_t g, uint8_t b);
 void     fillRect(int x, int y, int w, int h, uint32_t color);

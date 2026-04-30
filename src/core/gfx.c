@@ -12,6 +12,9 @@ static HBITMAP   g_backBmp;
 static uint32_t* g_pixels;
 static int       g_winW = 0;
 static int       g_winH = 0;
+static HWND      g_hwnd = NULL;
+static int       g_fullscreen = 1;
+static int       g_logW = 0, g_logH = 0;
 
 /* ── CRT post-processing ── */
 int g_crtScanlines = 1;
@@ -133,6 +136,9 @@ void gfxInit(HWND hwnd, int w, int h) {
     gfxHeight = h;
     g_winW    = w;
     g_winH    = h;
+    g_hwnd    = hwnd;
+    g_logW    = w;
+    g_logH    = h;
 
     HDC hdc  = GetDC(hwnd);
     g_backDC = CreateCompatibleDC(hdc);
@@ -240,6 +246,30 @@ void gfxResize(int w, int h) {
     g_winW = w;
     g_winH = h;
     /* Backbuffer stays at fixed logical size — no recreate needed */
+}
+
+int gfxIsFullscreen(void) { return g_fullscreen; }
+
+void gfxSetFullscreen(int full) {
+    if (full == g_fullscreen || !g_hwnd) return;
+    g_fullscreen = full;
+    if (full) {
+        int monW = GetSystemMetrics(SM_CXSCREEN);
+        int monH = GetSystemMetrics(SM_CYSCREEN);
+        SetWindowLongA(g_hwnd, GWL_STYLE, WS_POPUP);
+        SetWindowPos(g_hwnd, HWND_TOP, 0, 0, monW, monH, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        gfxResize(monW, monH);
+    } else {
+        RECT wr = {0, 0, g_logW, g_logH};
+        AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
+        int ww = wr.right - wr.left;
+        int wh = wr.bottom - wr.top;
+        int ox = (GetSystemMetrics(SM_CXSCREEN) - ww) / 2;
+        int oy = (GetSystemMetrics(SM_CYSCREEN) - wh) / 2;
+        SetWindowLongA(g_hwnd, GWL_STYLE, WS_OVERLAPPEDWINDOW);
+        SetWindowPos(g_hwnd, HWND_TOP, ox, oy, ww, wh, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        gfxResize(g_logW, g_logH);
+    }
 }
 
 void gfxShutdown(void) {

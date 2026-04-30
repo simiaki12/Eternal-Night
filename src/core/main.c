@@ -304,6 +304,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
 
     const int screenW = 640;
     const int screenH = 480;
+    const int monW    = GetSystemMetrics(SM_CXSCREEN);
+    const int monH    = GetSystemMetrics(SM_CYSCREEN);
 
     WNDCLASSA wc = {0};
     wc.lpfnWndProc   = WndProc;
@@ -312,18 +314,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
     RegisterClassA(&wc);
 
-    RECT wr = {0, 0, screenW, screenH};
-    AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
-
     g_hwnd = CreateWindowA(
         "EternalNight", "Eternal Night",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        wr.right - wr.left, wr.bottom - wr.top,
+        WS_POPUP,
+        0, 0, monW, monH,
         NULL, NULL, hInstance, NULL
     );
 
     gfxInit(g_hwnd, screenW, screenH);
+    gfxResize(monW, monH);
 
     if (!worldLoadNamed("assets/maps/map1.bin")) { pakClose(); gfxShutdown(); return 1; }
     /* pak stays open for dynamic map loading during gameplay */
