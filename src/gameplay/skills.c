@@ -3,11 +3,26 @@
 #include <stdio.h>
 #include <string.h>
 #include "skills.h"
+#include "actions.h"
 #include "game.h"
 #include "player.h"
 #include "gfx.h"
 
 static int selectedSkill = 0;
+
+static const uint8_t skillActions[SKILL_MAX][4] = {
+    /* SKILL_BLADES    */ { ACTION_STRONG, ACTION_DISARM, ACTION_STUN, ACTION_EXECUTE },
+    /* SKILL_SNEAK     */ { ACTION_BACKSTAB, ACTION_HIDE, 0xFF, 0xFF },
+    /* SKILL_MAGIC     */ { 0xFF, 0xFF, 0xFF, 0xFF },
+    /* SKILL_DIPLOMACY */ { ACTION_CALM, 0xFF, 0xFF, 0xFF },
+    /* SKILL_SURVIVAL  */ { ACTION_HEAL, 0xFF, 0xFF, 0xFF },
+    /* SKILL_ARCHERY   */ { 0xFF, 0xFF, 0xFF, 0xFF },
+};
+
+void skillGetActions(int skill, uint8_t out[4]) {
+    if (skill < 0 || skill >= SKILL_MAX) { memset(out, 0xFF, 4); return; }
+    memcpy(out, skillActions[skill], 4);
+}
 
 const char *skillName(int skill) {
     switch (skill) {
@@ -123,6 +138,23 @@ void renderSkills(void) {
     drawDescLines(listX, descBoxY + 4,
                   skillDesc(selectedSkill),
                   rgb(140, 190, 140), 1);
+
+    /* Actions granted by this skill */
+    {
+        uint8_t acts[4];
+        skillGetActions(selectedSkill, acts);
+        int ax = listX + 320;
+        int ay = descBoxY + 4;
+        int hasAny = 0;
+        for (int j = 0; j < 4; j++) {
+            if (acts[j] == 0xFF) continue;
+            const ActionDef *adef = getActionDef(acts[j]);
+            if (!adef) continue;
+            if (!hasAny) { drawText(ax, ay, "Grants:", rgb(200, 180, 80), 1); ay += 12; hasAny = 1; }
+            drawText(ax, ay, adef->name, rgb(220, 200, 100), 1);
+            ay += 12;
+        }
+    }
 
     drawText(listX, gfxHeight - 50, "P / ESC  close      Enter=spend  Bksp=refund", rgb(50, 70, 50), 1);
 }

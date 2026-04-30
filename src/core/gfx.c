@@ -1,5 +1,6 @@
 #include "gfx.h"
 #include "font8x8_basic.h"
+#include <math.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -45,12 +46,10 @@ static void crtInitBuffers(void) {
     /* Precompute vignette: center=255, corners≈128 (quadratic falloff). */
     int cx = gfxWidth  / 2;
     int cy = gfxHeight / 2;
-    long long maxDistSq = (long long)cx*cx + (long long)cy*cy;
     for (int y = 0; y < gfxHeight; y++) {
         int dy = y - cy;
         for (int x = 0; x < gfxWidth; x++) {
             int dx = x - cx;
-            long long distSq = (long long)dx*dx + (long long)dy*dy;
             float nx = (float)dx / cx;
             float ny = (float)dy / cy;
             float dist = sqrtf(nx*nx + ny*ny); // normalized radial distance [0..~1.4]

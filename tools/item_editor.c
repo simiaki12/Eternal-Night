@@ -32,7 +32,8 @@ typedef struct {
     uint8_t  flags;
     uint16_t price;
     char     description[24];
-    uint8_t  _pad[14];
+    uint8_t  actions[4];  /* action IDs granted; 0xFF = none */
+    uint8_t  _pad[10];
 } ItemDef;
 
 typedef char check_size[(sizeof(ItemDef) == 64) ? 1 : -1];
@@ -99,6 +100,7 @@ typedef enum {
     F_ATK, F_DEF, F_MHP, F_INT, F_PER, F_STA,
     F_FLAG_HEAL, F_FLAG_BUFF,
     F_PRICE,
+    F_ACT0, F_ACT1, F_ACT2, F_ACT3,
     F_COUNT
 } Field;
 
@@ -106,7 +108,8 @@ static const char *fieldNames[] = {
     "Name", "Description", "Type",
     "ATK bonus", "DEF bonus", "HP bonus", "INT bonus", "PER bonus", "STA bonus",
     "Flag: Heal", "Flag: Buff ATK",
-    "Price"
+    "Price",
+    "Action slot 0", "Action slot 1", "Action slot 2", "Action slot 3",
 };
 
 static void renderEdit(ItemDef *it, int sel, const char *status) {
@@ -144,6 +147,14 @@ static void renderEdit(ItemDef *it, int sel, const char *status) {
             case F_PRICE:
                 mvprintw(i+4,2,"%-16s  %d", fieldNames[i], it->price);
                 break;
+            case F_ACT0: case F_ACT1: case F_ACT2: case F_ACT3: {
+                int j = i - F_ACT0;
+                if (it->actions[j] == 0xFF)
+                    mvprintw(i+4,2,"%-16s  none", fieldNames[i]);
+                else
+                    mvprintw(i+4,2,"%-16s  %d", fieldNames[i], it->actions[j]);
+                break;
+            }
         }
         if (i == sel) attroff(A_REVERSE);
     }
@@ -189,6 +200,13 @@ static void screenEdit(int idx) {
                     case F_FLAG_HEAL:  it->flags ^= ITEM_FLAG_HEAL;        break;
                     case F_FLAG_BUFF:  it->flags ^= ITEM_FLAG_BUFF_ATTACK; break;
                     case F_PRICE: if (it->price < 65535) it->price++;      break;
+                    case F_ACT0: case F_ACT1: case F_ACT2: case F_ACT3: {
+                        int j = sel - F_ACT0;
+                        it->actions[j] = (it->actions[j] == 0xFF) ? 0
+                                       : (it->actions[j] < 254)   ? it->actions[j] + 1
+                                       : 0xFF;
+                        break;
+                    }
                     default: dirty = 0; break;
                 }
                 break;
@@ -206,6 +224,13 @@ static void screenEdit(int idx) {
                     case F_FLAG_HEAL:  it->flags ^= ITEM_FLAG_HEAL;        break;
                     case F_FLAG_BUFF:  it->flags ^= ITEM_FLAG_BUFF_ATTACK; break;
                     case F_PRICE: if (it->price > 0) it->price--;          break;
+                    case F_ACT0: case F_ACT1: case F_ACT2: case F_ACT3: {
+                        int j = sel - F_ACT0;
+                        it->actions[j] = (it->actions[j] == 0)    ? 0xFF
+                                       : (it->actions[j] == 0xFF) ? 254
+                                       : it->actions[j] - 1;
+                        break;
+                    }
                     default: dirty = 0; break;
                 }
                 break;
@@ -271,6 +296,7 @@ int main(void) {
             case 'n': case 'N':
                 if (itemCount < MAX_ITEMS) {
                     memset(&items[itemCount], 0, sizeof(ItemDef));
+                    memset(items[itemCount].actions, 0xFF, 4);
                     sel = itemCount++;
                     dirty = 1;
                     screenEdit(sel);

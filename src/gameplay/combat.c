@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "combat.h"
+#include "actions.h"
 #include "game.h"
 #include "player.h"
 #include "items.h"
@@ -14,62 +15,39 @@
 
 CombatState combat;
 
-/* --- Action table ---
- * To add a new action: add an ActionId to the enum in combat.h, add a row here,
- * add a case in computeWeight if it needs stat modifiers, and add a case in
- * performPlayerAction. Nothing else needs to change. */
-static const ActionDef actionDefs[ACTION_COUNT] = {
-    /*               id             reqSkill        reqLvl  ctxFlags             baseWt  power  name       img */
-    /* ACTION_ATTACK   */ { ACTION_ATTACK,   0xFF,           0,      0,                   70,     0,  "Slash",      "a1" },
-    /* ACTION_STRONG   */ { ACTION_STRONG,   SKILL_BLADES,   2,      0,                   35,     4,  "Strong Attack",     "a2" },
-    /* ACTION_HEAL     */ { ACTION_HEAL,     SKILL_SURVIVAL, 1,      ACT_CTX_PLAYER_HURT, 55,     10, "Regenerate",      "a3" },
-    /* ACTION_DEFEND   */ { ACTION_DEFEND,   0xFF,           0,      0,                   28,     0,  "Parry",      "a4" },
-    /* ACTION_DISARM   */ { ACTION_DISARM,   SKILL_BLADES,   3,      ACT_CTX_ENEMY_WEAPON,48,     0,  "Disarm",     "a5" },
-    /* ACTION_BACKSTAB */ { ACTION_BACKSTAB, SKILL_SNEAK,    2,      ACT_CTX_FIRST_TURN,  60,     6,  "Moonstep",   "a6" },
-    /* ACTION_STUN     */ { ACTION_STUN,     SKILL_BLADES,   2,      ACT_CTX_CAN_STUN,    42,     0,  "Stun",       "a7" },
-    /* ACTION_CALM     */ { ACTION_CALM,     SKILL_DIPLOMACY,2,      0,                   22,     0,  "Persuade",   "a8" },
-    /* ACTION_HIDE     */ { ACTION_HIDE,     SKILL_SNEAK,    3,      0,                   20,     0,  "Blindspot",  "a9" },
-    /* ACTION_EXECUTE  */ { ACTION_EXECUTE,  SKILL_BLADES,   4,      ACT_CTX_EXECUTABLE,  78,     15, "Death star",  "a10" },
-};
 
+/* Lazily-loaded sprites for action cards — indexed by action id, loaded on first render */
+static PakData actionImgs[ACTION_MAX];
 
-/* Lazily-loaded sprites for action cards — loaded on first render, never freed */
-static PakData actionImgs[ACTION_COUNT];
-
-/* Returns 1 if all context conditions for def are met right now. */
 static int checkContext(const ActionDef *def) {
     uint8_t ctx = def->contextFlags;
-    if ((ctx & ACT_CTX_FIRST_TURN)   && !combat.isFirstTurn)                         return 0;
-    if ((ctx & ACT_CTX_ENEMY_WEAPON) && !(combat.enemy.flags & ENEMY_HAS_WEAPON))    return 0;
-    if ((ctx & ACT_CTX_CAN_STUN)     && !(combat.enemy.flags & ENEMY_STUNNABLE))     return 0;
-    if ((ctx & ACT_CTX_PLAYER_HURT)  && player.hp >= player.maxHp / 2)                return 0;
+    if ((ctx & ACT_CTX_FIRST_TURN)   && !combat.isFirstTurn)                      return 0;
+    if ((ctx & ACT_CTX_ENEMY_WEAPON) && !(combat.enemy.flags & ENEMY_HAS_WEAPON)) return 0;
+    if ((ctx & ACT_CTX_CAN_STUN)     && !(combat.enemy.flags & ENEMY_STUNNABLE))  return 0;
+    if ((ctx & ACT_CTX_PLAYER_HURT)  && player.hp >= player.maxHp / 2)            return 0;
     if (ctx & ACT_CTX_EXECUTABLE) {
-        if (!(combat.enemy.flags & ENEMY_EXECUTABLE))           return 0;
-        if (combat.enemy.hp > combat.enemy.maxHp / 3)           return 0;
+        if (!(combat.enemy.flags & ENEMY_EXECUTABLE))  return 0;
+        if (combat.enemy.hp > combat.enemy.maxHp / 3)  return 0;
     }
     return 1;
 }
 
-/* Returns the final selection weight for def given the current enemy.
- * Extend this function when new enemy stats or mechanics are added. */
 static int computeWeight(const ActionDef *def) {
     int w = def->baseWeight;
     switch (def->id) {
         case ACTION_STRONG:
-            w += combat.enemy.size   * 5;
-            w -= combat.enemy.speed  * 3;
+            w += combat.enemy.size  * 5;
+            w -= combat.enemy.speed * 3;
             break;
         case ACTION_DISARM:
-            w += combat.enemy.speed  * 3; /* faster enemies more threatening to leave armed */
+            w += combat.enemy.speed * 3;
             break;
         case ACTION_BACKSTAB:
+        case ACTION_HIDE:
             w -= combat.enemy.perception * 4;
             break;
         case ACTION_CALM:
             w += combat.enemy.intelligence * 5;
-            break;
-        case ACTION_HIDE:
-            w -= combat.enemy.perception * 4;
             break;
         default:
             break;
@@ -77,39 +55,70 @@ static int computeWeight(const ActionDef *def) {
     return w < 1 ? 1 : w;
 }
 
-static void generateActions(void) {
-    /* Build candidate pool: eligible actions with their weights. */
-    typedef struct { int defIdx; int weight; } Candidate;
-    Candidate pool[ACTION_COUNT];
-    int poolSize = 0;
+/* Build the set of action IDs the player currently has access to.
+ * Sources: equipped items' actions[] + skills with level > 0.
+ * ACTION_ATTACK is always included as a baseline. */
+static int buildPool(uint8_t pool[ACTION_MAX]) {
+    int count = 0;
 
-    for (int i = 0; i < ACTION_COUNT; i++) {
-        const ActionDef *def = &actionDefs[i];
-        /* Skill check */
-        if (def->requiredSkill != 0xFF &&
-            player.skills[def->requiredSkill] < def->requiredLevel)
-            continue;
-        /* Context check */
-        if (!checkContext(def)) continue;
-        pool[poolSize].defIdx = i;
-        pool[poolSize].weight = computeWeight(def);
-        poolSize++;
+    /* Helper: add id if not already in pool */
+    #define ADD(id) do { \
+        if ((id) == 0xFF) break; \
+        int dup = 0; \
+        for (int _j = 0; _j < count; _j++) if (pool[_j] == (id)) { dup = 1; break; } \
+        if (!dup) pool[count++] = (id); \
+    } while (0)
+
+    ADD(ACTION_ATTACK);
+
+    for (int s = 0; s < EQUIP_SLOTS; s++) {
+        if (player.equipped[s] == ITEM_UNEQUIPPED) continue;
+        const ItemDef *d = itemGetDef(player.equipped[s]);
+        if (!d) continue;
+        for (int j = 0; j < 4; j++) ADD(d->actions[j]);
     }
 
-    /* Weighted random pick without replacement — at most 4 actions. */
+    for (int sk = 0; sk < SKILL_COUNT; sk++) {
+        if (player.skills[sk] == 0) continue;
+        uint8_t acts[4];
+        skillGetActions(sk, acts);
+        for (int j = 0; j < 4; j++) ADD(acts[j]);
+    }
+
+    #undef ADD
+    return count;
+}
+
+static void generateActions(void) {
+    uint8_t pool[ACTION_MAX];
+    int poolSize = buildPool(pool);
+
+    typedef struct { uint8_t id; int weight; } Candidate;
+    Candidate candidates[ACTION_MAX];
+    int candCount = 0;
+
+    for (int i = 0; i < poolSize; i++) {
+        const ActionDef *def = getActionDef(pool[i]);
+        if (!def) continue;
+        if (!checkContext(def)) continue;
+        candidates[candCount].id     = pool[i];
+        candidates[candCount].weight = computeWeight(def);
+        candCount++;
+    }
+
     combat.actionCount = 0;
-    int picks = poolSize < 4 ? poolSize : 4;
+    int picks = candCount < 4 ? candCount : 4;
     for (int pick = 0; pick < picks; pick++) {
         int total = 0;
-        for (int i = 0; i < poolSize; i++) total += pool[i].weight;
+        for (int i = 0; i < candCount; i++) total += candidates[i].weight;
         int r = rand() % total;
         int acc = 0;
-        for (int i = 0; i < poolSize; i++) {
-            acc += pool[i].weight;
+        for (int i = 0; i < candCount; i++) {
+            acc += candidates[i].weight;
             if (r < acc) {
-                const ActionDef *chosen = &actionDefs[pool[i].defIdx];
-                combat.actions[combat.actionCount++] = (Action){ chosen->id, chosen->power };
-                pool[i] = pool[--poolSize]; /* remove from pool */
+                const ActionDef *chosen = getActionDef(candidates[i].id);
+                combat.actions[combat.actionCount++] = (Action){ (ActionId)chosen->id, chosen->power };
+                candidates[i] = candidates[--candCount];
                 break;
             }
         }
@@ -414,8 +423,9 @@ void renderCombat(void) {
 
         drawCard(cx, CARD_Y, CARD_W, CARD_H, bgCol, bdCol);
 
-        ActionId     aid  = combat.actions[i].type;
-        const ActionDef *adef = &actionDefs[aid];
+        uint8_t          aid  = (uint8_t)combat.actions[i].type;
+        const ActionDef *adef = getActionDef(aid);
+        if (!adef) continue;
 
         /* Lazy-load action sprite */
         if (!actionImgs[aid].data && adef->imgName[0]) {

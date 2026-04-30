@@ -23,6 +23,7 @@
 #include "options.h"
 #include "npcs.h"
 #include "shop.h"
+#include "actions.h"
 
 /* State machine */
 GameState state     = STATE_MAIN_MENU;
@@ -146,6 +147,20 @@ static void renderInventory(void) {
                 drawText(x, y, buf, rgb(100, 220, 100), 2); y += lineH;
             }
             #undef STAT_ROW
+
+            /* Actions granted by this item */
+            int hasActions = 0;
+            for (int j = 0; j < 4; j++) {
+                if (d->actions[j] == 0xFF) continue;
+                const ActionDef *adef = getActionDef(d->actions[j]);
+                if (!adef) continue;
+                if (!hasActions) {
+                    drawText(x, y, "Grants:", rgb(200, 180, 80), 2); y += lineH;
+                    hasActions = 1;
+                }
+                snprintf(buf, sizeof(buf), "  + %s", adef->name);
+                drawText(x, y, buf, rgb(220, 200, 100), 2); y += lineH;
+            }
         }
     }
 
@@ -268,6 +283,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     PakData questData     = pakRead("assets/data/quests.dat");
     PakData lootData      = pakRead("assets/data/loottables.dat");
     PakData npcData       = pakRead("assets/data/npcs.dat");
+    PakData actionData    = pakRead("assets/data/actions.dat");
 
     if (!loadPlayer(playerData)) { pakClose(); return 1; }
     loadItems(itemData);        /* optional — falls back to builtins if not in pak */
@@ -276,6 +292,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadQuests(questData);      /* optional — no quests if absent */
     loadLootTables(lootData);   /* optional — no item drops if absent */
     loadNpcs(npcData);          /* optional — no NPCs if absent */
+    loadActions(actionData);    /* optional — falls back to builtins if not in pak */
     free(playerData.data);
     free(itemData.data);
     free(enemyData.data);
@@ -283,6 +300,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     free(questData.data);
     free(lootData.data);
     free(npcData.data);
+    free(actionData.data);
 
     const int screenW = 640;
     const int screenH = 480;

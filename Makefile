@@ -16,6 +16,7 @@ DLG_EDITOR  = build/dialog_editor
 QST_EDITOR  = build/quest_editor
 ENM_EDITOR  = build/enemy_editor
 NPC_EDITOR  = build/npc_editor
+ACT_EDITOR  = build/action_editor
 IMG_CONV    = build/img_conv
 BW_CONV     = build/bw_conv
 RLE         = build/rle
@@ -137,10 +138,19 @@ npc_editor:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/npc_editor.c -o $(NPC_EDITOR) -lncurses
 
+action_editor:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/action_editor.c -o $(ACT_EDITOR) -lncurses
+
 seed_npcs:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os tools/seed_npcs.c -o build/seed_npcs
 	./build/seed_npcs
+
+seed_actions:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os tools/seed_actions.c -o build/seed_actions
+	./build/seed_actions
 
 music_editor:
 	mkdir -p build
@@ -150,7 +160,7 @@ music_editor_gui:
 	mkdir -p build
 	$(CC) -std=c11 -Os tools/music_editor_gui.c -o build/music_editor_gui.exe -lgdi32 -lwinmm -lcomdlg32 -mwindows
 
-tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui
+tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui
 
 clean:
 	rm -rf build data.pak

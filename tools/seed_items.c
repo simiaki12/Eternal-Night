@@ -13,6 +13,13 @@
 #define ITEM_FLAG_HEAL        0x01
 #define ITEM_FLAG_BUFF_ATTACK 0x02
 
+/* Action IDs — must match ActionId enum in actions.h */
+#define ACTION_ATTACK   0
+#define ACTION_STRONG   1
+#define ACTION_HEAL     2
+#define ACTION_DEFEND   3
+#define NO_ACTION       0xFF
+
 /* Must match ItemDef in items.h exactly — 64 bytes */
 typedef struct {
     char     name[16];
@@ -26,15 +33,16 @@ typedef struct {
     uint8_t  flags;
     uint16_t price;
     char     description[24];
-    uint8_t  _pad[14];
+    uint8_t  actions[4];
+    uint8_t  _pad[10];
 } ItemDef;
 
-/*            name              type             atk def int per sta  hp  flags               price  description */
+/*            name              type            atk def int per sta  hp  flags              price  description                       actions */
 static ItemDef items[] = {
-    { "Iron Sword",    ITEM_WEAPON,       3,  1,  0,  1,  2,  0,  0,                  15, "A reliable iron blade."   },
-    { "Leather Armor", ITEM_ARMOR,        0,  2,  0,  0,  0,  0,  0,                  12, "Light but protective."    },
-    { "Health Potion", ITEM_CONSUMABLE,   0,  0,  0,  0,  0,  0,  ITEM_FLAG_HEAL,      8, "Restores 10 HP."          },
-    { "Flaming Sword", ITEM_WEAPON,       6,  0,  2,  0,  0,  0,  0,                  40, "Burns with goblin fire."  },
+    { "Iron Sword",    ITEM_WEAPON,      3,  1,  0,  1,  2,  0,  0,                 15, "A reliable iron blade.",  {ACTION_STRONG, NO_ACTION,     NO_ACTION, NO_ACTION} },
+    { "Leather Armor", ITEM_ARMOR,       0,  2,  0,  0,  0,  0,  0,                 12, "Light but protective.",   {ACTION_DEFEND, NO_ACTION,     NO_ACTION, NO_ACTION} },
+    { "Health Potion", ITEM_CONSUMABLE,  0,  0,  0,  0,  0,  0,  ITEM_FLAG_HEAL,     8, "Restores 10 HP.",         {NO_ACTION,     NO_ACTION,     NO_ACTION, NO_ACTION} },
+    { "Flaming Sword", ITEM_WEAPON,      6,  0,  2,  0,  0,  0,  0,                 40, "Burns with goblin fire.", {ACTION_STRONG, NO_ACTION,     NO_ACTION, NO_ACTION} },
 };
 
 int main(void) {

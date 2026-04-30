@@ -22,7 +22,8 @@ typedef struct {
     uint8_t  flags;
     uint16_t price;
     char     description[24];
-    uint8_t  _pad[14];
+    uint8_t  actions[4];  /* action IDs granted by this item; 0xFF = none */
+    uint8_t  _pad[10];
 } ItemDef;
 
 typedef struct {

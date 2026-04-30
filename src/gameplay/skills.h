@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "actions.h"
 
 /* Named skill indices — stored in PlayerData.skills[].
  * Add new skills here (up to SKILL_MAX) without breaking existing save data.
@@ -15,5 +16,6 @@
 
 const char *skillName(int skill);
 const char *skillDesc(int skill);
+void        skillGetActions(int skill, uint8_t out[4]);
 void        handleSkillsInput(int key);
 void        renderSkills(void);

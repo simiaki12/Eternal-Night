@@ -14,9 +14,9 @@ Inventory inventory = {
 };
 
 static const ItemDef builtinDefs[] = {
-    { "Iron Sword",    ITEM_WEAPON,      3, 0, 0, 0, 0, 0, 0,              15, "A reliable iron blade.",  {0} },
-    { "Leather Armor", ITEM_ARMOR,       0, 2, 0, 0, 0, 0, 0,              12, "Light but protective.",   {0} },
-    { "Health Potion", ITEM_CONSUMABLE,  0, 0, 0, 0, 0, 0, ITEM_FLAG_HEAL,  8, "Restores 10 HP.",         {0} },
+    { "Iron Sword",    ITEM_WEAPON,      3, 0, 0, 0, 0, 0, 0,              15, "A reliable iron blade.",  {ACTION_DEFEND, 0xFF, 0xFF, 0xFF}, {0} },
+    { "Leather Armor", ITEM_ARMOR,       0, 2, 0, 0, 0, 0, 0,              12, "Light but protective.",   {0xFF, 0xFF, 0xFF, 0xFF},          {0} },
+    { "Health Potion", ITEM_CONSUMABLE,  0, 0, 0, 0, 0, 0, ITEM_FLAG_HEAL,  8, "Restores 10 HP.",         {0xFF, 0xFF, 0xFF, 0xFF},          {0} },
 };
 #define BUILTIN_COUNT (int)(sizeof(builtinDefs)/sizeof(builtinDefs[0]))
 

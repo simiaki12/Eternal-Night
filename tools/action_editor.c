@@ -1,0 +1,308 @@
+/*
+ * action_editor.c — ncurses editor for assets/data/actions.dat
+ *
+ * Navigation:
+ *   SCR_LIST  Up/Down=select  N=new  D=delete  Enter=edit  S=save  Q=quit
+ *   SCR_EDIT  Up/Down=field   +/-=change numeric  Enter=edit text  Bksp=back
+ */
+
+#include <ncurses.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+/* ---- mirror of src/gameplay/actions.h (keep in sync) ---- */
+#define ACT_CTX_FIRST_TURN   (1<<0)
+#define ACT_CTX_ENEMY_WEAPON (1<<1)
+#define ACT_CTX_EXECUTABLE   (1<<2)
+#define ACT_CTX_CAN_STUN     (1<<3)
+#define ACT_CTX_PLAYER_HURT  (1<<4)
+
+#define ACTION_MAX 64
+
+typedef struct {
+    uint8_t  id;
+    uint8_t  contextFlags;
+    uint8_t  baseWeight;
+    uint8_t  power;
+    char     name[16];
+    char     imgName[8];
+    uint8_t  _pad[4];
+} ActionDef;
+
+typedef char _check_size[(sizeof(ActionDef) == 32) ? 1 : -1];
+/* ---------------------------------------------------------- */
+
+static ActionDef actions[ACTION_MAX];
+static int       actionCount = 0;
+static int       dirty       = 0;
+static const char *outfile   = "assets/data/actions.dat";
+
+/* ---- file I/O ---- */
+
+static void load(void) {
+    FILE *f = fopen(outfile, "rb");
+    if (!f) { actionCount = 0; return; }
+    uint8_t n;
+    if (fread(&n, 1, 1, f) != 1) { fclose(f); return; }
+    if (n > ACTION_MAX) n = ACTION_MAX;
+    actionCount = (int)fread(actions, sizeof(ActionDef), n, f);
+    fclose(f);
+}
+
+static void save(void) {
+    FILE *f = fopen(outfile, "wb");
+    if (!f) return;
+    uint8_t n = (uint8_t)actionCount;
+    fwrite(&n, 1, 1, f);
+    fwrite(actions, sizeof(ActionDef), actionCount, f);
+    fclose(f);
+    dirty = 0;
+}
+
+/* ---- inline text input ---- */
+
+static int editString(int row, int col, char *buf, int maxLen) {
+    int len = 0; while (len < maxLen && buf[len]) len++;
+    echo(); curs_set(1);
+    while (1) {
+        mvhline(row, col, ' ', maxLen + 1);
+        mvprintw(row, col, "%.*s", len, buf);
+        move(row, col + len);
+        refresh();
+        int ch = getch();
+        if (ch == '\n' || ch == KEY_ENTER) break;
+        if (ch == 27) { noecho(); curs_set(0); return 0; }
+        if ((ch == KEY_BACKSPACE || ch == 127) && len > 0) { buf[--len] = '\0'; continue; }
+        if (ch >= 32 && ch < 127 && len < maxLen - 1) { buf[len++] = (char)ch; buf[len] = '\0'; }
+    }
+    noecho(); curs_set(0);
+    return 1;
+}
+
+/* ---- edit screen ---- */
+
+typedef enum {
+    F_ID = 0,
+    F_NAME,
+    F_IMG,
+    F_WEIGHT,
+    F_POWER,
+    F_CTX_FIRST_TURN,
+    F_CTX_ENEMY_WEAPON,
+    F_CTX_EXECUTABLE,
+    F_CTX_CAN_STUN,
+    F_CTX_PLAYER_HURT,
+    F_COUNT
+} Field;
+
+static const char *fieldNames[] = {
+    "ID",
+    "Name",
+    "Image (sprite base)",
+    "Base weight",
+    "Power",
+    "Ctx: first turn only",
+    "Ctx: enemy has weapon",
+    "Ctx: enemy executable",
+    "Ctx: enemy stunnable",
+    "Ctx: player hurt (<50%)",
+};
+
+static void renderEdit(ActionDef *a, int sel, const char *status) {
+    clear();
+    mvprintw(0, 0, "ACTION EDITOR — %s (id %d)", a->name[0] ? a->name : "(unnamed)", a->id);
+    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=edit text  Bksp=back  S=save");
+    if (status) mvprintw(2, 0, "%s", status);
+
+    for (int i = 0; i < F_COUNT; i++) {
+        if (i == sel) attron(A_REVERSE);
+        int row = i + 4;
+        switch (i) {
+            case F_ID:     mvprintw(row, 2, "%-24s  %d",  fieldNames[i], a->id);         break;
+            case F_NAME:   mvprintw(row, 2, "%-24s  %s",  fieldNames[i], a->name);       break;
+            case F_IMG:    mvprintw(row, 2, "%-24s  %s",  fieldNames[i], a->imgName);    break;
+            case F_WEIGHT: mvprintw(row, 2, "%-24s  %d",  fieldNames[i], a->baseWeight); break;
+            case F_POWER:  mvprintw(row, 2, "%-24s  %d",  fieldNames[i], a->power);      break;
+            case F_CTX_FIRST_TURN:
+                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_FIRST_TURN)   ? "[X]" : "[ ]"); break;
+            case F_CTX_ENEMY_WEAPON:
+                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_ENEMY_WEAPON) ? "[X]" : "[ ]"); break;
+            case F_CTX_EXECUTABLE:
+                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_EXECUTABLE)   ? "[X]" : "[ ]"); break;
+            case F_CTX_CAN_STUN:
+                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_CAN_STUN)     ? "[X]" : "[ ]"); break;
+            case F_CTX_PLAYER_HURT:
+                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_PLAYER_HURT)  ? "[X]" : "[ ]"); break;
+        }
+        if (i == sel) attroff(A_REVERSE);
+    }
+    refresh();
+}
+
+static void screenEdit(int idx) {
+    ActionDef  *a      = &actions[idx];
+    int         sel    = 0;
+    const char *status = NULL;
+
+    while (1) {
+        renderEdit(a, sel, status);
+        status = NULL;
+        int ch = getch();
+
+        switch (ch) {
+            case KEY_UP:   if (sel > 0) sel--; break;
+            case KEY_DOWN: if (sel < F_COUNT - 1) sel++; break;
+
+            case KEY_BACKSPACE: case 127: return;
+
+            case 's': case 'S': save(); status = "Saved."; break;
+
+            case '\n': case KEY_ENTER:
+                if (sel == F_NAME) {
+                    if (editString(sel + 4, 28, a->name, 16)) dirty = 1;
+                } else if (sel == F_IMG) {
+                    if (editString(sel + 4, 28, a->imgName, 8)) dirty = 1;
+                }
+                break;
+
+            case '+': case '=':
+                dirty = 1;
+                switch (sel) {
+                    case F_ID:     if (a->id         < 255) a->id++;         break;
+                    case F_WEIGHT: if (a->baseWeight < 255) a->baseWeight++; break;
+                    case F_POWER:  if (a->power      < 255) a->power++;      break;
+                    case F_CTX_FIRST_TURN:    a->contextFlags ^= ACT_CTX_FIRST_TURN;   break;
+                    case F_CTX_ENEMY_WEAPON:  a->contextFlags ^= ACT_CTX_ENEMY_WEAPON; break;
+                    case F_CTX_EXECUTABLE:    a->contextFlags ^= ACT_CTX_EXECUTABLE;   break;
+                    case F_CTX_CAN_STUN:      a->contextFlags ^= ACT_CTX_CAN_STUN;     break;
+                    case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;  break;
+                    default: dirty = 0; break;
+                }
+                break;
+
+            case '-':
+                dirty = 1;
+                switch (sel) {
+                    case F_ID:     if (a->id         > 0) a->id--;         break;
+                    case F_WEIGHT: if (a->baseWeight > 1) a->baseWeight--; break;
+                    case F_POWER:  if (a->power      > 0) a->power--;      break;
+                    case F_CTX_FIRST_TURN:    a->contextFlags ^= ACT_CTX_FIRST_TURN;   break;
+                    case F_CTX_ENEMY_WEAPON:  a->contextFlags ^= ACT_CTX_ENEMY_WEAPON; break;
+                    case F_CTX_EXECUTABLE:    a->contextFlags ^= ACT_CTX_EXECUTABLE;   break;
+                    case F_CTX_CAN_STUN:      a->contextFlags ^= ACT_CTX_CAN_STUN;     break;
+                    case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;  break;
+                    default: dirty = 0; break;
+                }
+                break;
+        }
+    }
+}
+
+/* ---- list screen ---- */
+
+static void renderList(int sel, const char *status) {
+    clear();
+    mvprintw(0, 0, "ACTION LIST  [%s]  (%d actions)", dirty ? "unsaved" : "saved", actionCount);
+    mvprintw(1, 0, "Up/Down=select  Enter=edit  N=new  D=delete  S=save  Q=quit");
+    if (status) mvprintw(2, 0, "%s", status);
+
+    for (int i = 0; i < actionCount; i++) {
+        if (i == sel) attron(A_REVERSE);
+        char ctx[6] = "-----";
+        if (actions[i].contextFlags & ACT_CTX_FIRST_TURN)   ctx[0] = 'F';
+        if (actions[i].contextFlags & ACT_CTX_ENEMY_WEAPON) ctx[1] = 'W';
+        if (actions[i].contextFlags & ACT_CTX_EXECUTABLE)   ctx[2] = 'X';
+        if (actions[i].contextFlags & ACT_CTX_CAN_STUN)     ctx[3] = 'S';
+        if (actions[i].contextFlags & ACT_CTX_PLAYER_HURT)  ctx[4] = 'H';
+        mvprintw(i + 4, 2, "%2d  id:%-3d  %-16s  wt:%-3d  pow:%-3d  ctx:[%s]  img:%s",
+            i,
+            actions[i].id,
+            actions[i].name[0] ? actions[i].name : "(unnamed)",
+            actions[i].baseWeight,
+            actions[i].power,
+            ctx,
+            actions[i].imgName[0] ? actions[i].imgName : "--");
+        if (i == sel) attroff(A_REVERSE);
+    }
+
+    if (actionCount == 0)
+        mvprintw(4, 2, "(no actions — press N to add one)");
+
+    refresh();
+}
+
+int main(void) {
+    load();
+
+    initscr();
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+    curs_set(0);
+
+    int  sel     = 0;
+    int  running = 1;
+    const char *status = NULL;
+
+    while (running) {
+        if (sel >= actionCount && actionCount > 0) sel = actionCount - 1;
+        if (sel < 0) sel = 0;
+
+        renderList(sel, status);
+        status = NULL;
+        int ch = getch();
+
+        switch (ch) {
+            case KEY_UP:   if (sel > 0) sel--; break;
+            case KEY_DOWN: if (sel < actionCount - 1) sel++; break;
+
+            case '\n': case KEY_ENTER:
+                if (actionCount > 0) screenEdit(sel);
+                break;
+
+            case 'n': case 'N':
+                if (actionCount < ACTION_MAX) {
+                    memset(&actions[actionCount], 0, sizeof(ActionDef));
+                    actions[actionCount].baseWeight = 30;
+                    sel = actionCount++;
+                    dirty = 1;
+                    screenEdit(sel);
+                } else {
+                    status = "Max actions reached.";
+                }
+                break;
+
+            case 'd': case 'D':
+                if (actionCount > 0) {
+                    for (int i = sel; i < actionCount - 1; i++)
+                        actions[i] = actions[i + 1];
+                    actionCount--;
+                    dirty = 1;
+                    status = "Action deleted.";
+                }
+                break;
+
+            case 's': case 'S':
+                save();
+                status = "Saved.";
+                break;
+
+            case 'q': case 'Q':
+                running = 0;
+                break;
+        }
+    }
+
+    endwin();
+
+    if (dirty) {
+        printf("Unsaved changes. Save? (y/n): ");
+        fflush(stdout);
+        int ch = getchar();
+        if (ch == 'y' || ch == 'Y') save();
+    }
+
+    return 0;
+}
