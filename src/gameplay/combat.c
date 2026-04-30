@@ -55,43 +55,10 @@ static int computeWeight(const ActionDef *def) {
     return w < 1 ? 1 : w;
 }
 
-/* Build the set of action IDs the player currently has access to.
- * Sources: equipped items' actions[] + skills with level > 0.
- * ACTION_ATTACK is always included as a baseline. */
-static int buildPool(uint8_t pool[ACTION_MAX]) {
-    int count = 0;
-
-    /* Helper: add id if not already in pool */
-    #define ADD(id) do { \
-        if ((id) == 0xFF) break; \
-        int dup = 0; \
-        for (int _j = 0; _j < count; _j++) if (pool[_j] == (id)) { dup = 1; break; } \
-        if (!dup) pool[count++] = (id); \
-    } while (0)
-
-    ADD(ACTION_ATTACK);
-
-    for (int s = 0; s < EQUIP_SLOTS; s++) {
-        if (player.equipped[s] == ITEM_UNEQUIPPED) continue;
-        const ItemDef *d = itemGetDef(player.equipped[s]);
-        if (!d) continue;
-        for (int j = 0; j < 4; j++) ADD(d->actions[j]);
-    }
-
-    for (int sk = 0; sk < SKILL_COUNT; sk++) {
-        if (player.skills[sk] == 0) continue;
-        uint8_t acts[4];
-        skillGetActions(sk, acts);
-        for (int j = 0; j < 4; j++) ADD(acts[j]);
-    }
-
-    #undef ADD
-    return count;
-}
 
 static void generateActions(void) {
     uint8_t pool[ACTION_MAX];
-    int poolSize = buildPool(pool);
+    int poolSize = buildActionPool(pool);
 
     typedef struct { uint8_t id; int weight; } Candidate;
     Candidate candidates[ACTION_MAX];

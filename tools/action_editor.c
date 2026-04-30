@@ -28,10 +28,11 @@ typedef struct {
     uint8_t  power;
     char     name[16];
     char     imgName[8];
+    char     desc[32];
     uint8_t  _pad[4];
 } ActionDef;
 
-typedef char _check_size[(sizeof(ActionDef) == 32) ? 1 : -1];
+typedef char _check_size[(sizeof(ActionDef) == 64) ? 1 : -1];
 /* ---------------------------------------------------------- */
 
 static ActionDef actions[ACTION_MAX];
@@ -86,6 +87,7 @@ static int editString(int row, int col, char *buf, int maxLen) {
 typedef enum {
     F_ID = 0,
     F_NAME,
+    F_DESC,
     F_IMG,
     F_WEIGHT,
     F_POWER,
@@ -100,6 +102,7 @@ typedef enum {
 static const char *fieldNames[] = {
     "ID",
     "Name",
+    "Description",
     "Image (sprite base)",
     "Base weight",
     "Power",
@@ -122,6 +125,7 @@ static void renderEdit(ActionDef *a, int sel, const char *status) {
         switch (i) {
             case F_ID:     mvprintw(row, 2, "%-24s  %d",  fieldNames[i], a->id);         break;
             case F_NAME:   mvprintw(row, 2, "%-24s  %s",  fieldNames[i], a->name);       break;
+            case F_DESC:   mvprintw(row, 2, "%-24s  %s",  fieldNames[i], a->desc);       break;
             case F_IMG:    mvprintw(row, 2, "%-24s  %s",  fieldNames[i], a->imgName);    break;
             case F_WEIGHT: mvprintw(row, 2, "%-24s  %d",  fieldNames[i], a->baseWeight); break;
             case F_POWER:  mvprintw(row, 2, "%-24s  %d",  fieldNames[i], a->power);      break;
@@ -162,6 +166,8 @@ static void screenEdit(int idx) {
             case '\n': case KEY_ENTER:
                 if (sel == F_NAME) {
                     if (editString(sel + 4, 28, a->name, 16)) dirty = 1;
+                } else if (sel == F_DESC) {
+                    if (editString(sel + 4, 28, a->desc, 32)) dirty = 1;
                 } else if (sel == F_IMG) {
                     if (editString(sel + 4, 28, a->imgName, 8)) dirty = 1;
                 }

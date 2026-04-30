@@ -26,7 +26,7 @@ typedef enum {
     ACTION_COUNT    = 10
 } ActionId;
 
-/* 32 bytes — pak-friendly, no pointers */
+/* 64 bytes — pak-friendly, no pointers */
 typedef struct {
     uint8_t  id;
     uint8_t  contextFlags;
@@ -34,13 +34,16 @@ typedef struct {
     uint8_t  power;
     char     name[16];
     char     imgName[8];
+    char     desc[32];
     uint8_t  _pad[4];
 } ActionDef;
 
-typedef char _check_actiondef_size[(sizeof(ActionDef) == 32) ? 1 : -1];
+typedef char _check_actiondef_size[(sizeof(ActionDef) == 64) ? 1 : -1];
 
 extern ActionDef actionDefs[ACTION_MAX];
 extern int       actionDefCount;
 
 int              loadActions(PakData data);
 const ActionDef *getActionDef(uint8_t id);
+int              buildActionPool(uint8_t out[ACTION_MAX]);
+void             renderActionPanel(const char *title, const uint8_t *ids, int count, int sel);

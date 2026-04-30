@@ -184,7 +184,7 @@ int worldLoadNamed(const char *name) {
 }
 
 void updateWorld(void) {
-    if (!g_moving) return;
+    if (!g_moving) { g_walkFrame = 0; return; }
     DWORD elapsed = GetTickCount() - g_moveStart;
     if (elapsed >= SLIDE_MS) {
         g_camSlideX = 0;

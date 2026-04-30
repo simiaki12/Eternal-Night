@@ -8,7 +8,9 @@
 #include "player.h"
 #include "gfx.h"
 
-static int selectedSkill = 0;
+static int selectedSkill  = 0;
+static int g_actPanel     = 0;
+static int g_actPanelSel  = 0;
 
 static const uint8_t skillActions[SKILL_MAX][4] = {
     /* SKILL_BLADES    */ { ACTION_STRONG, ACTION_DISARM, ACTION_STUN, ACTION_EXECUTE },
@@ -78,6 +80,17 @@ static void drawDescLines(int x, int y, const char *desc, uint32_t color, int sc
 }
 
 void handleSkillsInput(int key) {
+    if (g_actPanel) {
+        uint8_t all[4]; int cnt = 0;
+        skillGetActions(selectedSkill, all);
+        for (int j = 0; j < 4; j++) if (all[j] != 0xFF) cnt++;
+        switch (key) {
+            case VK_UP:   if (g_actPanelSel > 0) g_actPanelSel--; break;
+            case VK_DOWN: if (g_actPanelSel < cnt - 1) g_actPanelSel++; break;
+            case VK_ESCAPE: case 'A': g_actPanel = 0; break;
+        }
+        return;
+    }
     switch (key) {
         case VK_UP:
             selectedSkill--;
@@ -98,6 +111,13 @@ void handleSkillsInput(int key) {
                 player.skillPoints++;
             }
             break;
+        case 'A': {
+            uint8_t acts[4]; skillGetActions(selectedSkill, acts);
+            int hasAny = 0;
+            for (int j = 0; j < 4; j++) if (acts[j] != 0xFF) { hasAny = 1; break; }
+            if (hasAny) { g_actPanel = 1; g_actPanelSel = 0; }
+            break;
+        }
         case VK_ESCAPE:
         case 'P':
             state = STATE_WORLD;
@@ -139,22 +159,13 @@ void renderSkills(void) {
                   skillDesc(selectedSkill),
                   rgb(140, 190, 140), 1);
 
-    /* Actions granted by this skill */
-    {
-        uint8_t acts[4];
-        skillGetActions(selectedSkill, acts);
-        int ax = listX + 320;
-        int ay = descBoxY + 4;
-        int hasAny = 0;
-        for (int j = 0; j < 4; j++) {
-            if (acts[j] == 0xFF) continue;
-            const ActionDef *adef = getActionDef(acts[j]);
-            if (!adef) continue;
-            if (!hasAny) { drawText(ax, ay, "Grants:", rgb(200, 180, 80), 1); ay += 12; hasAny = 1; }
-            drawText(ax, ay, adef->name, rgb(220, 200, 100), 1);
-            ay += 12;
-        }
-    }
+    drawText(listX, gfxHeight - 50, "P/ESC close  Enter=spend  Bksp=refund  A=actions", rgb(50, 70, 50), 1);
 
-    drawText(listX, gfxHeight - 50, "P / ESC  close      Enter=spend  Bksp=refund", rgb(50, 70, 50), 1);
+    /* Action panel overlay */
+    if (g_actPanel) {
+        uint8_t ids[4]; int cnt = 0;
+        uint8_t all[4]; skillGetActions(selectedSkill, all);
+        for (int j = 0; j < 4; j++) if (all[j] != 0xFF) ids[cnt++] = all[j];
+        if (cnt > 0) renderActionPanel(skillName(selectedSkill), ids, cnt, g_actPanelSel);
+    }
 }

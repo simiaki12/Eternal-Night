@@ -43,7 +43,24 @@ static DWORD g_savedNotifyEnd = 0;
 #define SAVED_NOTIFY_MS 2000
 
 
+static int g_actPanel      = 0;
+static int g_actPanelSel   = 0;
+static int g_worldActPanel = 0;
+static int g_worldActSel   = 0;
+
 static void handleInventoryInput(int key) {
+    if (g_actPanel) {
+        /* panel open — collect actions for selected item */
+        const ItemDef *d = inventory.count > 0 ? itemGetDef(inventory.items[inventory.selected]) : NULL;
+        int cnt = 0;
+        if (d) { for (int j = 0; j < 4; j++) if (d->actions[j] != 0xFF) cnt++; }
+        switch (key) {
+            case VK_UP:   if (g_actPanelSel > 0) g_actPanelSel--; break;
+            case VK_DOWN: if (g_actPanelSel < cnt - 1) g_actPanelSel++; break;
+            case VK_ESCAPE: case 'A': g_actPanel = 0; break;
+        }
+        return;
+    }
     switch (key) {
         case VK_UP:
             inventory.selected--;
@@ -57,6 +74,14 @@ static void handleInventoryInput(int key) {
         case VK_RETURN:
             if (inventory.count > 0)
                 useOrEquipItem(inventory.selected);
+            break;
+        case 'A':
+            if (inventory.count > 0) {
+                const ItemDef *d = itemGetDef(inventory.items[inventory.selected]);
+                int hasAny = 0;
+                if (d) for (int j = 0; j < 4; j++) if (d->actions[j] != 0xFF) { hasAny = 1; break; }
+                if (hasAny) { g_actPanel = 1; g_actPanelSel = 0; }
+            }
             break;
         case VK_ESCAPE:
             state = STATE_WORLD;
@@ -148,19 +173,6 @@ static void renderInventory(void) {
             }
             #undef STAT_ROW
 
-            /* Actions granted by this item */
-            int hasActions = 0;
-            for (int j = 0; j < 4; j++) {
-                if (d->actions[j] == 0xFF) continue;
-                const ActionDef *adef = getActionDef(d->actions[j]);
-                if (!adef) continue;
-                if (!hasActions) {
-                    drawText(x, y, "Grants:", rgb(200, 180, 80), 2); y += lineH;
-                    hasActions = 1;
-                }
-                snprintf(buf, sizeof(buf), "  + %s", adef->name);
-                drawText(x, y, buf, rgb(220, 200, 100), 2); y += lineH;
-            }
         }
     }
 
@@ -170,6 +182,18 @@ static void renderInventory(void) {
     else
         snprintf(buf, sizeof(buf), "Solmarks: %d", player.gold);
     drawText(x, gfxHeight - 80, buf, rgb(255, 215, 0), 2);
+
+    drawText(x, gfxHeight - 56, "A: view actions", rgb(50, 60, 90), 1);
+
+    /* Action panel overlay */
+    if (g_actPanel && inventory.count > 0) {
+        const ItemDef *d = itemGetDef(inventory.items[inventory.selected]);
+        if (d) {
+            uint8_t ids[4]; int cnt = 0;
+            for (int j = 0; j < 4; j++) if (d->actions[j] != 0xFF) ids[cnt++] = d->actions[j];
+            if (cnt > 0) renderActionPanel(d->name, ids, cnt, g_actPanelSel);
+        }
+    }
 }
 
 static void renderCharSheet(void) {
@@ -342,6 +366,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             if (g_pendingKey == VK_F5 && state != STATE_MAIN_MENU) {
                 if (saveGameNew())
                     g_savedNotifyEnd = GetTickCount() + SAVED_NOTIFY_MS;
+            /* Escape closes world action panel before opening pause menu */
+            } else if (g_pendingKey == VK_ESCAPE && g_worldActPanel && state == STATE_WORLD) {
+                g_worldActPanel = 0;
             /* Escape opens pause from the main gameplay states */
             } else if (g_pendingKey == VK_ESCAPE &&
                        (state == STATE_WORLD || state == STATE_COMBAT || state == STATE_TOWN)) {
@@ -349,6 +376,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             /* Pause menu gets both key and char for the save-name form */
             } else if (state == STATE_PAUSE_MENU) {
                 handlePauseMenuInput(g_pendingKey, g_pendingChar);
+            /* A opens the action pool panel from the world */
+            } else if (g_pendingKey == 'A' && state == STATE_WORLD) {
+                if (g_worldActPanel) {
+                    g_worldActPanel = 0;
+                } else {
+                    g_worldActPanel = 1; g_worldActSel = 0;
+                }
+            } else if (g_worldActPanel && state == STATE_WORLD &&
+                       (g_pendingKey == VK_UP || g_pendingKey == VK_DOWN || g_pendingKey == VK_ESCAPE)) {
+                if (g_pendingKey == VK_ESCAPE) {
+                    g_worldActPanel = 0;
+                } else {
+                    uint8_t pool[64]; int cnt = buildActionPool(pool);
+                    if (g_pendingKey == VK_UP   && g_worldActSel > 0)       g_worldActSel--;
+                    if (g_pendingKey == VK_DOWN  && g_worldActSel < cnt - 1) g_worldActSel++;
+                }
             /* P is a global hotkey — opens skills from world, closes from skills */
             } else if (g_pendingKey == 'P' && (state == STATE_WORLD || state == STATE_SKILLS)) {
                 state = (state == STATE_SKILLS) ? STATE_WORLD : STATE_SKILLS;
@@ -390,6 +433,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             g_pendingChar = 0;
         }
 
+        if (state != STATE_WORLD) g_worldActPanel = 0;
+
         /* Music: only react to real state changes, not overlay transitions */
         if (state != prevState && !IS_OVERLAY(state) && !IS_OVERLAY(prevState)) {
             if (state == STATE_WORLD)
@@ -404,7 +449,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
 
         clearScreen();
         switch (state) {
-            case STATE_WORLD:   renderWorld();   break;
+            case STATE_WORLD:
+                renderWorld();
+                if (g_worldActPanel) {
+                    uint8_t pool[ACTION_MAX]; int cnt = buildActionPool(pool);
+                    if (g_worldActSel >= cnt) g_worldActSel = cnt > 0 ? cnt - 1 : 0;
+                    renderActionPanel("Your Actions", pool, cnt, g_worldActSel);
+                }
+                break;
             case STATE_COMBAT:  renderCombat();  break;
             case STATE_LOADING:   renderLoading();   break;
             case STATE_MAIN_MENU: renderMainMenu(); break;
