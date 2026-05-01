@@ -23,7 +23,7 @@ jobs:
 
       - name: Package
         run: |
-          zip eternal-night-${{ github.ref_name }}-windows.zip build/game.exe data.pak
+          zip -j eternal-night-${{ github.ref_name }}-windows.zip build/game.exe data.pak
 
       - name: Publish
         uses: softprops/action-gh-release@v2
