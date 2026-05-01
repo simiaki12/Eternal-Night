@@ -24,7 +24,7 @@ static int checkContext(const ActionDef *def) {
     if ((ctx & ACT_CTX_FIRST_TURN)   && !combat.isFirstTurn)                      return 0;
     if ((ctx & ACT_CTX_ENEMY_WEAPON) && !(combat.enemy.flags & ENEMY_HAS_WEAPON)) return 0;
     if ((ctx & ACT_CTX_CAN_STUN)     && !(combat.enemy.flags & ENEMY_STUNNABLE))  return 0;
-    if ((ctx & ACT_CTX_PLAYER_HURT)  && player.hp >= player.maxHp / 2)            return 0;
+    if ((ctx & ACT_CTX_PLAYER_HURT)  && (int)player.hp >= getMaxHp() / 2)          return 0;
     if (ctx & ACT_CTX_EXECUTABLE) {
         if (!(combat.enemy.flags & ENEMY_EXECUTABLE))  return 0;
         if (combat.enemy.hp > combat.enemy.maxHp / 3)  return 0;
@@ -145,7 +145,8 @@ static void performPlayerAction(void) {
 
         case ACTION_HEAL: {
             int newHp = (int)player.hp + a->power + player.skills[SKILL_SURVIVAL];
-            player.hp = (uint8_t)(newHp > player.maxHp ? player.maxHp : newHp);
+            int cap   = getMaxHp();
+            player.hp = (uint16_t)(newHp > cap ? cap : newHp);
             break;
         }
 
@@ -192,7 +193,7 @@ static void performPlayerAction(void) {
         int dmg = combat.enemy.attack;
         if (a->type == ACTION_DEFEND)
             dmg = dmg / 2 + 1;
-        player.hp = (dmg >= (int)player.hp) ? 0 : (uint8_t)(player.hp - dmg);
+        player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
     }
 
     if (combat.enemy.hp <= 0) {
@@ -360,7 +361,7 @@ void renderCombat(void) {
     /* ── Player section ─────────────────────────────────────────── */
     drawText(bx, y, "PLAYER", rgb(50, 110, 50), 1);  y += 12;
 
-    int pMax    = player.maxHp > 0 ? player.maxHp : 1;
+    int pMax    = getMaxHp() > 0 ? getMaxHp() : 1;
     int pFill   = player.hp * barW / pMax;
     int hpPct   = player.hp * 100 / pMax;
     uint32_t hpCol = hpPct > 50 ? rgb(50, 200, 50)
@@ -369,7 +370,7 @@ void renderCombat(void) {
     fillRect(bx, y, barW, 10, rgb(12, 30, 12));
     if (pFill > 0) fillRect(bx, y, pFill, 10, hpCol);
     y += 12;
-    snprintf(buf, sizeof(buf), "HP  %d / %d", player.hp, player.maxHp);
+    snprintf(buf, sizeof(buf), "HP  %d / %d", player.hp, getMaxHp());
     drawText(bx, y, buf, rgb(70, 150, 70), 1);  y += 18;
 
     snprintf(buf, sizeof(buf), "ATK  %d", getAttack());

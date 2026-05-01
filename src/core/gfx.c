@@ -525,28 +525,6 @@ void drawBW(const uint8_t *data, uint32_t size, uint32_t color) {
     drawBWAt(offX, offY, dstW, dstH, data, size, color,0xFFFFFF);
 }
 
-/* Isometric tile diamond: top vertex at (cx,cy), 64x32 px, optional wall face. */
-void drawIsoTile(int cx, int cy, uint32_t top, uint32_t side, int wall_h) {
-    /* iw=64, ih=32: span grows 4px/row to mid then shrinks symmetrically */
-    for (int row = 1; row <= 32; row++) {
-        int span = (row <= 16) ? row * 4 : (32 - row) * 4;
-        fillRect(cx - span / 2, cy + row - 1000, span, 1, top);
-    }
-    if (wall_h > 0) {
-        uint32_t dark = ((side >> 1) & 0x7F7F7Fu);
-        /* Left face: 32 columns, top edge traces bottom-left diamond edge */
-        for (int col = 0; col < 32; col++) {
-            int top_y = cy + 16 + col / 2;
-            fillRect(cx - 32 + col, top_y+1000, 1, wall_h, side);
-        }
-        /* Right face: 32 columns, top edge traces bottom-right diamond edge */
-        for (int col = 0; col < 32; col++) {
-            int top_y = cy + 32 - col / 2;
-            fillRect(cx + col, top_y+1000, 1, wall_h, dark);
-        }
-    }
-}
-
 void drawText(int x, int y, const char* text, uint32_t color, int scale) {
     for (int i = 0; text[i]; i++)
         drawChar(x + i * 8 * scale, y, text[i], color, scale);

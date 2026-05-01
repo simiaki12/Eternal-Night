@@ -166,7 +166,8 @@ static void renderInventory(void) {
             if (d->staminaBonus)                                   { STAT_ROW("STA", STAT_STA, rgb(100, 220, 180)) }
             if (d->flags & ITEM_FLAG_HEAL) {
                 int preHp = player.hp + 10;
-                if (preHp > player.maxHp) preHp = player.maxHp;
+                int cap   = getMaxHp();
+                if (preHp > cap) preHp = cap;
                 if (preHp != player.hp) snprintf(buf, sizeof(buf), "HP : %d -> %d", player.hp, preHp);
                 else                    snprintf(buf, sizeof(buf), "HP : %d", player.hp);
                 drawText(x, y, buf, rgb(100, 220, 100), 2); y += lineH;
@@ -300,7 +301,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
 
     if (!pakOpen("data.pak")) return 1;
 
-    PakData playerData  = pakRead("assets/data/player.dat");
+    playerInit();
+
     PakData itemData    = pakRead("assets/data/items.dat");
     PakData enemyData   = pakRead("assets/data/enemies.dat");
     PakData dialogData    = pakRead("assets/data/dialog.dat");
@@ -309,7 +311,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     PakData npcData       = pakRead("assets/data/npcs.dat");
     PakData actionData    = pakRead("assets/data/actions.dat");
 
-    if (!loadPlayer(playerData)) { pakClose(); return 1; }
     loadItems(itemData);        /* optional — falls back to builtins if not in pak */
     loadEnemies(enemyData);     /* optional — falls back to builtins if not in pak */
     loadDialogs(dialogData);    /* optional — falls back to builtins if not in pak */
@@ -317,7 +318,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadLootTables(lootData);   /* optional — no item drops if absent */
     loadNpcs(npcData);          /* optional — no NPCs if absent */
     loadActions(actionData);    /* optional — falls back to builtins if not in pak */
-    free(playerData.data);
     free(itemData.data);
     free(enemyData.data);
     free(dialogData.data);

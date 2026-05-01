@@ -1,6 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include "pak.h"
 #include "skills.h"
 
 #define EQUIP_SLOTS 8   /* total equipment array size; expand slot types as needed */
@@ -12,7 +11,7 @@ typedef enum {
 } EquipSlot;
 
 typedef struct {
-    uint8_t  maxHp;
+    uint16_t maxHp;
     uint8_t  attack;
     uint8_t  defense;
     uint8_t  equipped[EQUIP_SLOTS]; /* indexed by EquipSlot; 0xFF = empty */
@@ -20,7 +19,7 @@ typedef struct {
     uint8_t  level;
     uint16_t xp;
     uint8_t  skillPoints;
-    uint8_t  hp;
+    uint16_t hp;
     uint8_t  intelligence;
     uint8_t  perception;
     uint8_t  stamina;
@@ -29,7 +28,7 @@ typedef struct {
 
 extern PlayerData player;
 
-int  loadPlayer(PakData data);
+void playerInit(void);
 int  xpToNext(void);      /* XP needed to reach the next level */
 int  awardXp(int amount);  /* returns number of levels gained */
 void enterDeath(void);     /* lose XP progress, restore HP, go to STATE_DEATH */

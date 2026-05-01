@@ -11,7 +11,7 @@
 #define ITEM_UNEQUIPPED 0xFF
 
 typedef struct {
-    uint8_t  maxHp;
+    uint16_t maxHp;
     uint8_t  attack;
     uint8_t  defense;
     uint8_t  equipped[EQUIP_SLOTS];
@@ -19,7 +19,7 @@ typedef struct {
     uint8_t  level;
     uint16_t xp;
     uint8_t  skillPoints;
-    uint8_t  hp;
+    uint16_t hp;
     uint8_t  intelligence;
     uint8_t  perception;
     uint8_t  stamina;

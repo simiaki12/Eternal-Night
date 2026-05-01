@@ -5,6 +5,7 @@
 #include "town.h"
 #include "game.h"
 #include "player.h"
+#include "items.h"
 #include "skills.h"
 #include "gfx.h"
 #include "quests.h"
@@ -136,7 +137,7 @@ void handleTownInput(int key) {
             switch (townSt.selected) {
                 case 0: startDialog(0, STATE_TOWN);          break;
                 case 1:
-                    player.hp    = player.maxHp;
+                    player.hp    = (uint16_t)getMaxHp();
                     g_restMsgEnd = GetTickCount() + 2500;
                     break;
                 case 2: enterShop(STATE_TOWN);               break;

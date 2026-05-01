@@ -151,7 +151,8 @@ void useOrEquipItem(int index) {
     } else if (d->type == ITEM_CONSUMABLE) {
         if (d->flags & ITEM_FLAG_HEAL) {
             int newHp = (int)player.hp + 10;
-            player.hp = (uint8_t)(newHp > player.maxHp ? player.maxHp : newHp);
+            int cap   = getMaxHp();
+            player.hp = (uint16_t)(newHp > cap ? cap : newHp);
         }
         removeItem(index);
     }

@@ -8,6 +8,7 @@
 #include "save.h"
 #include "mainmenu.h"
 #include "options.h"
+#include "player.h"
 
 /* --- Loading screen --- */
 
@@ -153,6 +154,7 @@ static void renderBrowser(void) {
 /* --- Public --- */
 
 void handleStartNewGame(void) {
+    playerInit();
     startIntro(3000);
 }
 

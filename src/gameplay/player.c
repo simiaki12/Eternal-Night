@@ -1,19 +1,22 @@
 #include "player.h"
 #include "items.h"
 #include "game.h"
+#include <stdint.h>
 #include <string.h>
 
 PlayerData player;
 
-int loadPlayer(PakData data) {
-    if (data.size < 3) return 0;
+void playerInit(void) {
     memset(&player, 0, sizeof(player));
     memset(player.equipped, ITEM_UNEQUIPPED, EQUIP_SLOTS);
-    uint32_t n = data.size < sizeof(player) ? data.size : (uint32_t)sizeof(player);
-    memcpy(&player, data.data, n);
-    if (!player.level) player.level = 1;
-    if (!player.hp)    player.hp    = player.maxHp;
-    return 1;
+    player.maxHp       = 20;
+    player.attack      =  5;
+    player.defense     =  5;
+    player.intelligence=  3;
+    player.perception  =  3;
+    player.stamina     =  3;
+    player.level       =  1;
+    player.hp          = player.maxHp;
 }
 
 int xpToNext(void) {
@@ -26,7 +29,7 @@ int awardXp(int amount) {
     while (xp >= xpToNext()) {
         xp -= xpToNext();
         player.level++;
-        if (player.maxHp  < 250) player.maxHp  += 5;
+        player.maxHp += 5;
         if (player.attack < 255) player.attack  += 1;
         if (player.defense< 255) player.defense += 1;
         if (player.skillPoints < 255) player.skillPoints++;

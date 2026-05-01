@@ -42,7 +42,6 @@ int main() {
 
     std::vector<FileSpec> specs;
     for (auto &m : mapBins) specs.push_back({ m, true });
-    specs.push_back({ "assets/data/player.dat",       true  });
     specs.push_back({ "assets/data/items.dat",        false });
     specs.push_back({ "assets/data/enemies.dat",      false });
     specs.push_back({ "assets/data/dialog.dat",       false });

@@ -81,11 +81,6 @@ seed_dialogs:
 	$(CC_HOST) -std=c11 -Os tools/seed_dialogs.c -o build/seed_dialogs
 	./build/seed_dialogs
 
-seed_player:
-	mkdir -p build
-	$(CC_HOST) -std=c11 -Os tools/seed_player.c -o build/seed_player
-	./build/seed_player
-
 seed_items:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os tools/seed_items.c -o build/seed_items
