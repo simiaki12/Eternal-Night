@@ -12,6 +12,8 @@
 
 QuestDef      questDefs[MAX_QUESTS];
 int           questDefCount = 0;
+QuestLocation questLocations[QUEST_LOCATION_MAX];
+int           questLocationCount = 0;
 QuestState    questSt;
 QuestLogState questLogSt;
 
@@ -40,20 +42,31 @@ static void pushNotif(const char *l1, const char *l2) {
     }
 }
 
-/* Binary format: [1 byte count][N × sizeof(QuestDef)] */
 int loadQuests(PakData data) {
     memset(&questSt, 0, sizeof(questSt));
+    questLocationCount = 0;
     if (!data.data || data.size < 1) return 0;
 
     const uint8_t *d = (const uint8_t *)data.data;
     uint8_t count = d[0];
     if (count > MAX_QUESTS) count = MAX_QUESTS;
 
-    uint32_t expected = 1 + (uint32_t)count * sizeof(QuestDef);
-    if (data.size < expected) return 0;
+    uint32_t questBytes = 1 + (uint32_t)count * sizeof(QuestDef);
+    if (data.size < questBytes) return 0;
 
     memcpy(questDefs, d + 1, (size_t)count * sizeof(QuestDef));
     questDefCount = count;
+
+    /* Optional location table immediately after quest block */
+    if (data.size > questBytes) {
+        uint8_t lc = d[questBytes];
+        if (lc > QUEST_LOCATION_MAX) lc = QUEST_LOCATION_MAX;
+        uint32_t locBytes = 1 + (uint32_t)lc * sizeof(QuestLocation);
+        if (data.size >= questBytes + locBytes) {
+            memcpy(questLocations, d + questBytes + 1, (size_t)lc * sizeof(QuestLocation));
+            questLocationCount = lc;
+        }
+    }
 
     /* Activate always-on quests immediately */
     for (int i = 0; i < questDefCount; i++) {
@@ -153,17 +166,68 @@ void questOnDialogDone(int treeId) {
     advanceObjectives(OBJ_TALK_NPC, (uint8_t)treeId);
 }
 
+/* Returns 1 if base filename of mapName matches loc->mapId exactly. */
+static int locMapMatches(const char *mapName, const char *mapId) {
+    const char *slash = strrchr(mapName, '/');
+    const char *base  = slash ? slash + 1 : mapName;
+    int i = 0;
+    while (i < 7 && mapId[i] && base[i] == mapId[i]) i++;
+    if (mapId[i] != '\0') return 0;
+    return base[i] == '.' || base[i] == '\0';
+}
+
+void questOnLocationReached(const char *currentMapName, uint8_t x, uint8_t y) {
+    if (questDefCount == 0 || questLocationCount == 0) return;
+
+    /* Activation triggers */
+    for (int i = 0; i < questDefCount; i++) {
+        if (questSt.status[i] != QUEST_INACTIVE) continue;
+        if (questDefs[i].startType != TRIG_LOCATION) continue;
+        uint8_t lid = questDefs[i].startId;
+        if (lid >= questLocationCount) continue;
+        const QuestLocation *loc = &questLocations[lid];
+        if (loc->x != x || loc->y != y) continue;
+        if (!locMapMatches(currentMapName, loc->mapId)) continue;
+        questSt.status[i] = QUEST_ACTIVE;
+    }
+
+    /* Objective progress */
+    for (int i = 0; i < questDefCount; i++) {
+        if (questSt.status[i] != QUEST_ACTIVE) continue;
+        const QuestDef *q = &questDefs[i];
+        for (int j = 0; j < q->objectiveCount; j++) {
+            const QuestObjective *o = &q->objectives[j];
+            if (o->type != OBJ_VISIT_LOCATION) continue;
+            if (questSt.progress[i][j] >= o->required) continue;
+            uint8_t lid = o->targetId;
+            if (lid >= questLocationCount) continue;
+            const QuestLocation *loc = &questLocations[lid];
+            if (loc->x != x || loc->y != y) continue;
+            if (!locMapMatches(currentMapName, loc->mapId)) continue;
+            questSt.progress[i][j]++;
+            if (questSt.progress[i][j] < o->required) {
+                char l1[48];
+                snprintf(l1, sizeof(l1), "%.18s: location %d/%d",
+                         q->name, questSt.progress[i][j], o->required);
+                pushNotif(l1, "");
+            }
+        }
+        checkCompletion(i);
+    }
+}
+
 /* -----------------------------------------------------------------------
  * Quest log UI
  * ----------------------------------------------------------------------- */
 
 static const char *objTypeName(uint8_t t) {
     switch (t) {
-        case OBJ_KILL:       return "Kill";
-        case OBJ_GET_ITEM:   return "Obtain";
-        case OBJ_VISIT_ZONE: return "Visit";
-        case OBJ_TALK_NPC:   return "Talk";
-        default:             return "???";
+        case OBJ_KILL:           return "Kill";
+        case OBJ_GET_ITEM:       return "Obtain";
+        case OBJ_VISIT_ZONE:     return "Visit";
+        case OBJ_TALK_NPC:       return "Talk";
+        case OBJ_VISIT_LOCATION: return "Reach";
+        default:                 return "???";
     }
 }
 
@@ -184,6 +248,17 @@ static void objTargetName(const QuestObjective *o, char *buf, int bufLen) {
         case OBJ_TALK_NPC:
             snprintf(buf, (size_t)bufLen, "NPC tree %d", o->targetId);
             break;
+        case OBJ_VISIT_LOCATION: {
+            uint8_t lid = o->targetId;
+            if (lid < questLocationCount)
+                snprintf(buf, (size_t)bufLen, "%s (%d,%d)",
+                         questLocations[lid].mapId,
+                         questLocations[lid].x,
+                         questLocations[lid].y);
+            else
+                snprintf(buf, (size_t)bufLen, "location #%d", lid);
+            break;
+        }
         default:
             snprintf(buf, (size_t)bufLen, "???");
             break;

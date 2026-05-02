@@ -9,6 +9,7 @@
 #include "mainmenu.h"
 #include "options.h"
 #include "player.h"
+#include "world.h"
 
 /* --- Loading screen --- */
 
@@ -155,6 +156,7 @@ static void renderBrowser(void) {
 
 void handleStartNewGame(void) {
     playerInit();
+    worldLoadNamed("assets/maps/map1.bin");
     startIntro(3000);
 }
 

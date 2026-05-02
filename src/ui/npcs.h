@@ -25,4 +25,7 @@ extern int    npcDefCount;
 
 int  loadNpcs(PakData data);
 void renderNpcs(int tx, int ty, int rCamX, int rCamY);
-void npcTryInteract(void);  /* called on E key — starts dialog if adjacent NPC found */
+int  npcTryInteract(void);   /* starts dialog if adjacent NPC found; returns 1 if triggered */
+int  npcGetPrompt(char *buf, int len); /* fills buf with "[E]: Talk with Name" if adjacent NPC */
+int  npcGetInteractable(int *outIdxs, int max); /* fills outIdxs with adjacent NPC indices; returns count */
+void npcTriggerByIdx(int idx);                  /* start dialog for NPC at npcDefs[idx] */

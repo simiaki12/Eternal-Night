@@ -529,3 +529,12 @@ void drawText(int x, int y, const char* text, uint32_t color, int scale) {
     for (int i = 0; text[i]; i++)
         drawChar(x + i * 8 * scale, y, text[i], color, scale);
 }
+
+void drawTextOutlined(int x, int y, const char *text, uint32_t color, int scale) {
+    uint32_t black = rgb(0, 0, 0);
+    drawText(x - 1, y,     text, black, scale);
+    drawText(x + 1, y,     text, black, scale);
+    drawText(x,     y - 1, text, black, scale);
+    drawText(x,     y + 1, text, black, scale);
+    drawText(x,     y,     text, color, scale);
+}

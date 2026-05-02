@@ -99,7 +99,7 @@ seed_enemies:
 migrate_maps:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os tools/migrate_map.c -o build/migrate_map
-	./build/migrate_map assets/maps/map1.bin
+	./build/migrate_map assets/maps/*.bin
 
 img_conv:
 	mkdir -p build

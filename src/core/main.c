@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <mmsystem.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -353,8 +354,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
 
     ShowWindow(g_hwnd, nCmdShow);
 
+#define TARGET_MS 16   /* ~62 FPS */
+
+    timeBeginPeriod(1); /* 1ms timer resolution — makes Sleep accurate */
+
     MSG msg;
     while (g_running) {
+        DWORD frameStart = GetTickCount();
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) { g_running = 0; break; }
             TranslateMessage(&msg);
@@ -478,9 +484,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
         renderQuestNotifications();
 
         gfxPresent(g_hwnd);
-        Sleep(16); //consider
+
+        DWORD frameMs = GetTickCount() - frameStart;
+        if (frameMs < TARGET_MS) Sleep(TARGET_MS - frameMs);
     }
 
+    timeEndPeriod(1);
     audioCleanup();
     pakClose();
     gfxShutdown();

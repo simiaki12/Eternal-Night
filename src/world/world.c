@@ -1,5 +1,6 @@
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <windows.h>
 #include "world.h"
 #include "game.h"
@@ -70,16 +71,49 @@ static int tileHash(int x, int y, int n) {
     return (int)(h % (uint32_t)n);
 }
 
+#define AMBIENT_MS 5000
+static char  g_ambientMsg[128] = {0};
+static DWORD g_ambientExpiry   = 0;
+
+void ambientShow(const char *msg) {
+    strncpy(g_ambientMsg, msg, sizeof(g_ambientMsg) - 1);
+    g_ambientMsg[sizeof(g_ambientMsg) - 1] = '\0';
+    g_ambientExpiry = GetTickCount() + AMBIENT_MS;
+}
+
+static const MapEvent *findEvent(int x, int y); /* forward declaration */
+
+/* --- Interaction target list --- */
+#define MAX_TARGETS 8
+
+typedef struct { int isNpc; int idx; } Target;
+
+static Target g_targets[MAX_TARGETS];
+static int    g_targetCount = 0;
+static int    g_targetIdx   = 0;
+
+static void buildTargets(void) {
+    g_targetCount = 0;
+    g_targetIdx   = 0;
+
+    const MapEvent *ev = findEvent(worldPlayerX, worldPlayerY);
+    if (ev && ev->type != MAP_EV_ENEMY)
+        g_targets[g_targetCount++] = (Target){ 0, 0 };
+
+    int npcIdxs[MAX_TARGETS];
+    int nc = npcGetInteractable(npcIdxs, MAX_TARGETS - g_targetCount);
+    for (int i = 0; i < nc && g_targetCount < MAX_TARGETS; i++)
+        g_targets[g_targetCount++] = (Target){ 1, npcIdxs[i] };
+}
+
 int     worldPlayerX  = 2;
 int     worldPlayerY  = 2;
 static int   g_walkFrame      = 0;
 static int   g_moving         = 0;
-/* Camera slide: oldCamX - newCamX. May be 0 or partial near edges. */
 static int   g_camSlideStartX = 0;
 static int   g_camSlideStartY = 0;
 static int   g_camSlideX      = 0;
 static int   g_camSlideY      = 0;
-/* Player offset: always ±TILE_SIZE, independent of camera movement. */
 static int   g_plrOffStartX   = 0;
 static int   g_plrOffStartY   = 0;
 static int   g_plrOffX        = 0;
@@ -92,77 +126,39 @@ int     camY         = 0;
 int     mapWidth     = 0;
 int     mapHeight    = 0;
 uint8_t mapGfx[MAX_MAP_TILES];
-uint8_t mapLoc[MAX_MAP_TILES];
-char    mapTransitionTarget[64]        = {0};
-char    currentMapName[64]             = {0};
-char    portalTargets[MAX_PORTALS][64] = {{0}};
-uint8_t portalSpawnX[MAX_PORTALS]     = {0};
-uint8_t portalSpawnY[MAX_PORTALS]     = {0};
+MapEvent mapEvents[MAX_MAP_EVENTS];
+int      mapEventCount = 0;
+char    currentMapName[64] = {0};
+
+static const MapEvent *findEvent(int x, int y) {
+    for (int i = 0; i < mapEventCount; i++)
+        if (mapEvents[i].x == (uint8_t)x && mapEvents[i].y == (uint8_t)y)
+            return &mapEvents[i];
+    return NULL;
+}
 
 void worldUpdateCamera(void) {
-    /* Camera tracks player in isometric pixel space; no clamping needed. */
     camX = (worldPlayerX - worldPlayerY) * (TILE_W / 2);
     camY = (worldPlayerX + worldPlayerY) * (TILE_H / 2);
 }
 
-/* Map binary layout:
- *   byte 0:      mapWidth
- *   byte 1:      mapHeight
- *   [w*h bytes]: mapGfx
- *   [w*h bytes]: mapLoc
- *   [optional extension, if bytes remain:]
- *     byte:      spawnX
- *     byte:      spawnY
- *     [null-terminated string]: transition target pak name (empty = none)
- *     [1 byte]:  portal count P
- *     [P times]: { 1-byte portal_id, 1-byte spawnX, 1-byte spawnY, null-terminated dest pak name }
- */
 static int loadMap(PakData data) {
-    if (data.size < 2) return 0;
+    if (data.size < 5) return 0;
     mapWidth  = data.data[0];
     mapHeight = data.data[1];
+    int spawnX = data.data[2];
+    int spawnY = data.data[3];
     int n = mapWidth * mapHeight;
-    if ((int)data.size < 2 + n * 2) return 0;
-    memcpy(mapGfx, data.data + 2,     n);
-    memcpy(mapLoc, data.data + 2 + n, n);
+    if ((int)data.size < 4 + n + 1) return 0;
 
-    mapTransitionTarget[0] = '\0';
-    memset(portalTargets, 0, sizeof(portalTargets));
-    int spawnX = 2, spawnY = 2;
+    memcpy(mapGfx, data.data + 4, n);
 
-    int pos = 2 + n * 2;
-    if ((int)data.size > pos + 1) {
-        spawnX = data.data[pos];
-        spawnY = data.data[pos + 1];
-        pos   += 2;
-
-        /* null-terminated transition target */
-        int len = 0;
-        while (pos + len < (int)data.size && data.data[pos + len] != '\0' && len < 63) len++;
-        memcpy(mapTransitionTarget, data.data + pos, len);
-        mapTransitionTarget[len] = '\0';
-        pos += len + 1;
-
-        /* portal table: [count][id, spawnX, spawnY, dest\0] ... */
-        memset(portalSpawnX, 0, sizeof(portalSpawnX));
-        memset(portalSpawnY, 0, sizeof(portalSpawnY));
-        if (pos < (int)data.size) {
-            int pc = data.data[pos++];
-            for (int i = 0; i < pc && pos + 2 < (int)data.size; i++) {
-                int pid = data.data[pos++];
-                int sx  = data.data[pos++];
-                int sy  = data.data[pos++];
-                len = 0;
-                while (pos + len < (int)data.size && data.data[pos + len] != '\0' && len < 63) len++;
-                if (pid < MAX_PORTALS) {
-                    memcpy(portalTargets[pid], data.data + pos, len);
-                    portalTargets[pid][len] = '\0';
-                    portalSpawnX[pid] = (uint8_t)sx;
-                    portalSpawnY[pid] = (uint8_t)sy;
-                }
-                pos += len + 1;
-            }
-        }
+    mapEventCount = data.data[4 + n];
+    int evBytes = mapEventCount * (int)sizeof(MapEvent);
+    if ((int)data.size < 4 + n + 1 + evBytes) {
+        mapEventCount = 0;
+    } else {
+        memcpy(mapEvents, data.data + 4 + n + 1, evBytes);
     }
 
     worldPlayerX = spawnX;
@@ -179,6 +175,13 @@ int worldLoadNamed(const char *name) {
         strncpy(currentMapName, name, sizeof(currentMapName) - 1);
         currentMapName[sizeof(currentMapName) - 1] = '\0';
         worldUpdateCamera();
+        g_moving       = 0;
+        g_camSlideX    = g_camSlideStartX = 0;
+        g_camSlideY    = g_camSlideStartY = 0;
+        g_plrOffX      = g_plrOffStartX   = 0;
+        g_plrOffY      = g_plrOffStartY   = 0;
+        g_targetCount  = 0;
+        g_targetIdx    = 0;
     }
     return ok;
 }
@@ -205,10 +208,52 @@ void updateWorld(void) {
     }
 }
 
+static void triggerMapEvent(const MapEvent *ev) {
+    questOnZoneEntered(ev->id);
+    switch (ev->type) {
+        case MAP_EV_TOWN:
+            startTown();
+            break;
+        case MAP_EV_DUNGEON:
+            if (ev->destMap[0]) worldLoadNamed(ev->destMap);
+            else                state = STATE_DUNGEON;
+            break;
+        case MAP_EV_PORTAL:
+            if (ev->destMap[0]) {
+                int dx = ev->destX, dy = ev->destY;
+                worldLoadNamed(ev->destMap);
+                if (dx < mapWidth && dy < mapHeight &&
+                        IS_GFX_PASSABLE(mapGfx[dy * mapWidth + dx])) {
+                    worldPlayerX = dx;
+                    worldPlayerY = dy;
+                    worldUpdateCamera();
+                }
+            }
+            break;
+        default: break;
+    }
+}
+
 void handleWorldInput(int key) {
     if (key == 'I') { state = STATE_INVENTORY; return; }
     if (key == 'B') { enterShop(STATE_WORLD);  return; }
-    if (key == 'E') { npcTryInteract(); return; }
+    if (key == VK_TAB) {
+        if (g_targetCount > 1)
+            g_targetIdx = (g_targetIdx + 1) % g_targetCount;
+        return;
+    }
+    if (key == 'E') {
+        if (g_targetCount > 0) {
+            const Target *t = &g_targets[g_targetIdx];
+            if (t->isNpc) {
+                npcTriggerByIdx(t->idx);
+            } else {
+                const MapEvent *ev = findEvent(worldPlayerX, worldPlayerY);
+                if (ev) triggerMapEvent(ev);
+            }
+        }
+        return;
+    }
     if (g_moving) return;
 
     int newX = worldPlayerX, newY = worldPlayerY;
@@ -231,45 +276,27 @@ void handleWorldInput(int key) {
         worldPlayerY = newY;
         g_walkFrame ^= 1;
         worldUpdateCamera();
-        /* Camera slide: whatever the camera actually moved (0 when clamped). */
         g_camSlideStartX = oldCamX - camX;
         g_camSlideStartY = oldCamY - camY;
         g_camSlideX      = g_camSlideStartX;
         g_camSlideY      = g_camSlideStartY;
-        /* Player offset in iso pixel space: starts at old iso position. */
         g_plrOffStartX   = -(dx - dy) * (TILE_W / 2);
         g_plrOffStartY   = -(dx + dy) * (TILE_H / 2);
         g_plrOffX        = g_plrOffStartX;
         g_plrOffY        = g_plrOffStartY;
-        g_moveStart   = GetTickCount();
-        g_midToggled  = 0;
-        g_moving      = 1;
+        g_moveStart      = GetTickCount();
+        g_midToggled     = 0;
+        g_moving         = 1;
 
-        uint8_t loc = mapLoc[newY * mapWidth + newX];
-        if (loc) questOnZoneEntered(loc);
-        if (IS_ENEMY_POOL(loc)) { startCombatFromPool(loc); return; }
-        if (loc == LOC_TOWN)    { startTown(); return; }
-        if (loc == LOC_DUNGEON) {
-            if (mapTransitionTarget[0] != '\0')
-                worldLoadNamed(mapTransitionTarget);
-            else
-                state = STATE_DUNGEON;
-            return;
-        }
-        if (IS_PORTAL(loc)) {
-            int pid = PORTAL_ID(loc);
-            if (portalTargets[pid][0] != '\0') {
-                char dest[64];
-                int sx = portalSpawnX[pid];
-                int sy = portalSpawnY[pid];
-                strncpy(dest, portalTargets[pid], sizeof(dest) - 1);
-                dest[sizeof(dest) - 1] = '\0';
-                worldLoadNamed(dest);
-                worldPlayerX = sx;
-                worldPlayerY = sy;
-                worldUpdateCamera();
-            }
-            return;
+        buildTargets();
+        questOnLocationReached(currentMapName, (uint8_t)newX, (uint8_t)newY);
+
+        /* Enemies auto-trigger on step; town/dungeon/portal wait for E key. */
+        const MapEvent *ev = findEvent(newX, newY);
+        if (ev) {
+            questOnZoneEntered(ev->id);
+            if (ev->type == MAP_EV_ENEMY)
+                startCombatFromPool(ev->id);
         }
     }
 }
@@ -277,7 +304,7 @@ void handleWorldInput(int key) {
 void returnToTown(void) {
     worldPlayerX = 2;
     worldPlayerY = 2;
-    worldUpdateCamera();    
+    worldUpdateCamera();
 }
 
 void renderWorld(void) {
@@ -292,7 +319,6 @@ void renderWorld(void) {
     int plrScreenX = (worldPlayerX - worldPlayerY) * (TILE_W / 2) - rCamX + gfxWidth  / 2 + g_plrOffX;
     int plrScreenY = (worldPlayerX + worldPlayerY) * (TILE_H / 2) - rCamY + gfxHeight / 2 + g_plrOffY;
 
-    /* Painter's algorithm: draw back-to-front by ascending (tx+ty) sum */
     for (int sum = 0; sum < mapWidth + mapHeight - 1; sum++) {
         for (int tx = 0; tx <= sum; tx++) {
             int ty = sum - tx;
@@ -301,12 +327,10 @@ void renderWorld(void) {
             int cx = (tx - ty) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
             int cy = (tx + ty) * (TILE_H / 2) - rCamY + gfxHeight / 2;
 
-            /* Cull tiles fully off-screen (tallest tile is 64px) */
             if (cx + TILE_W / 2 < 0 || cx - TILE_W / 2 > gfxWidth)  continue;
             if (cy + 96 < 0 || cy > gfxHeight + 2 * TILE_H)            continue;
 
             uint8_t gfx = mapGfx[ty * mapWidth + tx];
-            uint8_t loc = mapLoc[ty * mapWidth + tx];
             int img_idx;
 
             switch (gfx) {
@@ -321,16 +345,22 @@ void renderWorld(void) {
                 case GFX_CAVE_FLOOR:     img_idx = TIMG_CAVE_FLOOR; break;
                 case GFX_CAVE_WALL:      img_idx = TIMG_CAVE_WALL;   break;
                 case GFX_TAVERN_WALL:    img_idx = TIMG_TAVERN_WALL; break;
-                default:
-                    if      (IS_ENEMY_POOL(loc)) img_idx = TIMG_GRASS_ENEMY;
-                    else if (loc == LOC_TOWN)    img_idx = TIMG_GRASS_TOWN;
-                    else if (loc == LOC_DUNGEON) img_idx = TIMG_GRASS_DUNG;
-                    else if (IS_PORTAL(loc))     img_idx = TIMG_GRASS_PORT;
-                    else {
+                default: {
+                    const MapEvent *ev = findEvent(tx, ty);
+                    if (ev) {
+                        switch (ev->type) {
+                            case MAP_EV_ENEMY:   img_idx = TIMG_GRASS_ENEMY; break;
+                            case MAP_EV_TOWN:    img_idx = TIMG_GRASS_TOWN;  break;
+                            case MAP_EV_DUNGEON: img_idx = TIMG_GRASS_DUNG;  break;
+                            case MAP_EV_PORTAL:  img_idx = TIMG_GRASS_PORT;  break;
+                            default:             img_idx = TIMG_GRASS;        break;
+                        }
+                    } else {
                         static const int g_vars[] = { TIMG_GRASS, TIMG_GRASS_1, TIMG_GRASS_2 };
                         img_idx = g_vars[tileHash(tx, ty, 3)];
                     }
                     break;
+                }
             }
 
             int rotate = 0;
@@ -350,7 +380,6 @@ void renderWorld(void) {
                 drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, rotate, alpha);
             }
 
-            /* Draw NPCs and player inline at correct painter depth */
             renderNpcs(tx, ty, rCamX, rCamY);
             if (tx == worldPlayerX && ty == worldPlayerY) {
                 int px = cx + g_plrOffX;
@@ -359,5 +388,41 @@ void renderWorld(void) {
                 drawSprite8(px - 16, py + TILE_H / 2 - 32, spr, TILE_PAL, 4);
             }
         }
+    }
+
+    /* --- Interaction prompt above player --- */
+    if (g_targetCount > 0) {
+        char prompt[96] = {0};
+        const Target *t = &g_targets[g_targetIdx];
+
+        if (t->isNpc) {
+            const NpcDef *n = &npcDefs[t->idx];
+            snprintf(prompt, sizeof(prompt), "[E]: Talk with %s",
+                     n->name[0] ? n->name : "Stranger");
+        } else {
+            const MapEvent *ev = findEvent(worldPlayerX, worldPlayerY);
+            if (ev) switch (ev->type) {
+                case MAP_EV_TOWN:    snprintf(prompt, sizeof(prompt), "[E]: Enter Town");    break;
+                case MAP_EV_DUNGEON: snprintf(prompt, sizeof(prompt), "[E]: Enter Dungeon"); break;
+                case MAP_EV_PORTAL:  snprintf(prompt, sizeof(prompt), "[E]: Enter Portal");  break;
+                default: break;
+            }
+        }
+
+        if (g_targetCount > 1) {
+            size_t len = strlen(prompt);
+            snprintf(prompt + len, sizeof(prompt) - len, "  [Tab]");
+        }
+
+        if (prompt[0]) {
+            int tw = (int)strlen(prompt) * 8;
+            drawTextOutlined(plrScreenX - tw / 2, plrScreenY - 30, prompt, rgb(255, 255, 180), 1);
+        }
+    }
+
+    /* --- Ambient / narrative text at bottom of screen --- */
+    if (g_ambientMsg[0] && GetTickCount() < g_ambientExpiry) {
+        int tw = (int)strlen(g_ambientMsg) * 8;
+        drawTextOutlined(gfxWidth / 2 - tw / 2, gfxHeight - 44, g_ambientMsg, rgb(210, 195, 155), 1);
     }
 }
