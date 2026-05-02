@@ -11,6 +11,7 @@
 #include "player.h"
 #include "quests.h"
 #include "npcs.h"
+#include "ambient.h"
 #include "tiles8x8.h"
 #include "pak.h"
 #include "shop.h"
@@ -290,6 +291,7 @@ void handleWorldInput(int key) {
 
         buildTargets();
         questOnLocationReached(currentMapName, (uint8_t)newX, (uint8_t)newY);
+        ambientCheckLocation(currentMapName, (uint8_t)newX, (uint8_t)newY);
 
         /* Enemies auto-trigger on step; town/dungeon/portal wait for E key. */
         const MapEvent *ev = findEvent(newX, newY);
