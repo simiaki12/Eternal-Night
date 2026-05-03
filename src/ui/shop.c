@@ -41,7 +41,7 @@ void handleShopInput(int key) {
             if (!d) break;
             uint16_t price = d->price;
             if (player.gold < price) {
-                snprintf(g_msg, sizeof(g_msg), "Not enough Solmarks! (need %d)", price);
+                snprintf(g_msg, sizeof(g_msg), "Not enough Solmarks! (need %d) ~", price);
             } else if (inventory.count >= 16) {
                 snprintf(g_msg, sizeof(g_msg), "Inventory is full!");
             } else {
@@ -75,7 +75,7 @@ void renderShop(void) {
         uint32_t color   = sel ? rgb(255, 255, 100) : rgb(180, 180, 180);
 
         if (d)
-            snprintf(buf, sizeof(buf), "%s%-14s %d Solmarks",
+            snprintf(buf, sizeof(buf), "%s%-14s %d ~",
                      sel ? "> " : "  ", d->name, d->price);
         else
             snprintf(buf, sizeof(buf), "%s???", sel ? "> " : "  ");
@@ -117,7 +117,7 @@ void renderShop(void) {
         drawText(x, gfxHeight - 100, g_msg, rgb(255, 180, 60), 2);
 
     /* Gold */
-    snprintf(buf, sizeof(buf), "Solmarks: %d", player.gold);
+    snprintf(buf, sizeof(buf), "Solmarks: %d ~", player.gold);
     drawText(x, gfxHeight - 80, buf, rgb(255, 215, 0), 2);
 
     drawText(x, gfxHeight - 62, "Enter=buy  ESC=close", rgb(80, 80, 80), 1);
