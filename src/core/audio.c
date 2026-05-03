@@ -10,9 +10,10 @@
 #include "audio.h"
 
 /* --- Audio format --- */
-#define SR    22050   /* sample rate */
-#define BUFSZ 4096    /* samples per waveOut buffer (~185ms each) */
-#define NBUFS 2       /* double-buffer */
+#define SR       22050   /* sample rate */
+#define BUFSZ    4096    /* samples per waveOut buffer (~185ms each) */
+#define NBUFS    2       /* double-buffer */
+#define KS_BUFMAX 170    /* ceil(SR/C3f)+1 — longest Karplus-Strong delay line */
 
 /* --- Note durations at 110 BPM --- */
 /* Quarter note = SR*60/110 = 12027 samples */
@@ -100,8 +101,11 @@ typedef struct {
     float    sus;        /* sustain level [0,1]            */
     float    rel;        /* per-sample fall during release */
     float    gate_frac;  /* fraction of note to hold gate  */
-    /* timbre: 0=triangle  1=square  2=saw  3=noise */
+    /* timbre: 0=triangle  1=square(lpf)  2=saw  3=noise  4=sine  5=karplus-strong */
     int      wave;
+    float    lpf_state;          /* one-pole IIR state for square wave */
+    float    ks_buf[KS_BUFMAX];  /* Karplus-Strong delay line */
+    int      ks_len, ks_pos;     /* KS buffer length and read/write head */
 } Voice;
 
 static Voice s_mv, s_hv, s_bv, s_pv;
@@ -131,6 +135,15 @@ static void voice_init(Voice *v, int wave,
 static float voice_tick(Voice *v, const Note *seq, int n) {
     const Note *nt = &seq[v->ni];
 
+    /* KS: seed delay line with noise at the start of each new note */
+    if (v->wave == 5 && v->np == 0 && nt->f > 0.0f) {
+        v->ks_len = (int)((float)SR / nt->f + 0.5f);
+        if (v->ks_len < 2) v->ks_len = 2;
+        if (v->ks_len > KS_BUFMAX) v->ks_len = KS_BUFMAX;
+        for (int j = 0; j < v->ks_len; j++) v->ks_buf[j] = noise_next();
+        v->ks_pos = 0;
+    }
+
     /* Gate off at gate_frac of note duration → begin release */
     if (v->np == (int)(nt->d * v->gate_frac) && v->ep != ENV_REL && v->ep != ENV_OFF)
         v->ep = ENV_REL;
@@ -158,13 +171,33 @@ static float voice_tick(Voice *v, const Note *seq, int n) {
     if (v->ep != ENV_OFF && nt->f > 0.0f) {
         if (v->wave == 3) {
             s = noise_next();
+        } else if (v->wave == 5) {
+            /* Karplus-Strong: averaging feedback — natural plucked decay */
+            float a = v->ks_buf[v->ks_pos];
+            float b = v->ks_buf[(v->ks_pos + 1) % v->ks_len];
+            s = (a + b) * 0.4985f;   /* 0.4985 < 0.5: slightly lossy for stable decay */
+            v->ks_buf[v->ks_pos] = s;
+            v->ks_pos = (v->ks_pos + 1) % v->ks_len;
         } else {
             v->ph += nt->f / (float)SR;
             if (v->ph >= 1.0f) v->ph -= 1.0f;
             switch (v->wave) {
                 case 0: { float p = v->ph - 0.5f; s = 1.0f - 4.0f*(p<0.0f?-p:p); break; }
-                case 1: s = v->ph < 0.5f ? 1.0f : -1.0f; break;
+                case 1:
+                    /* square with one-pole LPF (a=0.75, fc≈1020 Hz) — removes harshness */
+                    s = v->ph < 0.5f ? 1.0f : -1.0f;
+                    v->lpf_state = v->lpf_state * 0.75f + s * 0.25f;
+                    s = v->lpf_state;
+                    break;
                 case 2: s = 2.0f * v->ph - 1.0f; break;
+                case 4: {
+                    /* Bhaskara I sine approximation — max error 0.17%, no math.h */
+                    float x = v->ph < 0.5f ? v->ph * 6.28318f : (v->ph - 0.5f) * 6.28318f;
+                    float q = x * (3.14159f - x);
+                    s = 16.0f * q / (49.348f - 4.0f * q);
+                    if (v->ph >= 0.5f) s = -s;
+                    break;
+                }
             }
         }
         s *= v->env;
@@ -203,8 +236,10 @@ static void fill(int16_t *buf, int n) {
                 + voice_tick(&s_hv, s_har, HAR_N) * 0.12f
                 + voice_tick(&s_bv, s_bas, BAS_N) * 0.25f
                 + voice_tick(&s_pv, s_drm, DRM_N) * 0.07f;
-        if (v >  1.0f) v =  1.0f;
-        if (v < -1.0f) v = -1.0f;
+        /* cubic soft clip: f(x)=1.5x-0.5x³ — smooth saturation into ±1 */
+        if      (v >  1.0f) v =  1.0f;
+        else if (v < -1.0f) v = -1.0f;
+        else                v *= 1.5f - 0.5f*v*v;
         buf[i] = (int16_t)(v * 26000.0f * vol);
     }
 }
@@ -228,8 +263,8 @@ static DWORD WINAPI audio_thread(LPVOID arg) {
 void audioPlayWorld(void) {
     if (s_wo) return;
 
-    /* melody: triangle, flute-like — slow attack, high sustain */
-    voice_init(&s_mv, 0,
+    /* melody: sine, flute-like — slow attack, high sustain */
+    voice_init(&s_mv, 4,
         1.0f/(SR*0.015f),       /* 15ms attack  */
         1.0f/(SR*0.5f),         /* 500ms decay  */
         0.75f,                  /* sustain       */
@@ -244,13 +279,13 @@ void audioPlayWorld(void) {
         0.55f/(SR*0.06f),       /* 60ms release */
         0.88f);
 
-    /* bass: triangle, plucked — instant attack, decays to zero */
-    voice_init(&s_bv, 0,
+    /* bass: Karplus-Strong — natural plucked string decay */
+    voice_init(&s_bv, 5,
         1.0f,                   /* instant attack */
-        1.0f/(QN*1.5f),         /* decay over 1.5 quarter notes */
-        0.0f,
-        0.002f,
-        1.0f);                  /* gate held; decay handles articulation */
+        1.0f,                   /* instant through DCY (sus=1 so no decay) */
+        1.0f,                   /* sustain=1; KS feedback handles natural decay */
+        0.002f,                 /* release */
+        0.85f);                 /* gate closes at 85% for clean note separation */
 
     /* percussion: noise, hi-hat feel — instant attack, fast decay */
     voice_init(&s_pv, 3,
