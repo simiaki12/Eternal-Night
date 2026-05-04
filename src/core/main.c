@@ -21,6 +21,7 @@
 #include "save.h"
 #include "loot.h"
 #include "audio.h"
+#include "songs.h"
 #include "options.h"
 #include "npcs.h"
 #include "shop.h"
@@ -447,10 +448,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
 
         /* Music: only react to real state changes, not overlay transitions */
         if (state != prevState && !IS_OVERLAY(state) && !IS_OVERLAY(prevState)) {
-            if (state == STATE_WORLD)
-                audioPlayWorld();
-            else
-                audioStop();
+            switch (state) {
+                case STATE_MAIN_MENU: audioPlaySong(&song_hopes_and_dreams_eternal_night_ost); break;
+                case STATE_WORLD:     audioPlaySong(&song_eternal_test);   break;
+                case STATE_TOWN:      audioPlaySong(&song_eternal_town);   break;
+                case STATE_DUNGEON:   audioPlaySong(&song_eternal_cave);   break;
+                case STATE_COMBAT:    audioPlaySong(&song_shining_star_eternal_night_ost); break;
+                case STATE_DEATH:     audioPlaySong(&song_over);           break;
+                default:              audioStop();                          break;
+            }
         }
         prevState = state;
 

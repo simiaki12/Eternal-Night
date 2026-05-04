@@ -9,6 +9,7 @@
                 "${workspaceFolder}/src/world",
                 "${workspaceFolder}/src/ui",
                 "${workspaceFolder}/src/data",
+                "${workspaceFolder}/src/music",
                 "/usr/x86_64-w64-mingw32/include",
                 "/usr/lib/gcc/x86_64-w64-mingw32/10-win32/include"
             ],

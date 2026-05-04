@@ -168,12 +168,16 @@ static int loadMap(PakData data) {
 }
 
 int worldLoadNamed(const char *name) {
-    PakData data = pakRead(name);
+    char safeName[64];
+    strncpy(safeName, name, sizeof(safeName) - 1);
+    safeName[sizeof(safeName) - 1] = '\0';
+
+    PakData data = pakRead(safeName);
     if (!data.data) return 0;
     int ok = loadMap(data);
     free(data.data);
     if (ok) {
-        strncpy(currentMapName, name, sizeof(currentMapName) - 1);
+        strncpy(currentMapName, safeName, sizeof(currentMapName) - 1);
         currentMapName[sizeof(currentMapName) - 1] = '\0';
         worldUpdateCamera();
         g_moving       = 0;

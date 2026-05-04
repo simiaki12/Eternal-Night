@@ -1,7 +1,7 @@
 CC       = x86_64-w64-mingw32-gcc
 CXX_HOST = g++
 CC_HOST  = gcc
-CFLAGS   = -Wall -Wextra -std=c11 -I src/core -I src/gameplay -I src/world -I src/ui -I src/data
+CFLAGS   = -Wall -Wextra -std=c11 -I src/core -I src/gameplay -I src/world -I src/ui -I src/data -I src/music
 DEBUGFLAGS   = -g
 RELEASEFLAGS = -Os -flto
 LDFLAGS        = -lgdi32 -lwinmm -lmsimg32 -mwindows
@@ -38,6 +38,9 @@ audio_demo:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os tools/audio_demo.c -o build/audio_demo
 	./build/audio_demo
+
+flp2c:
+	python3 tools/flp2c.py
 
 gen_world_music:
 	mkdir -p build
