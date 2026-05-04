@@ -14,6 +14,7 @@ import pyflp
 from pyflp.arrangement import PatternPLItem
 
 SR = 22050
+SONG_MAX_TRACKS = 24   # must match audio.h
 
 _NOTE_NAMES = ("C","C#","D","D#","E","F","F#","G","G#","A","A#","B")
 
@@ -26,9 +27,20 @@ def _key_to_raw(key_str):
         note, octave = key_str[0], int(key_str[1:])
     return _NOTE_NAMES.index(note) + octave * 12
 
-def _raw_to_freq(raw):
-    """Raw note index to Hz. A5(69)=440 Hz."""
-    return 440.0 * (2.0 ** ((raw - 69.0) / 12.0))
+def _raw_to_freq(raw, cents=0.0):
+    """Raw note index + fine pitch in cents to Hz. A5(69)=440 Hz."""
+    return 440.0 * (2.0 ** ((raw - 69.0 + cents / 100.0) / 12.0))
+
+def _ch_gain(ch):
+    """Normalize PyFLP channel volume to a [0.0, 2.0] gain scalar."""
+    try:
+        v = float(getattr(ch, 'volume', 100) or 100)
+        if v <= 0:    return 0.0
+        if v <= 2.0:  return v           # already normalized
+        if v <= 200:  return v / 100.0   # 0-100 or 0-200 percent scale
+        return v / 10000.0               # FL internal 0-12800 scale
+    except Exception:
+        return 1.0
 
 def _c_name(s):
     s = s.lower()
@@ -42,7 +54,7 @@ def _guess_wave(ch_name, notes):
     if 'noise' in n:                   return 3
     if 'triangle' in n:                return 0
     if 'square' in n or 'pulse' in n:  return 1
-    if 'piano' in n or 'keys' in n:    return 4
+    if 'piano' in n or 'keys' in n:    return 2  # saw: richer harmonics + fast decay ≈ piano
     if 'bass' in n:                    return 0
     if not notes:                      return 1
 
@@ -52,56 +64,66 @@ def _guess_wave(ch_name, notes):
 
     # Short notes with narrow pitch range → percussive → noise
     if avg_len < 60 and p_range <= 5:  return 3
-    # Very long notes → sustained pad → triangle
+    # Fast melodic runs present (< 48 ticks ≈ 16th note at 96 PPQ) → square
+    if sum(1 for note in notes if note.length < 48) >= 3:  return 1
+    # Very long notes only → sustained pad → triangle
     if avg_len > 200:                  return 0
     # Default: square wave (NES pulse / melodic)
     return 1
 
-def _build_timeline(all_clips, rack_ch, ppq, bpm):
-    """Return list of (freq_hz, dur_samples) for one rack channel.
-    Gaps become rests (freq=0). Simultaneous notes (chords) → highest pitch."""
+def _build_lanes(all_clips, rack_ch, ppq, bpm):
+    """Return list of monophonic timelines (one per concurrent voice lane).
+    Each timeline is a list of (freq_hz, dur_samples, velocity_0_1).
+    Gaps become rests (freq=0, vel=1). Simultaneous notes spread across lanes."""
     spb = SR / (bpm / 60.0 * ppq)   # samples per tick
 
-    events = []  # (abs_tick, raw_note, length_ticks)
+    events = []  # (abs_tick, raw_note, length_ticks, cents, velocity)
     for clip in all_clips:
         for note in clip.pattern.notes:
             if note.rack_channel != rack_ch:
                 continue
             abs_pos = clip.position + note.position
-            events.append((abs_pos, _key_to_raw(note.key), note.length))
+            cents = float(getattr(note, 'pitch', 0) or 0)
+            vel   = int(getattr(note, 'velocity', 100) or 100)
+            events.append((abs_pos, _key_to_raw(note.key), note.length, cents, vel))
 
     if not events:
         return []
 
-    events.sort(key=lambda e: e[0])
+    # Sort by position; within same position highest pitch first (most audible lane 0)
+    events.sort(key=lambda e: (e[0], -e[1]))
 
-    out = []
-    prev_end = 0
-    i = 0
-    while i < len(events):
-        pos, raw, length = events[i]
+    # Assign each event to the earliest free lane (greedy voice allocation)
+    lane_notes = []   # list of list of (pos, raw, length, cents, vel)
+    lane_ends  = []   # tick at which each lane becomes free
 
-        # Gather all notes starting at same tick (chord) → take highest
-        j = i + 1
-        best_raw = raw
-        best_len = length
-        while j < len(events) and events[j][0] == pos:
-            if events[j][1] > best_raw:
-                best_raw = events[j][1]
-                best_len = events[j][2]
-            j += 1
+    for pos, raw, length, cents, vel in events:
+        assigned = None
+        for i, end in enumerate(lane_ends):
+            if pos >= end:
+                assigned = i
+                break
+        if assigned is None:
+            assigned = len(lane_notes)
+            lane_notes.append([])
+            lane_ends.append(0)
+        lane_notes[assigned].append((pos, raw, length, cents, vel))
+        lane_ends[assigned] = pos + length
 
-        # Rest before this note
-        if pos > prev_end:
-            rest_dur = max(1, round((pos - prev_end) * spb))
-            out.append((0.0, rest_dur))
+    # Build a flat (freq, dur_samples, vel_norm) timeline for each lane
+    timelines = []
+    for lane in lane_notes:
+        out = []
+        prev_end = 0
+        for pos, raw, length, cents, vel in lane:
+            if pos > prev_end:
+                out.append((0.0, max(1, round((pos - prev_end) * spb)), 1.0))
+            vel_norm = max(0.0, min(1.0, vel / 127.0))
+            out.append((_raw_to_freq(raw, cents), max(1, round(length * spb)), vel_norm))
+            prev_end = pos + length
+        timelines.append(out)
 
-        dur = max(1, round(best_len * spb))
-        out.append((_raw_to_freq(best_raw), dur))
-        prev_end = pos + best_len
-        i = j
-
-    return out
+    return timelines
 
 def convert(flp_path, out_path):
     print(f'  {os.path.basename(flp_path)}')
@@ -124,24 +146,38 @@ def convert(flp_path, out_path):
         for note in clip.pattern.notes
     })
 
-    voices = []
+    voices = []  # (rc, lane_idx, ch_name, wave, gain, timeline)
     for rc in rack_channels:
-        ch_name = getattr(channels[rc], 'name', None) if rc < len(channels) else None
+        ch = channels[rc] if rc < len(channels) else None
+        ch_name = getattr(ch, 'name', None)
         ch_notes = [
             note
             for clip in all_clips
             for note in clip.pattern.notes
             if note.rack_channel == rc
         ]
-        timeline = _build_timeline(all_clips, rc, p.ppq, p.tempo)
-        if not timeline:
-            continue
         wave = _guess_wave(ch_name, ch_notes)
-        voices.append((rc, ch_name or f'ch{rc}', wave, timeline))
+        gain = _ch_gain(ch) if ch is not None else 1.0
+        for lane_idx, timeline in enumerate(_build_lanes(all_clips, rc, p.ppq, p.tempo)):
+            if timeline:
+                voices.append((rc, lane_idx, ch_name or f'ch{rc}', wave, gain, timeline))
 
     if not voices:
         print(f'    (no notes found, skipping)')
         return
+
+    if len(voices) > SONG_MAX_TRACKS:
+        print(f'    WARNING: {len(voices)} lanes exceeds SONG_MAX_TRACKS={SONG_MAX_TRACKS}, truncating')
+        voices = voices[:SONG_MAX_TRACKS]
+
+    # Voice sync: pad shorter voices with a trailing rest so all loop at the same point
+    if len(voices) > 1:
+        totals = [sum(d for _, d, _ in tl) for _, _, _, _, _, tl in voices]
+        max_dur = max(totals)
+        voices = [
+            (rc, li, nm, wv, gn, tl + [(0.0, max_dur - total, 1.0)] if total < max_dur else tl)
+            for (rc, li, nm, wv, gn, tl), total in zip(voices, totals)
+        ]
 
     lines = [
         f'/* {os.path.basename(flp_path)} — auto-generated by tools/flp2c.py',
@@ -151,31 +187,31 @@ def convert(flp_path, out_path):
     ]
 
     arr_names = []
-    for rc, ch_name, wave, timeline in voices:
-        arr = f'_{name}_c{rc}'
-        arr_names.append((arr, wave, len(timeline)))
-        lines.append(f'/* ch{rc} "{ch_name}" wave={wave} ({len(timeline)} notes) */')
+    for rc, lane_idx, ch_name, wave, gain, timeline in voices:
+        arr = f'_{name}_c{rc}_v{lane_idx}'
+        arr_names.append((arr, wave, gain, len(timeline)))
+        lines.append(f'/* ch{rc} v{lane_idx} "{ch_name}" wave={wave} gain={gain:.2f} ({len(timeline)} notes) */')
         lines.append(f'static const Note {arr}[] = {{')
-        for freq, dur in timeline:
+        for freq, dur, vel in timeline:
             if freq == 0.0:
-                lines.append(f'    {{0.000f,{dur}}},')
+                lines.append(f'    {{0.000f,{dur},1.0f}},')
             else:
-                lines.append(f'    {{{freq:.3f}f,{dur}}},')
+                lines.append(f'    {{{freq:.3f}f,{dur},{vel:.4f}f}},')
         lines.append('};')
         lines.append('')
 
     lines.append(f'const SongDef song_{name} = {{')
     lines.append(f'    {len(arr_names)},')
     lines.append('    {')
-    for arr, wave, n in arr_names:
-        lines.append(f'        {{ {arr}, {n}, {wave} }},')
+    for arr, wave, gain, n in arr_names:
+        lines.append(f'        {{ {arr}, {n}, {wave}, {gain:.4f}f }},')
     lines.append('    }')
     lines.append('};')
 
     with open(out_path, 'w') as f:
         f.write('\n'.join(lines) + '\n')
 
-    total_notes = sum(len(v[3]) for v in voices)
+    total_notes = sum(len(v[5]) for v in voices)
     print(f'    -> {out_path}  ({len(voices)} voices, {total_notes} note entries)')
 
 def main():

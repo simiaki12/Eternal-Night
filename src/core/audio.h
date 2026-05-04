@@ -2,8 +2,9 @@
 #include <stdint.h>
 
 /* --- Note: one event in a voice sequence --- */
-/* f > 0 → pitch in Hz.  f == 0 → rest.  d → duration in samples. */
-typedef struct { float f; int d; } Note;
+/* f > 0 → pitch in Hz.  f == 0 → rest.  d → duration in samples.
+   v → velocity/amplitude 0.0-1.0; 0.0 treated as 1.0 (full). */
+typedef struct { float f; int d; float v; } Note;
 
 /* --- Track: one synthesizer voice within a song --- */
 /* wave: 0=triangle  1=square  3=noise  4=sine  5=Karplus-Strong */
@@ -11,10 +12,11 @@ typedef struct {
     const Note *seq;
     int         n;
     int         wave;
+    float       gain;   /* per-channel volume [0.0, 2.0]; 0.0 treated as 1.0 */
 } TrackDef;
 
-/* --- Song: up to 8 simultaneous voice tracks --- */
-#define SONG_MAX_TRACKS 8
+/* --- Song: up to 24 simultaneous voice tracks --- */
+#define SONG_MAX_TRACKS 24
 typedef struct {
     int      ntracks;
     TrackDef tracks[SONG_MAX_TRACKS];

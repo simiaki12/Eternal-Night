@@ -36,25 +36,25 @@
 #define C5f 523.25f
 
 static const Note s_mel[] = {
-    {C4f,QN},{E4f,QN},{G4f,QN},{A4f,QN},
-    {G4f,DH},{E4f,QN},
-    {D4f,QN},{E4f,QN},{G4f,QN},{E4f,QN},
-    {C4f,WN},
-    {A4f,QN},{G4f,QN},{E4f,QN},{G4f,QN},
-    {C5f,QN},{A4f,QN},{G4f,QN},{E4f,QN},
-    {F4f,QN},{G4f,QN},{A4f,QN},{G4f,QN},
-    {E4f,HN},{C4f,HN},
+    {C4f,QN,1.0f},{E4f,QN,1.0f},{G4f,QN,1.0f},{A4f,QN,1.0f},
+    {G4f,DH,1.0f},{E4f,QN,1.0f},
+    {D4f,QN,1.0f},{E4f,QN,1.0f},{G4f,QN,1.0f},{E4f,QN,1.0f},
+    {C4f,WN,1.0f},
+    {A4f,QN,1.0f},{G4f,QN,1.0f},{E4f,QN,1.0f},{G4f,QN,1.0f},
+    {C5f,QN,1.0f},{A4f,QN,1.0f},{G4f,QN,1.0f},{E4f,QN,1.0f},
+    {F4f,QN,1.0f},{G4f,QN,1.0f},{A4f,QN,1.0f},{G4f,QN,1.0f},
+    {E4f,HN,1.0f},{C4f,HN,1.0f},
 };
 static const Note s_har[] = {
-    {E4f,WN},{G4f,WN},{E4f,HN},{C4f,HN},{E4f,WN},
-    {C4f,WN},{D4f,WN},{C4f,WN},{G4f,WN},
+    {E4f,WN,1.0f},{G4f,WN,1.0f},{E4f,HN,1.0f},{C4f,HN,1.0f},{E4f,WN,1.0f},
+    {C4f,WN,1.0f},{D4f,WN,1.0f},{C4f,WN,1.0f},{G4f,WN,1.0f},
 };
 static const Note s_bas[] = {
-    {C3f,HN},{C3f,HN},{G3f,HN},{G3f,HN},{A3f,HN},{E3f,HN},{C3f,WN},
-    {F3f,HN},{G3f,HN},{F3f,HN},{G3f,HN},{F3f,HN},{G3f,HN},{C3f,WN},
+    {C3f,HN,1.0f},{C3f,HN,1.0f},{G3f,HN,1.0f},{G3f,HN,1.0f},{A3f,HN,1.0f},{E3f,HN,1.0f},{C3f,WN,1.0f},
+    {F3f,HN,1.0f},{G3f,HN,1.0f},{F3f,HN,1.0f},{G3f,HN,1.0f},{F3f,HN,1.0f},{G3f,HN,1.0f},{C3f,WN,1.0f},
 };
 static const Note s_drm[] = {
-    {0.0f,QN},{1.0f,QN},{0.0f,QN},{1.0f,QN},
+    {0.0f,QN,1.0f},{1.0f,QN,1.0f},{0.0f,QN,1.0f},{1.0f,QN,1.0f},
 };
 #define MEL_N (int)(sizeof(s_mel)/sizeof(s_mel[0]))
 #define HAR_N (int)(sizeof(s_har)/sizeof(s_har[0]))
@@ -63,10 +63,10 @@ static const Note s_drm[] = {
 
 static const SongDef s_world_song = {
     4, {
-        { s_mel, MEL_N, 4 },   /* sine   — melody  */
-        { s_har, HAR_N, 1 },   /* square — harmony */
-        { s_bas, BAS_N, 5 },   /* KS     — bass    */
-        { s_drm, DRM_N, 3 },   /* noise  — drums   */
+        { s_mel, MEL_N, 4, 1.0f },   /* sine   — melody  */
+        { s_har, HAR_N, 1, 1.0f },   /* square — harmony */
+        { s_bas, BAS_N, 5, 1.0f },   /* KS     — bass    */
+        { s_drm, DRM_N, 3, 1.0f },   /* noise  — drums   */
     }
 };
 
@@ -92,6 +92,7 @@ typedef struct {
     Voice    v;
     const Note *seq;
     int      n;
+    float    gain;
 } ActiveVoice;
 
 /* --- Globals --- */
@@ -120,22 +121,25 @@ static float noise_next(void) {
 static void voice_defaults(Voice *v, int wave) {
     v->duty = 0.5f;
     switch (wave) {
-        case 0:  /* triangle — NES: effectively instant, no envelope */
-            v->atk = 1.0f/(SR*0.003f); v->dcy = 1.0f; v->sus = 1.0f;
-            v->rel = 0.003f; v->gate_frac = 0.98f; break;
+        case 0:  /* triangle — NES: hard gate, no envelope at all */
+            v->atk = 1.0f; v->dcy = 1.0f; v->sus = 1.0f;
+            v->rel = 1.0f; v->gate_frac = 0.995f; break;
         case 1:  /* square — NES pulse: fast attack, clean */
             v->atk = 1.0f/(SR*0.003f); v->dcy = 1.0f; v->sus = 1.0f;
             v->rel = 0.005f; v->gate_frac = 0.92f; break;
-        case 3:  /* noise — percussive */
+        case 2:  /* saw — piano approximation: sharp attack, fast decay */
+            v->atk = 1.0f; v->dcy = 1.0f/(SR*0.25f); v->sus = 0.25f;
+            v->rel = 0.25f/(SR*0.15f); v->gate_frac = 0.9f; break;
+        case 3:  /* noise — NES: instant attack, short decay */
             v->atk = 1.0f; v->dcy = 1.0f/(SR*0.06f); v->sus = 0.0f;
             v->rel = 0.02f; v->gate_frac = 1.0f; break;
-        case 4:  /* sine — piano/flute */
+        case 4:  /* sine — flute/pad */
             v->atk = 1.0f/(SR*0.015f); v->dcy = 1.0f/(SR*0.5f); v->sus = 0.75f;
             v->rel = 0.75f/(SR*0.05f); v->gate_frac = 0.85f; break;
         case 5:  /* Karplus-Strong — plucked */
             v->atk = 1.0f; v->dcy = 1.0f; v->sus = 1.0f;
             v->rel = 0.002f; v->gate_frac = 0.85f; break;
-        default: /* saw / generic */
+        default:
             v->atk = 1.0f/(SR*0.01f); v->dcy = 1.0f; v->sus = 1.0f;
             v->rel = 0.005f; v->gate_frac = 0.9f; break;
     }
@@ -146,6 +150,7 @@ static void voice_reset(Voice *v, int wave) {
     v->wave = wave;
     voice_defaults(v, wave);
     v->ep = ENV_ATK;
+    if (wave == 3) v->ks_len = 0x7FFF;  /* seed LFSR — must be non-zero */
 }
 
 /* Per-wave mix weights (sum kept close to 1.0 by soft-clip) */
@@ -192,7 +197,17 @@ static float voice_tick(Voice *v, const Note *seq, int n) {
     float s = 0.0f;
     if (v->ep != ENV_OFF && nt->f > 0.0f) {
         if (v->wave == 3) {
-            s = noise_next();
+            /* NES 15-bit LFSR: feedback = bit0 XOR bit1, clocked at note pitch.
+               Reuses ks_len (LFSR state) and ph (phase accumulator) — both
+               unused for wave=3 in all other branches. */
+            float rate = nt->f > 0.0f ? nt->f : 220.0f;
+            v->ph += rate / (float)SR;
+            while (v->ph >= 1.0f) {
+                v->ph -= 1.0f;
+                int fb = (v->ks_len & 1) ^ ((v->ks_len >> 1) & 1);
+                v->ks_len = (fb << 14) | ((v->ks_len >> 1) & 0x3FFF);
+            }
+            s = (v->ks_len & 1) ? 1.0f : -1.0f;
         } else if (v->wave == 5) {
             float a = v->ks_buf[v->ks_pos];
             float b = v->ks_buf[(v->ks_pos + 1) % v->ks_len];
@@ -203,12 +218,16 @@ static float voice_tick(Voice *v, const Note *seq, int n) {
             v->ph += nt->f / (float)SR;
             if (v->ph >= 1.0f) v->ph -= 1.0f;
             switch (v->wave) {
-                case 0: { float p = v->ph - 0.5f; s = 1.0f - 4.0f*(p<0?-p:p); break; }
+                case 0: {
+                    float p = v->ph - 0.5f;
+                    s = 1.0f - 4.0f*(p<0?-p:p);
+                    /* 4-bit NES quantization: 32 steps per cycle */
+                    s = (float)((int)(s * 16.0f + 16.5f) - 16) / 16.0f;
+                    break;
+                }
                 case 1:
-                    /* square with configurable duty and one-pole LPF */
+                    /* hard-switching square — NES pulse character, no LPF */
                     s = v->ph < v->duty ? 1.0f : -1.0f;
-                    v->lpf_state = v->lpf_state * 0.75f + s * 0.25f;
-                    s = v->lpf_state;
                     break;
                 case 2: s = 2.0f * v->ph - 1.0f; break;
                 case 4: {
@@ -221,7 +240,7 @@ static float voice_tick(Voice *v, const Note *seq, int n) {
                 }
             }
         }
-        s *= v->env;
+        s *= v->env * (nt->v > 0.0f ? nt->v : 1.0f);
     }
 
     /* Advance note */
@@ -249,7 +268,8 @@ static void fill(int16_t *buf, int n) {
         for (int t = 0; t < nv; t++) {
             ActiveVoice *av = &s_av[t];
             int wave = av->v.wave < 6 ? av->v.wave : 1;
-            v += voice_tick(&av->v, av->seq, av->n) * s_wave_vol[wave];
+            float g = av->gain > 0.0f ? av->gain : 1.0f;
+            v += voice_tick(&av->v, av->seq, av->n) * s_wave_vol[wave] * g;
         }
         /* cubic soft clip */
         if      (v >  1.0f) v =  1.0f;
@@ -289,8 +309,9 @@ void audioPlaySong(const SongDef *song) {
     for (int t = 0; t < s_nvoices; t++) {
         const TrackDef *td = &song->tracks[t];
         voice_reset(&s_av[t].v, td->wave);
-        s_av[t].seq = td->seq;
-        s_av[t].n   = td->n;
+        s_av[t].seq  = td->seq;
+        s_av[t].n    = td->n;
+        s_av[t].gain = td->gain > 0.0f ? td->gain : 1.0f;
     }
 
     WAVEFORMATEX fmt = {
