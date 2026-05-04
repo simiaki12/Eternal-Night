@@ -13,7 +13,10 @@
 #define SR       22050
 #define BUFSZ    4096
 #define NBUFS    2
-#define KS_BUFMAX 170   /* ceil(SR/C3_Hz)+1 */
+#define KS_BUFMAX 1024  /* supports Karplus-Strong notes down to ~22 Hz at 22050 Hz */
+#define REV_COMB1 1557
+#define REV_COMB2 1801
+#define REV_AP     521
 
 /* --- Built-in world theme (110 BPM) --- */
 #define QN 12027   /* quarter note at 110 BPM */
@@ -63,11 +66,12 @@ static const Note s_drm[] = {
 
 static const SongDef s_world_song = {
     4, {
-        { s_mel, MEL_N, 4, 1.0f },   /* sine   — melody  */
-        { s_har, HAR_N, 1, 1.0f },   /* square — harmony */
-        { s_bas, BAS_N, 5, 1.0f },   /* KS     — bass    */
-        { s_drm, DRM_N, 3, 1.0f },   /* noise  — drums   */
-    }
+        { s_mel, MEL_N, 4, 1.0f, 0.5f },   /* sine   — melody  */
+        { s_har, HAR_N, 1, 1.0f, 0.5f },   /* square — harmony */
+        { s_bas, BAS_N, 5, 1.0f, 0.5f },   /* KS     — bass    */
+        { s_drm, DRM_N, 3, 1.0f, 0.5f },   /* noise  — drums   */
+    },
+    0.12f
 };
 
 /* --- ADSR envelope --- */
@@ -107,6 +111,11 @@ static HANDLE          s_evt    = NULL;
 static volatile LONG   s_stop   = 1;
 static int16_t         s_pcm[NBUFS][BUFSZ];
 static WAVEHDR         s_hdr[NBUFS];
+static float           s_reverb = 0.0f;
+static float           s_revComb1[REV_COMB1];
+static float           s_revComb2[REV_COMB2];
+static float           s_revAp[REV_AP];
+static int             s_revPos1 = 0, s_revPos2 = 0, s_revApPos = 0;
 
 /* --- Noise PRNG --- */
 static uint32_t s_nsr = 0xCAFEBABEu;
@@ -151,6 +160,42 @@ static void voice_reset(Voice *v, int wave) {
     voice_defaults(v, wave);
     v->ep = ENV_ATK;
     if (wave == 3) v->ks_len = 0x7FFF;  /* seed LFSR — must be non-zero */
+}
+
+static float clamp_duty(float duty) {
+    if (duty <= 0.0f) return 0.5f;
+    if (duty < 0.125f) return 0.125f;
+    if (duty > 0.75f) return 0.75f;
+    return duty;
+}
+
+static float clamp_reverb(float wet) {
+    if (wet < 0.0f) return 0.0f;
+    if (wet > 0.5f) return 0.5f;
+    return wet;
+}
+
+static void reverb_reset(void) {
+    memset(s_revComb1, 0, sizeof(s_revComb1));
+    memset(s_revComb2, 0, sizeof(s_revComb2));
+    memset(s_revAp, 0, sizeof(s_revAp));
+    s_revPos1 = s_revPos2 = s_revApPos = 0;
+}
+
+static float reverb_tick(float in) {
+    float d1 = s_revComb1[s_revPos1];
+    float d2 = s_revComb2[s_revPos2];
+    s_revComb1[s_revPos1] = in * 0.35f + d1 * 0.74f;
+    s_revComb2[s_revPos2] = in * 0.35f + d2 * 0.70f;
+    if (++s_revPos1 >= REV_COMB1) s_revPos1 = 0;
+    if (++s_revPos2 >= REV_COMB2) s_revPos2 = 0;
+
+    float wet = (d1 + d2) * 0.5f;
+    float ap = s_revAp[s_revApPos];
+    float out = ap - wet;
+    s_revAp[s_revApPos] = wet + ap * 0.45f;
+    if (++s_revApPos >= REV_AP) s_revApPos = 0;
+    return out;
 }
 
 /* Per-wave mix weights (sum kept close to 1.0 by soft-clip) */
@@ -271,6 +316,10 @@ static void fill(int16_t *buf, int n) {
             float g = av->gain > 0.0f ? av->gain : 1.0f;
             v += voice_tick(&av->v, av->seq, av->n) * s_wave_vol[wave] * g;
         }
+        if (s_reverb > 0.0f) {
+            float wet = reverb_tick(v);
+            v = v * (1.0f - s_reverb) + wet * s_reverb;
+        }
         /* cubic soft clip */
         if      (v >  1.0f) v =  1.0f;
         else if (v < -1.0f) v = -1.0f;
@@ -304,6 +353,8 @@ void audioPlaySong(const SongDef *song) {
     if (!song) return;
 
     s_cur_song = song;
+    s_reverb   = clamp_reverb(song->reverb);
+    reverb_reset();
     s_nvoices  = song->ntracks < SONG_MAX_TRACKS ? song->ntracks : SONG_MAX_TRACKS;
 
     for (int t = 0; t < s_nvoices; t++) {
@@ -312,6 +363,7 @@ void audioPlaySong(const SongDef *song) {
         s_av[t].seq  = td->seq;
         s_av[t].n    = td->n;
         s_av[t].gain = td->gain > 0.0f ? td->gain : 1.0f;
+        s_av[t].v.duty = clamp_duty(td->duty);
     }
 
     WAVEFORMATEX fmt = {

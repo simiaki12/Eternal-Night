@@ -2,7 +2,7 @@
    Tempo: 123.0 BPM  PPQ: 96  SR: 22050 */
 #include "../core/audio.h"
 
-/* ch1 v0 "NES VST 1.2" wave=0 gain=1.00 (62 notes) */
+/* ch1 v0 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (63 notes) */
 static const Note _eternal_test_ending_c1_v0[] = {
     {311.127f,43024,0.7402f},
     {233.082f,43024,0.7402f},
@@ -66,9 +66,10 @@ static const Note _eternal_test_ending_c1_v0[] = {
     {233.082f,43024,0.7402f},
     {184.997f,21512,0.7402f},
     {174.614f,21512,0.7402f},
+    {0.000f,19,1.0f},
 };
 
-/* ch1 v1 "NES VST 1.2" wave=0 gain=1.00 (50 notes) */
+/* ch1 v1 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (51 notes) */
 static const Note _eternal_test_ending_c1_v1[] = {
     {155.563f,43024,0.7402f},
     {138.591f,43024,0.7402f},
@@ -120,9 +121,10 @@ static const Note _eternal_test_ending_c1_v1[] = {
     {138.591f,43024,0.7402f},
     {155.563f,43024,0.7402f},
     {123.471f,43024,0.7402f},
+    {0.000f,19,1.0f},
 };
 
-/* ch1 v2 "NES VST 1.2" wave=0 gain=1.00 (62 notes) */
+/* ch1 v2 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (63 notes) */
 static const Note _eternal_test_ending_c1_v2[] = {
     {123.471f,43024,0.7402f},
     {116.541f,43024,0.7402f},
@@ -186,9 +188,10 @@ static const Note _eternal_test_ending_c1_v2[] = {
     {116.541f,43024,0.7402f},
     {92.499f,21512,0.7402f},
     {87.307f,21512,0.7402f},
+    {0.000f,19,1.0f},
 };
 
-/* ch1 v3 "NES VST 1.2" wave=0 gain=1.00 (48 notes) */
+/* ch1 v3 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (48 notes) */
 static const Note _eternal_test_ending_c1_v3[] = {
     {61.735f,43024,0.7402f},
     {69.296f,43024,0.7402f},
@@ -237,10 +240,10 @@ static const Note _eternal_test_ending_c1_v3[] = {
     {61.735f,43024,0.7402f},
     {69.296f,43024,0.7402f},
     {77.782f,43024,0.7402f},
-    {0.000f,43022,1.0f},
+    {0.000f,43041,1.0f},
 };
 
-/* ch2 v0 "NES VST 1.2 #3" wave=1 gain=0.84 (541 notes) */
+/* ch2 v0 "NES VST 1.2 #3" wave=1 gain=0.84 duty=0.250 (541 notes) */
 static const Note _eternal_test_ending_c2_v0[] = {
     {0.000f,349573,1.0f},
     {739.989f,3585,0.7402f},
@@ -782,10 +785,10 @@ static const Note _eternal_test_ending_c2_v0[] = {
     {698.456f,3585,0.7402f},
     {0.000f,1793,1.0f},
     {466.164f,3585,0.7402f},
-    {0.000f,1793,1.0f},
+    {0.000f,1812,1.0f},
 };
 
-/* ch2 v1 "NES VST 1.2 #3" wave=1 gain=0.84 (541 notes) */
+/* ch2 v1 "NES VST 1.2 #3" wave=1 gain=0.84 duty=0.250 (541 notes) */
 static const Note _eternal_test_ending_c2_v1[] = {
     {0.000f,349573,1.0f},
     {369.994f,3585,0.7402f},
@@ -1327,10 +1330,10 @@ static const Note _eternal_test_ending_c2_v1[] = {
     {349.228f,3585,0.7402f},
     {0.000f,1793,1.0f},
     {233.082f,3585,0.7402f},
-    {0.000f,1793,1.0f},
+    {0.000f,1812,1.0f},
 };
 
-/* ch3 v0 "NES VST 1.2 #2" wave=3 gain=1.00 (288 notes) */
+/* ch3 v0 "NES VST 1.2 #2" wave=3 gain=1.00 duty=0.500 (288 notes) */
 static const Note _eternal_test_ending_c3_v0[] = {
     {554.365f,3585,0.7402f},
     {0.000f,12549,1.0f},
@@ -1619,10 +1622,10 @@ static const Note _eternal_test_ending_c3_v0[] = {
     {622.254f,3585,0.7402f},
     {0.000f,12549,1.0f},
     {466.164f,3585,0.7402f},
-    {0.000f,7177,1.0f},
+    {0.000f,7196,1.0f},
 };
 
-/* ch4 v0 "FL Keys" wave=2 gain=1.10 (62 notes) */
+/* ch4 v0 "FL Keys" wave=5 gain=1.10 duty=0.500 (63 notes) */
 static const Note _eternal_test_ending_c4_v0[] = {
     {0.000f,344195,1.0f},
     {622.254f,43024,0.7402f},
@@ -1686,9 +1689,10 @@ static const Note _eternal_test_ending_c4_v0[] = {
     {466.164f,43024,0.7402f},
     {369.994f,21512,0.7402f},
     {349.228f,21512,0.7402f},
+    {0.000f,19,1.0f},
 };
 
-/* ch4 v1 "FL Keys" wave=2 gain=1.10 (50 notes) */
+/* ch4 v1 "FL Keys" wave=5 gain=1.10 duty=0.500 (51 notes) */
 static const Note _eternal_test_ending_c4_v1[] = {
     {0.000f,344195,1.0f},
     {311.127f,43024,0.7402f},
@@ -1740,9 +1744,10 @@ static const Note _eternal_test_ending_c4_v1[] = {
     {277.183f,43024,0.7402f},
     {311.127f,43024,0.7402f},
     {246.942f,43024,0.7402f},
+    {0.000f,19,1.0f},
 };
 
-/* ch4 v2 "FL Keys" wave=2 gain=1.10 (62 notes) */
+/* ch4 v2 "FL Keys" wave=5 gain=1.10 duty=0.500 (63 notes) */
 static const Note _eternal_test_ending_c4_v2[] = {
     {0.000f,344195,1.0f},
     {246.942f,43024,0.7402f},
@@ -1806,9 +1811,10 @@ static const Note _eternal_test_ending_c4_v2[] = {
     {233.082f,43024,0.7402f},
     {184.997f,21512,0.7402f},
     {174.614f,21512,0.7402f},
+    {0.000f,19,1.0f},
 };
 
-/* ch4 v3 "FL Keys" wave=2 gain=1.10 (49 notes) */
+/* ch4 v3 "FL Keys" wave=5 gain=1.10 duty=0.500 (49 notes) */
 static const Note _eternal_test_ending_c4_v3[] = {
     {0.000f,344195,1.0f},
     {123.471f,43024,0.7402f},
@@ -1858,22 +1864,23 @@ static const Note _eternal_test_ending_c4_v3[] = {
     {123.471f,43024,0.7402f},
     {138.591f,43024,0.7402f},
     {155.563f,43024,0.7402f},
-    {0.000f,43023,1.0f},
+    {0.000f,43042,1.0f},
 };
 
 const SongDef song_eternal_test_ending = {
     11,
     {
-        { _eternal_test_ending_c1_v0, 62, 0, 1.0000f },
-        { _eternal_test_ending_c1_v1, 50, 0, 1.0000f },
-        { _eternal_test_ending_c1_v2, 62, 0, 1.0000f },
-        { _eternal_test_ending_c1_v3, 48, 0, 1.0000f },
-        { _eternal_test_ending_c2_v0, 541, 1, 0.8450f },
-        { _eternal_test_ending_c2_v1, 541, 1, 0.8450f },
-        { _eternal_test_ending_c3_v0, 288, 3, 1.0000f },
-        { _eternal_test_ending_c4_v0, 62, 2, 1.1000f },
-        { _eternal_test_ending_c4_v1, 50, 2, 1.1000f },
-        { _eternal_test_ending_c4_v2, 62, 2, 1.1000f },
-        { _eternal_test_ending_c4_v3, 49, 2, 1.1000f },
-    }
+        { _eternal_test_ending_c1_v0, 63, 0, 1.0000f, 0.5000f },
+        { _eternal_test_ending_c1_v1, 51, 0, 1.0000f, 0.5000f },
+        { _eternal_test_ending_c1_v2, 63, 0, 1.0000f, 0.5000f },
+        { _eternal_test_ending_c1_v3, 48, 0, 1.0000f, 0.5000f },
+        { _eternal_test_ending_c2_v0, 541, 1, 0.8450f, 0.2500f },
+        { _eternal_test_ending_c2_v1, 541, 1, 0.8450f, 0.2500f },
+        { _eternal_test_ending_c3_v0, 288, 3, 1.0000f, 0.5000f },
+        { _eternal_test_ending_c4_v0, 63, 5, 1.1000f, 0.5000f },
+        { _eternal_test_ending_c4_v1, 51, 5, 1.1000f, 0.5000f },
+        { _eternal_test_ending_c4_v2, 63, 5, 1.1000f, 0.5000f },
+        { _eternal_test_ending_c4_v3, 49, 5, 1.1000f, 0.5000f },
+    },
+    0.1800f
 };

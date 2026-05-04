@@ -2,7 +2,7 @@
    Tempo: 70.0 BPM  PPQ: 96  SR: 22050 */
 #include "../core/audio.h"
 
-/* ch0 v0 "FL Keys" wave=2 gain=1.00 (5 notes) */
+/* ch0 v0 "FL Keys" wave=5 gain=1.00 duty=0.500 (5 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c0_v0[] = {
     {932.328f,151200,0.7244f},
     {783.991f,151200,0.7244f},
@@ -11,7 +11,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c0_v0[] = {
     {0.000f,604800,1.0f},
 };
 
-/* ch0 v1 "FL Keys" wave=2 gain=1.00 (65 notes) */
+/* ch0 v1 "FL Keys" wave=5 gain=1.00 duty=0.500 (65 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c0_v1[] = {
     {233.082f,4725,0.7874f},
     {261.626f,4725,0.7874f},
@@ -80,7 +80,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c0_v1[] = {
     {0.000f,604800,1.0f},
 };
 
-/* ch0 v2 "FL Keys" wave=2 gain=1.00 (5 notes) */
+/* ch0 v2 "FL Keys" wave=5 gain=1.00 duty=0.500 (5 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c0_v2[] = {
     {146.832f,151200,0.7874f},
     {130.813f,151200,0.7874f},
@@ -89,7 +89,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c0_v2[] = {
     {0.000f,604800,1.0f},
 };
 
-/* ch0 v3 "FL Keys" wave=2 gain=1.00 (5 notes) */
+/* ch0 v3 "FL Keys" wave=5 gain=1.00 duty=0.500 (5 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c0_v3[] = {
     {116.541f,151200,0.7874f},
     {116.541f,151200,0.7874f},
@@ -98,7 +98,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c0_v3[] = {
     {0.000f,604800,1.0f},
 };
 
-/* ch0 v4 "FL Keys" wave=2 gain=1.00 (5 notes) */
+/* ch0 v4 "FL Keys" wave=5 gain=1.00 duty=0.500 (5 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c0_v4[] = {
     {97.999f,151200,0.7874f},
     {73.416f,151200,0.7874f},
@@ -107,7 +107,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c0_v4[] = {
     {0.000f,604800,1.0f},
 };
 
-/* ch0 v5 "FL Keys" wave=2 gain=1.00 (9 notes) */
+/* ch0 v5 "FL Keys" wave=5 gain=1.00 duty=0.500 (9 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c0_v5[] = {
     {58.270f,151200,0.7874f},
     {0.000f,75600,1.0f},
@@ -120,7 +120,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c0_v5[] = {
     {0.000f,604800,1.0f},
 };
 
-/* ch0 v6 "FL Keys" wave=2 gain=1.00 (7 notes) */
+/* ch0 v6 "FL Keys" wave=5 gain=1.00 duty=0.500 (7 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c0_v6[] = {
     {0.000f,75600,1.0f},
     {174.614f,37800,0.7874f},
@@ -131,7 +131,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c0_v6[] = {
     {0.000f,604800,1.0f},
 };
 
-/* ch1 v0 "NES VST 1.2" wave=1 gain=1.00 (128 notes) */
+/* ch1 v0 "NES VST 1.2" wave=1 gain=1.00 duty=0.500 (128 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c1_v0[] = {
     {233.082f,4725,0.5276f},
     {261.626f,4725,0.5276f},
@@ -263,7 +263,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c1_v0[] = {
     {293.665f,4725,0.5276f},
 };
 
-/* ch1 v1 "NES VST 1.2" wave=1 gain=1.00 (8 notes) */
+/* ch1 v1 "NES VST 1.2" wave=1 gain=1.00 duty=0.500 (8 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c1_v1[] = {
     {146.832f,151200,0.7874f},
     {130.813f,151200,0.7874f},
@@ -275,7 +275,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c1_v1[] = {
     {116.541f,151200,0.7874f},
 };
 
-/* ch1 v2 "NES VST 1.2" wave=1 gain=1.00 (8 notes) */
+/* ch1 v2 "NES VST 1.2" wave=1 gain=1.00 duty=0.500 (8 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c1_v2[] = {
     {97.999f,151200,0.7874f},
     {116.541f,151200,0.7874f},
@@ -287,7 +287,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c1_v2[] = {
     {97.999f,151200,0.7874f},
 };
 
-/* ch1 v3 "NES VST 1.2" wave=1 gain=1.00 (8 notes) */
+/* ch1 v3 "NES VST 1.2" wave=1 gain=1.00 duty=0.500 (8 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c1_v3[] = {
     {58.270f,151200,0.7874f},
     {73.416f,151200,0.7874f},
@@ -299,7 +299,7 @@ static const Note _hopes_and_dreams_eternal_night_ost_c1_v3[] = {
     {58.270f,151200,0.7874f},
 };
 
-/* ch1 v4 "NES VST 1.2" wave=1 gain=1.00 (24 notes) */
+/* ch1 v4 "NES VST 1.2" wave=1 gain=1.00 duty=0.500 (24 notes) */
 static const Note _hopes_and_dreams_eternal_night_ost_c1_v4[] = {
     {0.000f,75600,1.0f},
     {174.614f,37800,0.7874f},
@@ -330,17 +330,18 @@ static const Note _hopes_and_dreams_eternal_night_ost_c1_v4[] = {
 const SongDef song_hopes_and_dreams_eternal_night_ost = {
     12,
     {
-        { _hopes_and_dreams_eternal_night_ost_c0_v0, 5, 2, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c0_v1, 65, 2, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c0_v2, 5, 2, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c0_v3, 5, 2, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c0_v4, 5, 2, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c0_v5, 9, 2, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c0_v6, 7, 2, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c1_v0, 128, 1, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c1_v1, 8, 1, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c1_v2, 8, 1, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c1_v3, 8, 1, 1.0000f },
-        { _hopes_and_dreams_eternal_night_ost_c1_v4, 24, 1, 1.0000f },
-    }
+        { _hopes_and_dreams_eternal_night_ost_c0_v0, 5, 5, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c0_v1, 65, 5, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c0_v2, 5, 5, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c0_v3, 5, 5, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c0_v4, 5, 5, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c0_v5, 9, 5, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c0_v6, 7, 5, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c1_v0, 128, 1, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c1_v1, 8, 1, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c1_v2, 8, 1, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c1_v3, 8, 1, 1.0000f, 0.5000f },
+        { _hopes_and_dreams_eternal_night_ost_c1_v4, 24, 1, 1.0000f, 0.5000f },
+    },
+    0.1800f
 };

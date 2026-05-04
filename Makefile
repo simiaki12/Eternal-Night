@@ -42,6 +42,9 @@ audio_demo:
 flp2c:
 	python3 tools/flp2c.py
 
+verify_music:
+	python3 tools/verify_music.py
+
 gen_world_music:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os tools/gen_world_music.c -o build/gen_world_music

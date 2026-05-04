@@ -2,7 +2,7 @@
    Tempo: 140.0 BPM  PPQ: 96  SR: 22050 */
 #include "../core/audio.h"
 
-/* ch0 v0 "NES VST 1.2" wave=0 gain=1.00 (4 notes) */
+/* ch0 v0 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (4 notes) */
 static const Note _over_c0_v0[] = {
     {277.183f,37800,0.7402f},
     {207.652f,37800,0.7402f},
@@ -10,14 +10,14 @@ static const Note _over_c0_v0[] = {
     {0.000f,18900,1.0f},
 };
 
-/* ch0 v1 "NES VST 1.2" wave=0 gain=1.00 (3 notes) */
+/* ch0 v1 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (3 notes) */
 static const Note _over_c0_v1[] = {
     {155.563f,37800,0.7402f},
     {138.591f,37800,0.7402f},
     {207.652f,37800,0.7402f},
 };
 
-/* ch0 v2 "NES VST 1.2" wave=0 gain=1.00 (6 notes) */
+/* ch0 v2 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (6 notes) */
 static const Note _over_c0_v2[] = {
     {0.000f,9450,1.0f},
     {415.305f,18900,0.7402f},
@@ -27,7 +27,7 @@ static const Note _over_c0_v2[] = {
     {110.000f,37800,0.7402f},
 };
 
-/* ch0 v3 "NES VST 1.2" wave=0 gain=1.00 (5 notes) */
+/* ch0 v3 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (5 notes) */
 static const Note _over_c0_v3[] = {
     {0.000f,18900,1.0f},
     {220.000f,18900,0.7402f},
@@ -39,9 +39,10 @@ static const Note _over_c0_v3[] = {
 const SongDef song_over = {
     4,
     {
-        { _over_c0_v0, 4, 0, 1.0000f },
-        { _over_c0_v1, 3, 0, 1.0000f },
-        { _over_c0_v2, 6, 0, 1.0000f },
-        { _over_c0_v3, 5, 0, 1.0000f },
-    }
+        { _over_c0_v0, 4, 0, 1.0000f, 0.5000f },
+        { _over_c0_v1, 3, 0, 1.0000f, 0.5000f },
+        { _over_c0_v2, 6, 0, 1.0000f, 0.5000f },
+        { _over_c0_v3, 5, 0, 1.0000f, 0.5000f },
+    },
+    0.1600f
 };

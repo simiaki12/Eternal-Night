@@ -2,7 +2,7 @@
    Tempo: 140.0 BPM  PPQ: 96  SR: 22050 */
 #include "../core/audio.h"
 
-/* ch0 v0 "FL Keys" wave=2 gain=0.96 (94 notes) */
+/* ch0 v0 "FL Keys" wave=5 gain=0.96 duty=0.500 (93 notes) */
 static const Note _eternal_town_c0_v0[] = {
     {0.000f,302400,1.0f},
     {261.626f,3938,0.4567f},
@@ -96,11 +96,10 @@ static const Note _eternal_town_c0_v0[] = {
     {622.254f,2362,0.4567f},
     {0.000f,4725,1.0f},
     {783.991f,4725,0.5433f},
-    {932.328f,4725,0.5433f},
-    {0.000f,34,1.0f},
+    {932.328f,4691,0.5433f},
 };
 
-/* ch0 v1 "FL Keys" wave=2 gain=0.96 (92 notes) */
+/* ch0 v1 "FL Keys" wave=5 gain=0.96 duty=0.500 (91 notes) */
 static const Note _eternal_town_c0_v1[] = {
     {0.000f,302400,1.0f},
     {103.826f,3938,0.7323f},
@@ -192,11 +191,10 @@ static const Note _eternal_town_c0_v1[] = {
     {0.000f,394,1.0f},
     {415.305f,2362,0.7323f},
     {0.000f,4725,1.0f},
-    {554.365f,9450,0.4567f},
-    {0.000f,34,1.0f},
+    {554.365f,9416,0.4567f},
 };
 
-/* ch0 v2 "FL Keys" wave=2 gain=0.96 (32 notes) */
+/* ch0 v2 "FL Keys" wave=5 gain=0.96 duty=0.500 (31 notes) */
 static const Note _eternal_town_c0_v2[] = {
     {0.000f,321300,1.0f},
     {77.782f,4725,0.7323f},
@@ -229,10 +227,9 @@ static const Note _eternal_town_c0_v2[] = {
     {77.782f,4725,0.7323f},
     {0.000f,4725,1.0f},
     {391.995f,9450,0.7323f},
-    {0.000f,68,1.0f},
 };
 
-/* ch0 v3 "FL Keys" wave=2 gain=0.96 (9 notes) */
+/* ch0 v3 "FL Keys" wave=5 gain=0.96 duty=0.500 (9 notes) */
 static const Note _eternal_town_c0_v3[] = {
     {0.000f,444150,1.0f},
     {24.500f,4725,0.7323f},
@@ -242,10 +239,10 @@ static const Note _eternal_town_c0_v3[] = {
     {77.782f,4725,0.7323f},
     {0.000f,42525,1.0f},
     {48.999f,4725,0.7323f},
-    {0.000f,4793,1.0f},
+    {0.000f,4725,1.0f},
 };
 
-/* ch1 v0 "NES VST 1.2" wave=1 gain=1.00 (184 notes) */
+/* ch1 v0 "NES VST 1.2" wave=1 gain=1.00 duty=0.500 (184 notes) */
 static const Note _eternal_town_c1_v0[] = {
     {261.626f,3938,0.4567f},
     {0.000f,788,1.0f},
@@ -430,10 +427,10 @@ static const Note _eternal_town_c1_v0[] = {
     {622.254f,2362,0.4567f},
     {0.000f,4725,1.0f},
     {783.991f,4725,0.5433f},
-    {932.328f,4725,0.5433f},
+    {932.328f,4657,0.5433f},
 };
 
-/* ch1 v1 "NES VST 1.2" wave=1 gain=1.00 (180 notes) */
+/* ch1 v1 "NES VST 1.2" wave=1 gain=1.00 duty=0.500 (180 notes) */
 static const Note _eternal_town_c1_v1[] = {
     {103.826f,3938,0.7323f},
     {0.000f,788,1.0f},
@@ -614,10 +611,10 @@ static const Note _eternal_town_c1_v1[] = {
     {0.000f,394,1.0f},
     {415.305f,2362,0.7323f},
     {0.000f,4725,1.0f},
-    {554.365f,9450,0.4567f},
+    {554.365f,9382,0.4567f},
 };
 
-/* ch1 v2 "NES VST 1.2" wave=1 gain=1.00 (63 notes) */
+/* ch1 v2 "NES VST 1.2" wave=1 gain=1.00 duty=0.500 (62 notes) */
 static const Note _eternal_town_c1_v2[] = {
     {0.000f,18900,1.0f},
     {77.782f,4725,0.7323f},
@@ -681,10 +678,9 @@ static const Note _eternal_town_c1_v2[] = {
     {77.782f,4725,0.7323f},
     {0.000f,4725,1.0f},
     {391.995f,9450,0.7323f},
-    {0.000f,68,1.0f},
 };
 
-/* ch1 v3 "NES VST 1.2" wave=1 gain=1.00 (17 notes) */
+/* ch1 v3 "NES VST 1.2" wave=1 gain=1.00 duty=0.500 (17 notes) */
 static const Note _eternal_town_c1_v3[] = {
     {0.000f,141750,1.0f},
     {24.500f,4725,0.7323f},
@@ -702,10 +698,10 @@ static const Note _eternal_town_c1_v3[] = {
     {77.782f,4725,0.7323f},
     {0.000f,42525,1.0f},
     {48.999f,4725,0.7323f},
-    {0.000f,4793,1.0f},
+    {0.000f,4725,1.0f},
 };
 
-/* ch2 v0 "3x Osc" wave=1 gain=1.28 (80 notes) */
+/* ch2 v0 "3x Osc" wave=1 gain=1.28 duty=0.500 (80 notes) */
 static const Note _eternal_town_c2_v0[] = {
     {103.826f,4725,0.7402f},
     {0.000f,14175,1.0f},
@@ -786,20 +782,21 @@ static const Note _eternal_town_c2_v0[] = {
     {65.406f,4725,0.7402f},
     {0.000f,4725,1.0f},
     {58.270f,4725,0.7402f},
-    {0.000f,4793,1.0f},
+    {0.000f,4725,1.0f},
 };
 
 const SongDef song_eternal_town = {
     9,
     {
-        { _eternal_town_c0_v0, 94, 2, 0.9650f },
-        { _eternal_town_c0_v1, 92, 2, 0.9650f },
-        { _eternal_town_c0_v2, 32, 2, 0.9650f },
-        { _eternal_town_c0_v3, 9, 2, 0.9650f },
-        { _eternal_town_c1_v0, 184, 1, 1.0000f },
-        { _eternal_town_c1_v1, 180, 1, 1.0000f },
-        { _eternal_town_c1_v2, 63, 1, 1.0000f },
-        { _eternal_town_c1_v3, 17, 1, 1.0000f },
-        { _eternal_town_c2_v0, 80, 1, 1.2800f },
-    }
+        { _eternal_town_c0_v0, 93, 5, 0.9650f, 0.5000f },
+        { _eternal_town_c0_v1, 91, 5, 0.9650f, 0.5000f },
+        { _eternal_town_c0_v2, 31, 5, 0.9650f, 0.5000f },
+        { _eternal_town_c0_v3, 9, 5, 0.9650f, 0.5000f },
+        { _eternal_town_c1_v0, 184, 1, 1.0000f, 0.5000f },
+        { _eternal_town_c1_v1, 180, 1, 1.0000f, 0.5000f },
+        { _eternal_town_c1_v2, 62, 1, 1.0000f, 0.5000f },
+        { _eternal_town_c1_v3, 17, 1, 1.0000f, 0.5000f },
+        { _eternal_town_c2_v0, 80, 1, 1.2800f, 0.5000f },
+    },
+    0.1000f
 };

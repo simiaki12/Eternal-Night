@@ -32,6 +32,8 @@
 GameState state     = STATE_MAIN_MENU;
 GameState prevState = STATE_MAIN_MENU;
 
+static int g_musicStarted = 0;
+
 /* Overlay states sit on top of the world and don't affect music. */
 #define IS_OVERLAY(s) ((s)==STATE_INVENTORY||(s)==STATE_SKILLS|| \
                        (s)==STATE_QUEST_LOG||(s)==STATE_CHAR_SHEET|| \
@@ -447,9 +449,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
         if (state != STATE_WORLD) g_worldActPanel = 0;
 
         /* Music: only react to real state changes, not overlay transitions */
-        if (state != prevState && !IS_OVERLAY(state) && !IS_OVERLAY(prevState)) {
+        if (!g_musicStarted ||(state != prevState && !IS_OVERLAY(state) && !IS_OVERLAY(prevState))) {
             switch (state) {
-                case STATE_MAIN_MENU: audioPlaySong(&song_hopes_and_dreams_eternal_night_ost); break;
+                case STATE_MAIN_MENU: audioPlaySong(&song_eternal_test); break;
                 case STATE_WORLD:     audioPlaySong(&song_hopes_and_dreams_eternal_night_ost);   break;
                 case STATE_TOWN:      audioPlaySong(&song_eternal_town);   break;
                 case STATE_DUNGEON:   audioPlaySong(&song_eternal_cave);   break;
@@ -457,6 +459,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                 case STATE_DEATH:     audioPlaySong(&song_over);           break;
                 default:              audioStop();                          break;
             }
+            g_musicStarted = 1;
         }
         prevState = state;
 
