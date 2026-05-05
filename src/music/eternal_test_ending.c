@@ -1870,17 +1870,17 @@ static const Note _eternal_test_ending_c4_v3[] = {
 const SongDef song_eternal_test_ending = {
     11,
     {
-        { _eternal_test_ending_c1_v0, 63, 0, 1.0000f, 0.5000f },
-        { _eternal_test_ending_c1_v1, 51, 0, 1.0000f, 0.5000f },
-        { _eternal_test_ending_c1_v2, 63, 0, 1.0000f, 0.5000f },
-        { _eternal_test_ending_c1_v3, 48, 0, 1.0000f, 0.5000f },
-        { _eternal_test_ending_c2_v0, 541, 1, 0.8450f, 0.2500f },
-        { _eternal_test_ending_c2_v1, 541, 1, 0.8450f, 0.2500f },
-        { _eternal_test_ending_c3_v0, 288, 3, 1.0000f, 0.5000f },
-        { _eternal_test_ending_c4_v0, 63, 5, 1.1000f, 0.5000f },
-        { _eternal_test_ending_c4_v1, 51, 5, 1.1000f, 0.5000f },
-        { _eternal_test_ending_c4_v2, 63, 5, 1.1000f, 0.5000f },
-        { _eternal_test_ending_c4_v3, 49, 5, 1.1000f, 0.5000f },
+        { _eternal_test_ending_c1_v0, 63, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_ending_c1_v1, 51, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_ending_c1_v2, 63, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_ending_c1_v3, 48, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_ending_c2_v0, 541, 1, 0.8450f, 0.2500f, 0 },
+        { _eternal_test_ending_c2_v1, 541, 1, 0.8450f, 0.2500f, 0 },
+        { _eternal_test_ending_c3_v0, 288, 3, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_ending_c4_v0, 63, 5, 1.1000f, 0.5000f, 0 },
+        { _eternal_test_ending_c4_v1, 51, 5, 1.1000f, 0.5000f, 0 },
+        { _eternal_test_ending_c4_v2, 63, 5, 1.1000f, 0.5000f, 0 },
+        { _eternal_test_ending_c4_v3, 49, 5, 1.1000f, 0.5000f, 0 },
     },
     0.1800f
 };

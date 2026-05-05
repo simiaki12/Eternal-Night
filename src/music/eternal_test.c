@@ -655,13 +655,13 @@ static const Note _eternal_test_c3_v0[] = {
 const SongDef song_eternal_test = {
     7,
     {
-        { _eternal_test_c1_v0, 42, 0, 1.0000f, 0.5000f },
-        { _eternal_test_c1_v1, 35, 0, 1.0000f, 0.5000f },
-        { _eternal_test_c1_v2, 42, 0, 1.0000f, 0.5000f },
-        { _eternal_test_c1_v3, 32, 0, 1.0000f, 0.5000f },
-        { _eternal_test_c2_v0, 181, 1, 1.0000f, 0.2500f },
-        { _eternal_test_c2_v1, 181, 1, 1.0000f, 0.2500f },
-        { _eternal_test_c3_v0, 109, 3, 1.0000f, 0.5000f },
+        { _eternal_test_c1_v0, 42, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_c1_v1, 35, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_c1_v2, 42, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_c1_v3, 32, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_c2_v0, 181, 1, 1.0000f, 0.2500f, 0 },
+        { _eternal_test_c2_v1, 181, 1, 1.0000f, 0.2500f, 0 },
+        { _eternal_test_c3_v0, 109, 3, 1.0000f, 0.5000f, 0 },
     },
     0.0800f
 };

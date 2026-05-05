@@ -86,6 +86,7 @@ typedef struct {
     float    atk, dcy, sus, rel, gate_frac;
     int      wave;
     float    duty;                /* square duty cycle [0.1, 0.9]; 0.5 = classic */
+    float    prev_f;              /* last note's pitch for slide interpolation */
     float    lpf_state;
     float    ks_buf[KS_BUFMAX];
     int      ks_len, ks_pos;
@@ -97,6 +98,7 @@ typedef struct {
     const Note *seq;
     int      n;
     float    gain;
+    int      crushed; /* 1 = 4-bit quantize this voice's output */
 } ActiveVoice;
 
 /* --- Globals --- */
@@ -211,6 +213,16 @@ static const float s_wave_vol[6] = {
 static float voice_tick(Voice *v, const Note *seq, int n) {
     const Note *nt = &seq[v->ni];
 
+    /* Slide: interpolate frequency from previous note's pitch to |nt->f| */
+    float eff_f;
+    if (nt->f < 0.0f) {
+        float t = (float)(v->np + 1) / (float)(nt->d > 0 ? nt->d : 1);
+        if (t > 1.0f) t = 1.0f;
+        eff_f = v->prev_f + (-nt->f - v->prev_f) * t;
+    } else {
+        eff_f = nt->f;
+    }
+
     /* KS: seed delay line on new note */
     if (v->wave == 5 && v->np == 0 && nt->f > 0.0f) {
         v->ks_len = (int)((float)SR / nt->f + 0.5f);
@@ -240,13 +252,12 @@ static float voice_tick(Voice *v, const Note *seq, int n) {
     }
 
     float s = 0.0f;
-    if (v->ep != ENV_OFF && nt->f > 0.0f) {
+    if (v->ep != ENV_OFF && eff_f > 0.0f) {
         if (v->wave == 3) {
             /* NES 15-bit LFSR: feedback = bit0 XOR bit1, clocked at note pitch.
                Reuses ks_len (LFSR state) and ph (phase accumulator) — both
                unused for wave=3 in all other branches. */
-            float rate = nt->f > 0.0f ? nt->f : 220.0f;
-            v->ph += rate / (float)SR;
+            v->ph += eff_f / (float)SR;
             while (v->ph >= 1.0f) {
                 v->ph -= 1.0f;
                 int fb = (v->ks_len & 1) ^ ((v->ks_len >> 1) & 1);
@@ -260,7 +271,7 @@ static float voice_tick(Voice *v, const Note *seq, int n) {
             v->ks_buf[v->ks_pos] = s;
             v->ks_pos = (v->ks_pos + 1) % v->ks_len;
         } else {
-            v->ph += nt->f / (float)SR;
+            v->ph += eff_f / (float)SR;
             if (v->ph >= 1.0f) v->ph -= 1.0f;
             switch (v->wave) {
                 case 0: {
@@ -290,11 +301,17 @@ static float voice_tick(Voice *v, const Note *seq, int n) {
 
     /* Advance note */
     if (++v->np >= nt->d) {
-        v->np  = 0;
-        v->ni  = (v->ni + 1) % n;
-        v->ph  = 0.0f;
-        v->env = 0.0f;
-        v->ep  = ENV_ATK;
+        if (nt->f != 0.0f) v->prev_f = nt->f < 0.0f ? -nt->f : nt->f;
+        v->np = 0;
+        v->ni = (v->ni + 1) % n;
+        {
+            const Note *nxt = &seq[v->ni];
+            if (nxt->f >= 0.0f) {   /* not a slide — reset phase and envelope */
+                v->ph  = 0.0f;
+                v->env = 0.0f;
+                v->ep  = ENV_ATK;
+            }
+        }
     }
 
     return s;
@@ -314,7 +331,9 @@ static void fill(int16_t *buf, int n) {
             ActiveVoice *av = &s_av[t];
             int wave = av->v.wave < 6 ? av->v.wave : 1;
             float g = av->gain > 0.0f ? av->gain : 1.0f;
-            v += voice_tick(&av->v, av->seq, av->n) * s_wave_vol[wave] * g;
+            float vs = voice_tick(&av->v, av->seq, av->n) * s_wave_vol[wave] * g;
+            if (av->crushed) vs = (float)((int)(vs * 8.0f)) / 8.0f;
+            v += vs;
         }
         if (s_reverb > 0.0f) {
             float wet = reverb_tick(v);
@@ -362,8 +381,9 @@ void audioPlaySong(const SongDef *song) {
         voice_reset(&s_av[t].v, td->wave);
         s_av[t].seq  = td->seq;
         s_av[t].n    = td->n;
-        s_av[t].gain = td->gain > 0.0f ? td->gain : 1.0f;
-        s_av[t].v.duty = clamp_duty(td->duty);
+        s_av[t].gain    = td->gain > 0.0f ? td->gain : 1.0f;
+        s_av[t].v.duty  = clamp_duty(td->duty);
+        s_av[t].crushed = td->crushed;
     }
 
     WAVEFORMATEX fmt = {

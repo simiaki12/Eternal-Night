@@ -1310,14 +1310,14 @@ static const Note _eternal_gdr_c1_v2[] = {
 const SongDef song_eternal_gdr = {
     8,
     {
-        { _eternal_gdr_c0_v0, 48, 1, 1.0000f, 0.5000f },
-        { _eternal_gdr_c0_v1, 228, 1, 1.0000f, 0.5000f },
-        { _eternal_gdr_c0_v2, 343, 1, 1.0000f, 0.5000f },
-        { _eternal_gdr_c0_v3, 241, 1, 1.0000f, 0.5000f },
-        { _eternal_gdr_c0_v4, 97, 1, 1.0000f, 0.5000f },
-        { _eternal_gdr_c1_v0, 134, 5, 0.8850f, 0.5000f },
-        { _eternal_gdr_c1_v1, 117, 5, 0.8850f, 0.5000f },
-        { _eternal_gdr_c1_v2, 65, 5, 0.8850f, 0.5000f },
+        { _eternal_gdr_c0_v0, 48, 1, 1.0000f, 0.5000f, 0 },
+        { _eternal_gdr_c0_v1, 228, 1, 1.0000f, 0.5000f, 0 },
+        { _eternal_gdr_c0_v2, 343, 1, 1.0000f, 0.5000f, 0 },
+        { _eternal_gdr_c0_v3, 241, 1, 1.0000f, 0.5000f, 0 },
+        { _eternal_gdr_c0_v4, 97, 1, 1.0000f, 0.5000f, 0 },
+        { _eternal_gdr_c1_v0, 134, 5, 0.8850f, 0.5000f, 0 },
+        { _eternal_gdr_c1_v1, 117, 5, 0.8850f, 0.5000f, 0 },
+        { _eternal_gdr_c1_v2, 65, 5, 0.8850f, 0.5000f, 0 },
     },
     0.0800f
 };

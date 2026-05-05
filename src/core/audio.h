@@ -2,7 +2,9 @@
 #include <stdint.h>
 
 /* --- Note: one event in a voice sequence --- */
-/* f > 0 → pitch in Hz.  f == 0 → rest.  d → duration in samples.
+/* f > 0 → pitch in Hz.  f == 0 → rest.  f < 0 → slide: target Hz = |f|,
+   glide from previous note's frequency over d samples (phase not reset).
+   d → duration in samples.
    v → velocity/amplitude 0.0-1.0; 0.0 treated as 1.0 (full). */
 typedef struct { float f; int d; float v; } Note;
 
@@ -12,8 +14,9 @@ typedef struct {
     const Note *seq;
     int         n;
     int         wave;
-    float       gain;   /* per-channel volume [0.0, 2.0]; 0.0 treated as 1.0 */
-    float       duty;   /* square duty [0.125, 0.75]; 0.0 treated as 0.5 */
+    float       gain;    /* per-channel volume [0.0, 2.0]; 0.0 treated as 1.0 */
+    float       duty;    /* square duty [0.125, 0.75]; 0.0 treated as 0.5 */
+    int         crushed; /* 1 = apply 4-bit quantization (kHs Bitcrush) */
 } TrackDef;
 
 /* --- Song: up to 24 simultaneous voice tracks --- */

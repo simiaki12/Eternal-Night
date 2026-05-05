@@ -1113,13 +1113,13 @@ static const Note _shining_star_eternal_night_ost_c1_v6[] = {
 const SongDef song_shining_star_eternal_night_ost = {
     7,
     {
-        { _shining_star_eternal_night_ost_c1_v0, 208, 1, 1.0000f, 0.1250f },
-        { _shining_star_eternal_night_ost_c1_v1, 336, 1, 1.0000f, 0.1250f },
-        { _shining_star_eternal_night_ost_c1_v2, 152, 1, 1.0000f, 0.1250f },
-        { _shining_star_eternal_night_ost_c1_v3, 80, 1, 1.0000f, 0.1250f },
-        { _shining_star_eternal_night_ost_c1_v4, 64, 1, 1.0000f, 0.1250f },
-        { _shining_star_eternal_night_ost_c1_v5, 201, 1, 1.0000f, 0.1250f },
-        { _shining_star_eternal_night_ost_c1_v6, 39, 1, 1.0000f, 0.1250f },
+        { _shining_star_eternal_night_ost_c1_v0, 208, 1, 1.0000f, 0.1250f, 0 },
+        { _shining_star_eternal_night_ost_c1_v1, 336, 1, 1.0000f, 0.1250f, 0 },
+        { _shining_star_eternal_night_ost_c1_v2, 152, 1, 1.0000f, 0.1250f, 0 },
+        { _shining_star_eternal_night_ost_c1_v3, 80, 1, 1.0000f, 0.1250f, 0 },
+        { _shining_star_eternal_night_ost_c1_v4, 64, 1, 1.0000f, 0.1250f, 0 },
+        { _shining_star_eternal_night_ost_c1_v5, 201, 1, 1.0000f, 0.1250f, 0 },
+        { _shining_star_eternal_night_ost_c1_v6, 39, 1, 1.0000f, 0.1250f, 0 },
     },
     0.0400f
 };

@@ -788,15 +788,15 @@ static const Note _eternal_town_c2_v0[] = {
 const SongDef song_eternal_town = {
     9,
     {
-        { _eternal_town_c0_v0, 93, 5, 0.9650f, 0.5000f },
-        { _eternal_town_c0_v1, 91, 5, 0.9650f, 0.5000f },
-        { _eternal_town_c0_v2, 31, 5, 0.9650f, 0.5000f },
-        { _eternal_town_c0_v3, 9, 5, 0.9650f, 0.5000f },
-        { _eternal_town_c1_v0, 184, 1, 1.0000f, 0.5000f },
-        { _eternal_town_c1_v1, 180, 1, 1.0000f, 0.5000f },
-        { _eternal_town_c1_v2, 62, 1, 1.0000f, 0.5000f },
-        { _eternal_town_c1_v3, 17, 1, 1.0000f, 0.5000f },
-        { _eternal_town_c2_v0, 80, 1, 1.2800f, 0.5000f },
+        { _eternal_town_c0_v0, 93, 5, 0.9650f, 0.5000f, 0 },
+        { _eternal_town_c0_v1, 91, 5, 0.9650f, 0.5000f, 0 },
+        { _eternal_town_c0_v2, 31, 5, 0.9650f, 0.5000f, 0 },
+        { _eternal_town_c0_v3, 9, 5, 0.9650f, 0.5000f, 0 },
+        { _eternal_town_c1_v0, 184, 1, 1.0000f, 0.5000f, 0 },
+        { _eternal_town_c1_v1, 180, 1, 1.0000f, 0.5000f, 0 },
+        { _eternal_town_c1_v2, 62, 1, 1.0000f, 0.5000f, 0 },
+        { _eternal_town_c1_v3, 17, 1, 1.0000f, 0.5000f, 0 },
+        { _eternal_town_c2_v0, 80, 1, 1.2800f, 0.5000f, 0 },
     },
     0.1000f
 };

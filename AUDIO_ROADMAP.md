@@ -98,14 +98,14 @@ Effects: simple song-level reverb exists; kHs Bitcrush, Serum FX, FL mixer EQ, a
 - **Files**: `src/core/audio.h`, `src/core/audio.c`, `tools/flp2c.py`, `src/music/*.c`.
 - **Impact**: Ambient songs (eternal_cave, hopes_and_dreams) go from flat/dry to spacious. ~5–8% overall fidelity improvement.
 
-### 4. Note slides / portamento
-- **What**: FL Studio slide notes are marked in PyFLP. Detect them in `_build_lanes` and emit a slide duration. In the engine, linearly interpolate `Voice.ph` frequency between the previous note's end freq and the new note's target freq over N samples.
-- **Files**: `tools/flp2c.py` (detect slide flag, emit slide info), `src/core/audio.h` (add slide field to Note or encode in f), `src/core/audio.c` (frequency interpolation in voice_tick).
+### 4. Note slides / portamento — completed 2026-05-05
+- **What**: Slide notes encoded as `f < 0` in the `Note` struct (target Hz = `|f|`). Zero extra bytes per note. `Voice` gained `prev_f` to track the last played pitch. `voice_tick` linearly interpolates from `prev_f` to `|f|` over the slide duration and skips phase/envelope reset so the oscillator glides continuously. `tools/flp2c.py` detects `note.slide` via PyFLP and emits negative frequencies for slide notes.
+- **Files**: `src/core/audio.h` (comment), `src/core/audio.c` (Voice.prev_f, voice_tick), `tools/flp2c.py` (_build_lanes). Re-run converter.
 - **Impact**: Glide-heavy channels sound dramatically more accurate. Moderate overall impact since not all songs use slides.
 
-### 5. Bitcrusher effect for marked channels
-- **What**: eternal_town and eternal_gdr use kHs Bitcrush. Add a per-track `crushed` flag to `TrackDef`. In the engine, apply 4-bit quantization to that voice's output: `s = floorf(s * 8.0f) / 8.0f`. The converter detects "bitcrush" in channel names or plugin names and sets the flag.
-- **Files**: `src/core/audio.h` (add crushed to TrackDef), `src/core/audio.c` (quantize in fill loop), `tools/flp2c.py` (detect and emit flag).
+### 5. Bitcrusher effect for marked channels — completed 2026-05-05
+- **What**: Added `int crushed` to `TrackDef` and `ActiveVoice`. In the `fill` loop, voices with `crushed=1` have their output quantized to 4-bit steps via `(float)((int)(vs * 8.0f)) / 8.0f` (no math.h). `tools/flp2c.py` detects "bitcrush"/"crush"/"8bit"/"lofi" in channel names or plugin names via `_guess_crushed()` and emits the flag in the TrackDef initializer.
+- **Files**: `src/core/audio.h` (crushed in TrackDef), `src/core/audio.c` (ActiveVoice.crushed, fill loop, audioPlaySong copy), `tools/flp2c.py` (_guess_crushed, convert()). Re-run converter.
 - **Impact**: eternal_town and eternal_gdr sound significantly more accurate.
 
 ---

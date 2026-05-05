@@ -85,6 +85,20 @@ def _guess_duty(ch_name, wave):
         return 0.75
     return 0.5
 
+def _guess_crushed(ch_name, ch):
+    """Detect kHs Bitcrush or similar bit-reduction on this channel."""
+    n = (ch_name or '').lower()
+    if 'bitcrush' in n or 'crush' in n or '8bit' in n or 'lofi' in n or 'lo-fi' in n:
+        return 1
+    try:
+        plugin = getattr(ch, 'plugin', None)
+        pname = (getattr(plugin, 'name', None) or '').lower()
+        if 'bitcrush' in pname or 'crush' in pname:
+            return 1
+    except Exception:
+        pass
+    return 0
+
 def _guess_reverb(song_name):
     """Song-level reverb amount. Kept conservative to preserve tiny synth clarity."""
     n = (song_name or '').lower()
@@ -126,7 +140,7 @@ def _build_lanes(all_clips, rack_ch, ppq, bpm, song_end_tick):
     spb = SR / (bpm / 60.0 * ppq)   # samples per tick
     target_samples = max(1, round(song_end_tick * spb))
 
-    events = []  # (abs_tick, raw_note, length_ticks, cents, velocity)
+    events = []  # (abs_tick, raw_note, length_ticks, cents, velocity, is_slide)
     clipped = 0
     skipped = 0
     for clip in all_clips:
@@ -150,10 +164,11 @@ def _build_lanes(all_clips, rack_ch, ppq, bpm, song_end_tick):
                 skipped += 1
                 continue
 
-            abs_pos = clip.position + note_start
-            cents = float(getattr(note, 'pitch', 0) or 0)
-            vel   = int(getattr(note, 'velocity', 100) or 100)
-            events.append((abs_pos, _key_to_raw(note.key), length, cents, vel))
+            abs_pos  = clip.position + note_start
+            cents    = float(getattr(note, 'pitch', 0) or 0)
+            vel      = int(getattr(note, 'velocity', 100) or 100)
+            is_slide = bool(getattr(note, 'slide', False))
+            events.append((abs_pos, _key_to_raw(note.key), length, cents, vel, is_slide))
 
     if not events:
         return [], clipped, skipped
@@ -165,7 +180,7 @@ def _build_lanes(all_clips, rack_ch, ppq, bpm, song_end_tick):
     lane_notes = []   # list of list of (pos, raw, length, cents, vel)
     lane_ends  = []   # tick at which each lane becomes free
 
-    for pos, raw, length, cents, vel in events:
+    for pos, raw, length, cents, vel, is_slide in events:
         assigned = None
         for i, end in enumerate(lane_ends):
             if pos >= end:
@@ -175,7 +190,7 @@ def _build_lanes(all_clips, rack_ch, ppq, bpm, song_end_tick):
             assigned = len(lane_notes)
             lane_notes.append([])
             lane_ends.append(0)
-        lane_notes[assigned].append((pos, raw, length, cents, vel))
+        lane_notes[assigned].append((pos, raw, length, cents, vel, is_slide))
         lane_ends[assigned] = pos + length
 
     # Build a flat (freq, dur_samples, vel_norm) timeline for each lane
@@ -183,11 +198,14 @@ def _build_lanes(all_clips, rack_ch, ppq, bpm, song_end_tick):
     for lane in lane_notes:
         out = []
         prev_end = 0
-        for pos, raw, length, cents, vel in lane:
+        for pos, raw, length, cents, vel, is_slide in lane:
             if pos > prev_end:
                 out.append((0.0, max(1, round((pos - prev_end) * spb)), 1.0))
             vel_norm = max(0.0, min(1.0, vel / 127.0))
-            out.append((_raw_to_freq(raw, cents), max(1, round(length * spb)), vel_norm))
+            freq = _raw_to_freq(raw, cents)
+            if is_slide:
+                freq = -freq
+            out.append((freq, max(1, round(length * spb)), vel_norm))
             prev_end = pos + length
         timelines.append(_fit_timeline(out, target_samples))
 
@@ -216,7 +234,7 @@ def convert(flp_path, out_path):
         for note in clip.pattern.notes
     })
 
-    voices = []  # (rc, lane_idx, ch_name, wave, gain, duty, timeline)
+    voices = []  # (rc, lane_idx, ch_name, wave, gain, duty, crushed, timeline)
     total_clipped = 0
     total_skipped = 0
     for rc in rack_channels:
@@ -228,15 +246,16 @@ def convert(flp_path, out_path):
             for note in clip.pattern.notes
             if note.rack_channel == rc
         ]
-        wave = _guess_wave(ch_name, ch_notes)
-        gain = _ch_gain(ch) if ch is not None else 1.0
-        duty = _guess_duty(ch_name, wave)
+        wave    = _guess_wave(ch_name, ch_notes)
+        gain    = _ch_gain(ch) if ch is not None else 1.0
+        duty    = _guess_duty(ch_name, wave)
+        crushed = _guess_crushed(ch_name, ch)
         timelines, clipped, skipped = _build_lanes(all_clips, rc, p.ppq, p.tempo, song_end_tick)
         total_clipped += clipped
         total_skipped += skipped
         for lane_idx, timeline in enumerate(timelines):
             if timeline:
-                voices.append((rc, lane_idx, ch_name or f'ch{rc}', wave, gain, duty, timeline))
+                voices.append((rc, lane_idx, ch_name or f'ch{rc}', wave, gain, duty, crushed, timeline))
 
     if not voices:
         print(f'    (no notes found, skipping)')
@@ -248,11 +267,11 @@ def convert(flp_path, out_path):
 
     # Voice sync: pad any rounding drift so all lanes loop at the same point.
     if len(voices) > 1:
-        totals = [sum(d for _, d, _ in tl) for _, _, _, _, _, _, tl in voices]
+        totals = [sum(d for _, d, _ in tl) for _, _, _, _, _, _, _, tl in voices]
         max_dur = max(totals)
         voices = [
-            (rc, li, nm, wv, gn, du, tl + [(0.0, max_dur - total, 1.0)] if total < max_dur else tl)
-            for (rc, li, nm, wv, gn, du, tl), total in zip(voices, totals)
+            (rc, li, nm, wv, gn, du, cr, tl + [(0.0, max_dur - total, 1.0)] if total < max_dur else tl)
+            for (rc, li, nm, wv, gn, du, cr, tl), total in zip(voices, totals)
         ]
 
     lines = [
@@ -263,10 +282,11 @@ def convert(flp_path, out_path):
     ]
 
     arr_names = []
-    for rc, lane_idx, ch_name, wave, gain, duty, timeline in voices:
+    for rc, lane_idx, ch_name, wave, gain, duty, crushed, timeline in voices:
         arr = f'_{name}_c{rc}_v{lane_idx}'
-        arr_names.append((arr, wave, gain, duty, len(timeline)))
-        lines.append(f'/* ch{rc} v{lane_idx} "{ch_name}" wave={wave} gain={gain:.2f} duty={duty:.3f} ({len(timeline)} notes) */')
+        arr_names.append((arr, wave, gain, duty, crushed, len(timeline)))
+        crush_tag = ' crushed' if crushed else ''
+        lines.append(f'/* ch{rc} v{lane_idx} "{ch_name}" wave={wave} gain={gain:.2f} duty={duty:.3f}{crush_tag} ({len(timeline)} notes) */')
         lines.append(f'static const Note {arr}[] = {{')
         for freq, dur, vel in timeline:
             if freq == 0.0:
@@ -279,8 +299,8 @@ def convert(flp_path, out_path):
     lines.append(f'const SongDef song_{name} = {{')
     lines.append(f'    {len(arr_names)},')
     lines.append('    {')
-    for arr, wave, gain, duty, n in arr_names:
-        lines.append(f'        {{ {arr}, {n}, {wave}, {gain:.4f}f, {duty:.4f}f }},')
+    for arr, wave, gain, duty, crushed, n in arr_names:
+        lines.append(f'        {{ {arr}, {n}, {wave}, {gain:.4f}f, {duty:.4f}f, {crushed} }},')
     lines.append('    },')
     lines.append(f'    {reverb:.4f}f')
     lines.append('};')
@@ -288,7 +308,7 @@ def convert(flp_path, out_path):
     with open(out_path, 'w') as f:
         f.write('\n'.join(lines) + '\n')
 
-    total_notes = sum(len(v[6]) for v in voices)
+    total_notes = sum(len(v[7]) for v in voices)
     print(f'    -> {out_path}  ({len(voices)} voices, {total_notes} note entries)')
     if total_clipped or total_skipped:
         print(f'       playlist clipping: shortened {total_clipped}, skipped {total_skipped}')
