@@ -2,7 +2,7 @@
    Tempo: 140.0 BPM  PPQ: 96  SR: 22050 */
 #include "../core/audio.h"
 
-/* ch1 v0 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (42 notes) */
+/* ch1 v0 "NES VST 1.2" wave=4 gain=1.00 duty=0.500 (42 notes) */
 static const Note _eternal_test_c1_v0[] = {
     {659.255f,37800,0.7402f},
     {493.883f,37800,0.7402f},
@@ -48,7 +48,7 @@ static const Note _eternal_test_c1_v0[] = {
     {369.994f,18899,0.7402f},
 };
 
-/* ch1 v1 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (35 notes) */
+/* ch1 v1 "NES VST 1.2" wave=4 gain=1.00 duty=0.500 (35 notes) */
 static const Note _eternal_test_c1_v1[] = {
     {329.628f,37800,0.7402f},
     {293.665f,37800,0.7402f},
@@ -87,7 +87,7 @@ static const Note _eternal_test_c1_v1[] = {
     {261.626f,37799,0.7402f},
 };
 
-/* ch1 v2 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (42 notes) */
+/* ch1 v2 "NES VST 1.2" wave=4 gain=1.00 duty=0.500 (42 notes) */
 static const Note _eternal_test_c1_v2[] = {
     {261.626f,37800,0.7402f},
     {246.942f,37800,0.7402f},
@@ -133,7 +133,7 @@ static const Note _eternal_test_c1_v2[] = {
     {184.997f,18899,0.7402f},
 };
 
-/* ch1 v3 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (32 notes) */
+/* ch1 v3 "NES VST 1.2" wave=4 gain=1.00 duty=0.500 (32 notes) */
 static const Note _eternal_test_c1_v3[] = {
     {130.813f,37800,0.7402f},
     {146.832f,37800,0.7402f},
@@ -655,10 +655,10 @@ static const Note _eternal_test_c3_v0[] = {
 const SongDef song_eternal_test = {
     7,
     {
-        { _eternal_test_c1_v0, 42, 0, 1.0000f, 0.5000f, 0 },
-        { _eternal_test_c1_v1, 35, 0, 1.0000f, 0.5000f, 0 },
-        { _eternal_test_c1_v2, 42, 0, 1.0000f, 0.5000f, 0 },
-        { _eternal_test_c1_v3, 32, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_c1_v0, 42, 4, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_c1_v1, 35, 4, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_c1_v2, 42, 4, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_c1_v3, 32, 4, 1.0000f, 0.5000f, 0 },
         { _eternal_test_c2_v0, 181, 1, 1.0000f, 0.2500f, 0 },
         { _eternal_test_c2_v1, 181, 1, 1.0000f, 0.2500f, 0 },
         { _eternal_test_c3_v0, 109, 3, 1.0000f, 0.5000f, 0 },

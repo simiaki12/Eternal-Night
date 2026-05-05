@@ -56,6 +56,7 @@ def _guess_wave(ch_name, notes):
     if 'square' in n or 'pulse' in n:  return 1
     if 'piano' in n or 'keys' in n or 'grand' in n: return 5
     if 'bass' in n:                    return 0
+    if 'pad' in n or 'drone' in n or 'ambient' in n: return 4
     if not notes:                      return 1
 
     raws    = [_key_to_raw(note.key) for note in notes]
@@ -66,8 +67,8 @@ def _guess_wave(ch_name, notes):
     if avg_len < 60 and p_range <= 5:  return 3
     # Fast melodic runs present (< 48 ticks ≈ 16th note at 96 PPQ) → square
     if sum(1 for note in notes if note.length < 48) >= 3:  return 1
-    # Very long notes only → sustained pad → triangle
-    if avg_len > 200:                  return 0
+    # Very long sustained notes → pad/hum → sine (smoother than quantized triangle)
+    if avg_len > 200:                  return 4
     # Default: square wave (NES pulse / melodic)
     return 1
 

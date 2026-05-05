@@ -2,7 +2,7 @@
    Tempo: 123.0 BPM  PPQ: 96  SR: 22050 */
 #include "../core/audio.h"
 
-/* ch1 v0 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (63 notes) */
+/* ch1 v0 "NES VST 1.2" wave=4 gain=1.00 duty=0.500 (63 notes) */
 static const Note _eternal_test_ending_c1_v0[] = {
     {311.127f,43024,0.7402f},
     {233.082f,43024,0.7402f},
@@ -69,7 +69,7 @@ static const Note _eternal_test_ending_c1_v0[] = {
     {0.000f,19,1.0f},
 };
 
-/* ch1 v1 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (51 notes) */
+/* ch1 v1 "NES VST 1.2" wave=4 gain=1.00 duty=0.500 (51 notes) */
 static const Note _eternal_test_ending_c1_v1[] = {
     {155.563f,43024,0.7402f},
     {138.591f,43024,0.7402f},
@@ -124,7 +124,7 @@ static const Note _eternal_test_ending_c1_v1[] = {
     {0.000f,19,1.0f},
 };
 
-/* ch1 v2 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (63 notes) */
+/* ch1 v2 "NES VST 1.2" wave=4 gain=1.00 duty=0.500 (63 notes) */
 static const Note _eternal_test_ending_c1_v2[] = {
     {123.471f,43024,0.7402f},
     {116.541f,43024,0.7402f},
@@ -191,7 +191,7 @@ static const Note _eternal_test_ending_c1_v2[] = {
     {0.000f,19,1.0f},
 };
 
-/* ch1 v3 "NES VST 1.2" wave=0 gain=1.00 duty=0.500 (48 notes) */
+/* ch1 v3 "NES VST 1.2" wave=4 gain=1.00 duty=0.500 (48 notes) */
 static const Note _eternal_test_ending_c1_v3[] = {
     {61.735f,43024,0.7402f},
     {69.296f,43024,0.7402f},
@@ -1870,10 +1870,10 @@ static const Note _eternal_test_ending_c4_v3[] = {
 const SongDef song_eternal_test_ending = {
     11,
     {
-        { _eternal_test_ending_c1_v0, 63, 0, 1.0000f, 0.5000f, 0 },
-        { _eternal_test_ending_c1_v1, 51, 0, 1.0000f, 0.5000f, 0 },
-        { _eternal_test_ending_c1_v2, 63, 0, 1.0000f, 0.5000f, 0 },
-        { _eternal_test_ending_c1_v3, 48, 0, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_ending_c1_v0, 63, 4, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_ending_c1_v1, 51, 4, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_ending_c1_v2, 63, 4, 1.0000f, 0.5000f, 0 },
+        { _eternal_test_ending_c1_v3, 48, 4, 1.0000f, 0.5000f, 0 },
         { _eternal_test_ending_c2_v0, 541, 1, 0.8450f, 0.2500f, 0 },
         { _eternal_test_ending_c2_v1, 541, 1, 0.8450f, 0.2500f, 0 },
         { _eternal_test_ending_c3_v0, 288, 3, 1.0000f, 0.5000f, 0 },

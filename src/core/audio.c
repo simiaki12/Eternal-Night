@@ -279,11 +279,19 @@ static float voice_tick(Voice *v, const Note *seq, int n) {
                     s = 1.0f - 4.0f*(p<0?-p:p);
                     /* 4-bit NES quantization: 32 steps per cycle */
                     s = (float)((int)(s * 16.0f + 16.5f) - 16) / 16.0f;
+                    /* smooth quantization steps — heavier LPF on low notes where stepping is audible */
+                    { float a = eff_f < 300.0f ? 0.12f : 0.35f;
+                      v->lpf_state += a * (s - v->lpf_state);
+                      s = v->lpf_state; }
                     break;
                 }
                 case 1:
-                    /* hard-switching square — NES pulse character, no LPF */
                     s = v->ph < v->duty ? 1.0f : -1.0f;
+                    /* low bass notes: LPF rounds harsh square into warm hum */
+                    if (eff_f < 200.0f) {
+                        v->lpf_state += 0.10f * (s - v->lpf_state);
+                        s = v->lpf_state;
+                    }
                     break;
                 case 2: s = 2.0f * v->ph - 1.0f; break;
                 case 4: {

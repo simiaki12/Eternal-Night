@@ -184,7 +184,7 @@ static const Note _eternal_cave_c3_v3[] = {
     {587.330f,11025,0.7874f},
 };
 
-/* ch4 v0 "NES VST 1.2 #2" wave=0 gain=0.77 duty=0.500 (13 notes) */
+/* ch4 v0 "NES VST 1.2 #2" wave=4 gain=0.77 duty=0.500 (13 notes) */
 static const Note _eternal_cave_c4_v0[] = {
     {82.407f,88200,0.7874f},
     {87.307f,88200,0.7874f},
@@ -201,7 +201,7 @@ static const Note _eternal_cave_c4_v0[] = {
     {0.000f,352800,1.0f},
 };
 
-/* ch4 v1 "NES VST 1.2 #2" wave=0 gain=0.77 duty=0.500 (22 notes) */
+/* ch4 v1 "NES VST 1.2 #2" wave=4 gain=0.77 duty=0.500 (22 notes) */
 static const Note _eternal_cave_c4_v1[] = {
     {0.000f,5512,1.0f},
     {110.000f,82688,0.7874f},
@@ -227,7 +227,7 @@ static const Note _eternal_cave_c4_v1[] = {
     {0.000f,352800,1.0f},
 };
 
-/* ch4 v2 "NES VST 1.2 #2" wave=0 gain=0.77 duty=0.500 (25 notes) */
+/* ch4 v2 "NES VST 1.2 #2" wave=4 gain=0.77 duty=0.500 (25 notes) */
 static const Note _eternal_cave_c4_v2[] = {
     {0.000f,11025,1.0f},
     {164.814f,77175,0.7874f},
@@ -256,7 +256,7 @@ static const Note _eternal_cave_c4_v2[] = {
     {0.000f,352800,1.0f},
 };
 
-/* ch4 v3 "NES VST 1.2 #2" wave=0 gain=0.77 duty=0.500 (7 notes) */
+/* ch4 v3 "NES VST 1.2 #2" wave=4 gain=0.77 duty=0.500 (7 notes) */
 static const Note _eternal_cave_c4_v3[] = {
     {0.000f,275625,1.0f},
     {146.832f,77175,0.7874f},
@@ -267,7 +267,7 @@ static const Note _eternal_cave_c4_v3[] = {
     {0.000f,352800,1.0f},
 };
 
-/* ch5 v0 "Purity" wave=0 gain=0.64 duty=0.500 (13 notes) */
+/* ch5 v0 "Purity" wave=4 gain=0.64 duty=0.500 (13 notes) */
 static const Note _eternal_cave_c5_v0[] = {
     {0.000f,385875,1.0f},
     {195.998f,55125,0.7874f},
@@ -284,7 +284,7 @@ static const Note _eternal_cave_c5_v0[] = {
     {0.000f,429975,1.0f},
 };
 
-/* ch5 v1 "Purity" wave=0 gain=0.64 duty=0.500 (13 notes) */
+/* ch5 v1 "Purity" wave=4 gain=0.64 duty=0.500 (13 notes) */
 static const Note _eternal_cave_c5_v1[] = {
     {0.000f,385875,1.0f},
     {164.814f,55125,0.7874f},
@@ -301,7 +301,7 @@ static const Note _eternal_cave_c5_v1[] = {
     {0.000f,429975,1.0f},
 };
 
-/* ch5 v2 "Purity" wave=0 gain=0.64 duty=0.500 (5 notes) */
+/* ch5 v2 "Purity" wave=4 gain=0.64 duty=0.500 (5 notes) */
 static const Note _eternal_cave_c5_v2[] = {
     {0.000f,562275,1.0f},
     {164.814f,55125,0.7874f},
@@ -324,13 +324,13 @@ const SongDef song_eternal_cave = {
         { _eternal_cave_c3_v1, 8, 1, 0.7650f, 0.5000f, 0 },
         { _eternal_cave_c3_v2, 8, 1, 0.7650f, 0.5000f, 0 },
         { _eternal_cave_c3_v3, 29, 1, 0.7650f, 0.5000f, 0 },
-        { _eternal_cave_c4_v0, 13, 0, 0.7650f, 0.5000f, 0 },
-        { _eternal_cave_c4_v1, 22, 0, 0.7650f, 0.5000f, 0 },
-        { _eternal_cave_c4_v2, 25, 0, 0.7650f, 0.5000f, 0 },
-        { _eternal_cave_c4_v3, 7, 0, 0.7650f, 0.5000f, 0 },
-        { _eternal_cave_c5_v0, 13, 0, 0.6350f, 0.5000f, 0 },
-        { _eternal_cave_c5_v1, 13, 0, 0.6350f, 0.5000f, 0 },
-        { _eternal_cave_c5_v2, 5, 0, 0.6350f, 0.5000f, 0 },
+        { _eternal_cave_c4_v0, 13, 4, 0.7650f, 0.5000f, 0 },
+        { _eternal_cave_c4_v1, 22, 4, 0.7650f, 0.5000f, 0 },
+        { _eternal_cave_c4_v2, 25, 4, 0.7650f, 0.5000f, 0 },
+        { _eternal_cave_c4_v3, 7, 4, 0.7650f, 0.5000f, 0 },
+        { _eternal_cave_c5_v0, 13, 4, 0.6350f, 0.5000f, 0 },
+        { _eternal_cave_c5_v1, 13, 4, 0.6350f, 0.5000f, 0 },
+        { _eternal_cave_c5_v2, 5, 4, 0.6350f, 0.5000f, 0 },
     },
     0.2400f
 };
