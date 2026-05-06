@@ -96,15 +96,23 @@ static void handleInventoryInput(int key) {
 }
 
 static GameState g_charSheetReturn;
+static int       g_charSheetSel = 0;
 
 static void openCharSheet(GameState from) {
     g_charSheetReturn = from;
+    g_charSheetSel    = player.playstyle;
     state = STATE_CHAR_SHEET;
 }
 
 static void handleCharSheetInput(int key) {
     if (key == VK_ESCAPE || key == 'C')
         state = g_charSheetReturn;
+    else if (key == VK_UP)
+        g_charSheetSel = (g_charSheetSel + PLAYSTYLE_COUNT - 1) % PLAYSTYLE_COUNT;
+    else if (key == VK_DOWN)
+        g_charSheetSel = (g_charSheetSel + 1) % PLAYSTYLE_COUNT;
+    else if (key == VK_RETURN)
+        player.playstyle = (uint8_t)g_charSheetSel;
 }
 
 static void handleLoadingInput(int key) {
@@ -230,7 +238,28 @@ static void renderCharSheet(void) {
     CSTAT("STA", getStamina(),        rgb(100, 220, 180))
     #undef CSTAT
 
-    drawText(x, gfxHeight - 80, "C / ESC  to close", rgb(80, 80, 80), 1);
+    y += 2;
+    fillRect(x, y, gfxWidth - 120, 1, rgb(60, 60, 100));
+    y += 6;
+    drawText(x, y, "PLAYSTYLE", rgb(180, 180, 255), 2);
+    y += lineH;
+
+    for (int i = 0; i < PLAYSTYLE_COUNT; i++) {
+        int      isSel     = (i == g_charSheetSel);
+        int      isActive  = (i == (int)player.playstyle);
+        uint32_t col       = isSel    ? rgb(255, 255, 100) :
+                             isActive ? rgb(160, 220, 255) :
+                                        rgb(100, 100, 100);
+        snprintf(buf, sizeof(buf), "%s%-10s%s  %u xp",
+                 isSel ? "> " : "  ",
+                 playstyleName(i),
+                 isActive ? "*" : " ",
+                 (unsigned)player.playstyleXp[i]);
+        drawText(x, y, buf, col, 2);
+        y += lineH;
+    }
+
+    drawText(x, gfxHeight - 80, "UP/DN: choose   ENTER: confirm   C/ESC: close", rgb(80, 80, 80), 1);
 }
 
 static void handleDeathInput(int key) {

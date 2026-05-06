@@ -72,6 +72,25 @@ int buildActionPool(uint8_t out[ACTION_MAX]) {
     return count;
 }
 
+/* Playstyle affiliation per action — 0xFF means no affiliation */
+static const uint8_t g_actionPlaystyle[ACTION_COUNT] = {
+    [ACTION_ATTACK]   = 0xFF,
+    [ACTION_STRONG]   = PLAYSTYLE_KILLER,
+    [ACTION_HEAL]     = PLAYSTYLE_DAYWALKER,
+    [ACTION_DEFEND]   = 0xFF,
+    [ACTION_DISARM]   = PLAYSTYLE_KILLER,
+    [ACTION_BACKSTAB] = PLAYSTYLE_DAYWALKER,
+    [ACTION_STUN]     = PLAYSTYLE_KILLER,
+    [ACTION_CALM]     = PLAYSTYLE_CHARMER,
+    [ACTION_HIDE]     = PLAYSTYLE_DAYWALKER,
+    [ACTION_EXECUTE]  = PLAYSTYLE_KILLER,
+};
+
+uint8_t actionGetPlaystyle(uint8_t id) {
+    if (id >= ACTION_COUNT) return 0xFF;
+    return g_actionPlaystyle[id];
+}
+
 void renderActionPanel(const char *title, const uint8_t *ids, int count, int sel) {
     const int PW   = 300;
     const int LH   = 22;

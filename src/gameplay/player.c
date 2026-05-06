@@ -17,6 +17,15 @@ void playerInit(void) {
     player.stamina     =  3;
     player.level       =  1;
     player.hp          = player.maxHp;
+    player.playstyle   =  PLAYSTYLE_DAYWALKER;
+}
+
+const char *playstyleName(int ps) {
+    static const char *names[PLAYSTYLE_COUNT] = {
+        "Daywalker", "Killer", "Arcanist", "Charmer"
+    };
+    if (ps < 0 || ps >= PLAYSTYLE_COUNT) return "???";
+    return names[ps];
 }
 
 int xpToNext(void) {

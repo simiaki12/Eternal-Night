@@ -188,6 +188,13 @@ static void performPlayerAction(void) {
             break;
     }
 
+    /* Playstyle XP for the action used */
+    {
+        uint8_t ps = actionGetPlaystyle((uint8_t)a->type);
+        if (ps < PLAYSTYLE_COUNT && player.playstyleXp[ps] < 65535)
+            player.playstyleXp[ps]++;
+    }
+
     /* Enemy counter-attack */
     if (combat.enemy.hp > 0 && !combat.skipEnemyAttack) {
         int dmg = combat.enemy.attack;

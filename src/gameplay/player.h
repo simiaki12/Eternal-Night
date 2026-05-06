@@ -2,7 +2,15 @@
 #include <stdint.h>
 #include "skills.h"
 
-#define EQUIP_SLOTS 8   /* total equipment array size; expand slot types as needed */
+#define EQUIP_SLOTS 8
+
+typedef enum {
+    PLAYSTYLE_DAYWALKER = 0,
+    PLAYSTYLE_KILLER    = 1,
+    PLAYSTYLE_ARCANIST  = 2,
+    PLAYSTYLE_CHARMER   = 3,
+    PLAYSTYLE_COUNT     = 4
+} Playstyle;
 
 typedef enum {
     SLOT_WEAPON = 0,
@@ -24,11 +32,14 @@ typedef struct {
     uint8_t  perception;
     uint8_t  stamina;
     uint16_t gold;
+    uint8_t  playstyle;
+    uint16_t playstyleXp[PLAYSTYLE_COUNT];
 } PlayerData;
 
 extern PlayerData player;
 
-void playerInit(void);
-int  xpToNext(void);      /* XP needed to reach the next level */
-int  awardXp(int amount);  /* returns number of levels gained */
-void enterDeath(void);     /* lose XP progress, restore HP, go to STATE_DEATH */
+void        playerInit(void);
+int         xpToNext(void);
+int         awardXp(int amount);
+void        enterDeath(void);
+const char *playstyleName(int ps);
