@@ -452,12 +452,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
         /* Music: switch on real state changes; overlays are transparent to music */
         if (!IS_OVERLAY(state) && (!g_musicStarted || state != g_lastMusicState)) {
             switch (state) {
-                case STATE_MAIN_MENU: audioPlaySong(&song_eternal_test); break;
-                case STATE_WORLD:     audioPlaySong(&song_hopes_and_dreams_eternal_night_ost); break;
-                case STATE_TOWN:      audioPlaySong(&song_eternal_town);   break;
-                case STATE_DUNGEON:   audioPlaySong(&song_eternal_cave);   break;
-                case STATE_COMBAT:    audioPlaySong(&song_shining_star_eternal_night_ost); break;
-                case STATE_DEATH:     audioPlaySong(&song_over);           break;
+                case STATE_MAIN_MENU: audioPlayMusic("assets/music/eternal_test.mus"); break;
+                case STATE_WORLD:     audioPlayMusic("assets/music/hopes_and_dreams_eternal_night_ost.mus"); break;
+                case STATE_TOWN:      audioPlayMusic("assets/music/eternal_town.mus"); break;
+                case STATE_DUNGEON:   audioPlayMusic("assets/music/eternal_cave.mus"); break;
+                case STATE_COMBAT:    audioPlayMusic("assets/music/shining_star_eternal_night_ost.mus"); break;
+                case STATE_DEATH:     audioPlayMusic("assets/music/over.mus"); break;
                 default:              audioStop();                          break;
             }
             g_musicStarted   = 1;

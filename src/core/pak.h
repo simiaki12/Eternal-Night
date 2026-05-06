@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 typedef struct {
-    char     name[32];
+    char     name[64];
     uint32_t offset;
     uint32_t size;
 } PakEntry;

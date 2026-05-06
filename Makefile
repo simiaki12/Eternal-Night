@@ -7,7 +7,7 @@ RELEASEFLAGS = -Os -flto
 LDFLAGS        = -lgdi32 -lwinmm -lmsimg32 -mwindows
 LDFLAGS_STATIC = $(LDFLAGS) -static-libgcc
 
-SRC    = $(shell find src -name '*.c')
+SRC    = $(shell find src -name '*.c' -not -path 'src/music/*.c')
 OUT    = build/game.exe
 PACKER      = build/packer
 MAP_EDITOR  = build/map_editor
@@ -38,6 +38,11 @@ audio_demo:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os tools/audio_demo.c -o build/audio_demo
 	./build/audio_demo
+
+pack_music:
+	@for f in src/music/eternal_test src/music/eternal_test_ending src/music/eternal_town src/music/eternal_cave src/music/eternal_gdr src/music/hopes_and_dreams_eternal_night_ost src/music/shining_star_eternal_night_ost src/music/over; do \
+		python3 src/music/c2bin.py pack $$f.c assets/music/$$(basename $$f).mus; \
+	done
 
 flp2c:
 	python3 tools/flp2c.py

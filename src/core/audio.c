@@ -7,7 +7,9 @@
 #include <mmsystem.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 #include "audio.h"
+#include "pak.h"
 
 /* --- Audio format --- */
 #define SR       22050
@@ -66,10 +68,10 @@ static const Note s_drm[] = {
 
 static const SongDef s_world_song = {
     4, {
-        { s_mel, MEL_N, 4, 1.0f, 0.5f },   /* sine   — melody  */
-        { s_har, HAR_N, 1, 1.0f, 0.5f },   /* square — harmony */
-        { s_bas, BAS_N, 5, 1.0f, 0.5f },   /* KS     — bass    */
-        { s_drm, DRM_N, 3, 1.0f, 0.5f },   /* noise  — drums   */
+        { s_mel, MEL_N, 4, 1.0f, 0.5f, 0 },   /* sine   — melody  */
+        { s_har, HAR_N, 1, 1.0f, 0.5f, 0 },   /* square — harmony */
+        { s_bas, BAS_N, 5, 1.0f, 0.5f, 0 },   /* KS     — bass    */
+        { s_drm, DRM_N, 3, 1.0f, 0.5f, 0 },   /* noise  — drums   */
     },
     0.12f
 };
@@ -105,6 +107,10 @@ typedef struct {
 static ActiveVoice     s_av[SONG_MAX_TRACKS];
 static int             s_nvoices = 0;
 static const SongDef  *s_cur_song = NULL;
+
+/* --- Runtime-loaded song state --- */
+static SongDef *s_loaded_song = NULL;
+static char     s_loaded_name[64];
 
 static volatile int    s_vol = 8;
 static HWAVEOUT        s_wo     = NULL;
@@ -372,6 +378,135 @@ static DWORD WINAPI audio_thread(LPVOID arg) {
     return 0;
 }
 
+/* --- MUSX v8 binary decoder --- */
+
+static uint32_t musx_varint(const uint8_t *d, int *p) {
+    uint32_t val = 0; int shift = 0;
+    uint8_t b;
+    do { b = d[(*p)++]; val |= (uint32_t)(b & 0x7F) << shift; shift += 7; } while (b & 0x80);
+    return val;
+}
+
+static int musx_bits(int n) { return n<=1?0:n==2?1:n<=4?2:n<=16?4:8; }
+
+typedef struct { const uint8_t *d; int p, a, av; } MBR;
+
+static int mbr_read(MBR *br, int w) {
+    if (!w) return 0;
+    while (br->av < w) { br->a |= (int)br->d[br->p++] << br->av; br->av += 8; }
+    int val = br->a & ((1 << w) - 1);
+    br->a >>= w; br->av -= w;
+    return val;
+}
+
+static SongDef *musx_decode(const uint8_t *data, int size) {
+    if (size < 5) return NULL;
+    if (data[0]!='M'||data[1]!='U'||data[2]!='S'||data[3]!='X') return NULL;
+    if (data[4] != 8) return NULL;
+
+    int p = 5;
+    float reverb = data[p++] / 255.0f;
+    int nlen = data[p++];
+    p += nlen; /* skip name */
+
+    int ntracks = (int)musx_varint(data, &p);
+    if (ntracks <= 0 || ntracks > SONG_MAX_TRACKS) return NULL;
+
+    /* Pass 1: count total notes and record per-track start offsets */
+    int track_start[SONG_MAX_TRACKS];
+    int total_notes = 0;
+
+    int p2 = p;
+    for (int t = 0; t < ntracks; t++) {
+        track_start[t] = p2;
+        p2 += 5; /* wave(1) + flags(1) + gain_q(1) + duty_q(1) + detune_q(1) */
+        int cnt = (int)musx_varint(data, &p2);
+        total_notes += cnt;
+        if (cnt == 0) continue;
+        int nf = data[p2++]; p2 += nf * 4;       /* freq palette */
+        int nd = data[p2++];
+        for (int i = 0; i < nd; i++) musx_varint(data, &p2); /* dur palette varints */
+        int nv = data[p2++]; p2 += nv;            /* vel palette */
+        int bpn = musx_bits(nf) + musx_bits(nd) + musx_bits(nv);
+        p2 += (bpn * cnt + 7) / 8;
+    }
+
+    /* Allocate: one block for SongDef + Note pool */
+    SongDef *song = (SongDef *)malloc(sizeof(SongDef) + (size_t)total_notes * sizeof(Note));
+    if (!song) return NULL;
+    Note *pool = (Note *)(song + 1);
+    int pool_off = 0;
+
+    song->ntracks = ntracks;
+    song->reverb  = reverb < 0.0f ? 0.0f : reverb > 0.5f ? 0.5f : reverb;
+
+    /* Pass 2: decode each track */
+    for (int t = 0; t < ntracks; t++) {
+        int pp = track_start[t];
+        int wave    =  data[pp++];
+        int flags   =  data[pp++];
+        float gain  =  data[pp++] / 255.0f;
+        float duty  =  data[pp++] / 255.0f;
+        pp++; /* detune_q — not in TrackDef */
+        (void)flags; /* pad bit not in TrackDef */
+
+        int cnt = (int)musx_varint(data, &pp);
+
+        song->tracks[t].wave    = wave;
+        song->tracks[t].gain    = gain > 0.0f ? gain : 1.0f;
+        song->tracks[t].duty    = duty;
+        song->tracks[t].crushed = (flags >> 1) & 1;
+        song->tracks[t].n       = cnt;
+        song->tracks[t].seq     = &pool[pool_off];
+
+        if (cnt == 0) continue;
+
+        int nf = data[pp++];
+        uint32_t freq_pal[256];
+        for (int i = 0; i < nf; i++) {
+            freq_pal[i] = (uint32_t)data[pp] | ((uint32_t)data[pp+1]<<8) |
+                          ((uint32_t)data[pp+2]<<16) | ((uint32_t)data[pp+3]<<24);
+            pp += 4;
+        }
+
+        int nd = data[pp++];
+        uint32_t dur_pal[256];
+        for (int i = 0; i < nd; i++) dur_pal[i] = musx_varint(data, &pp);
+
+        int nv = data[pp++];
+        uint8_t vel_pal[256];
+        for (int i = 0; i < nv; i++) vel_pal[i] = data[pp++];
+
+        int fw = musx_bits(nf), dw = musx_bits(nd), vw = musx_bits(nv);
+        MBR br; br.d = data; br.p = pp; br.a = 0; br.av = 0;
+
+        for (int i = 0; i < cnt; i++) {
+            int fi = mbr_read(&br, fw);
+            int di = mbr_read(&br, dw);
+            int vi = mbr_read(&br, vw);
+            pool[pool_off + i].f = nf > 0 ? (float)freq_pal[fi] / 100.0f : 0.0f;
+            pool[pool_off + i].d = nd > 0 ? (int)dur_pal[di] : 0;
+            pool[pool_off + i].v = nv > 0 ? (float)vel_pal[vi] / 255.0f : 1.0f;
+        }
+        pool_off += cnt;
+    }
+
+    return song;
+}
+
+void audioPlayMusic(const char *name) {
+    if (s_wo && s_loaded_name[0] && strcmp(name, s_loaded_name) == 0) return;
+    audioStop();
+    free(s_loaded_song); s_loaded_song = NULL; s_loaded_name[0] = 0;
+    PakData pd = pakRead(name);
+    if (!pd.data) return;
+    s_loaded_song = musx_decode(pd.data, (int)pd.size);
+    free(pd.data);
+    if (!s_loaded_song) return;
+    strncpy(s_loaded_name, name, 63); s_loaded_name[63] = 0;
+    audioPlaySong(s_loaded_song);
+}
+
 /* --- Public API --- */
 
 void audioPlaySong(const SongDef *song) {
@@ -442,4 +577,7 @@ void audioStop(void) {
     s_cur_song = NULL;
 }
 
-void audioCleanup(void) { audioStop(); }
+void audioCleanup(void) {
+    audioStop();
+    free(s_loaded_song); s_loaded_song = NULL; s_loaded_name[0] = 0;
+}

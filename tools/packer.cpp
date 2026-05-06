@@ -14,7 +14,7 @@ static std::string normPath(std::string s) {
 }
 
 struct PakEntry {
-    char name[32];
+    char name[64];
     uint32_t offset;
     uint32_t size;
 };
@@ -91,8 +91,8 @@ int main() {
         uint32_t size = (uint32_t)in.tellg();
         in.seekg(0);
 
-        strncpy(entries[i].name, files[i].c_str(), 31);
-        entries[i].name[31] = '\0';
+        strncpy(entries[i].name, files[i].c_str(), 63);
+        entries[i].name[63] = '\0';
         entries[i].offset = offset;
         entries[i].size   = size;
 

@@ -30,6 +30,9 @@ typedef struct {
 /* Play a song (stops whatever is currently playing, then loops). */
 void audioPlaySong(const SongDef *song);
 
+/* Load and play a .mus file from the pak archive by path (e.g. "assets/music/foo.mus"). */
+void audioPlayMusic(const char *pakname);
+
 /* Legacy: play the built-in procedural world theme. */
 void audioPlayWorld(void);
 
