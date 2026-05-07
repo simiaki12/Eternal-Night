@@ -9,7 +9,7 @@
 #include "world.h"
 
 #define SAVE_MAGIC   0x53415645u  /* "SAVE" */
-#define SAVE_VERSION 4
+#define SAVE_VERSION 5  /* bumped: PlayerData restructured for domain system */
 
 /* Layout (fixed, do not reorder):
  *   4  magic
