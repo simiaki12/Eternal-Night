@@ -40,9 +40,8 @@ typedef struct {
     int         isFirstTurn;
     int         skipEnemyAttack;
     CombatPhase phase;
-    int         gainedXp;
     int         gainedGold;
-    int         leveledUp;
+    uint8_t     gainedDomainXp[14]; /* indexed by DOMAIN_* — XP earned this fight */
     uint8_t     droppedItems[4];
     int         droppedCount;
     PakData     enemyImg;

@@ -1,4 +1,5 @@
 #include "items.h"
+#include "actions.h"
 #include "player.h"
 #include "quests.h"
 #include <stdio.h>

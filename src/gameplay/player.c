@@ -9,48 +9,18 @@ PlayerData player;
 void playerInit(void) {
     memset(&player, 0, sizeof(player));
     memset(player.equipped, ITEM_UNEQUIPPED, EQUIP_SLOTS);
-    player.maxHp       = 20;
-    player.attack      =  5;
-    player.defense     =  5;
-    player.intelligence=  3;
-    player.perception  =  3;
-    player.stamina     =  3;
-    player.level       =  1;
-    player.hp          = player.maxHp;
-    player.playstyle   =  PLAYSTYLE_DAYWALKER;
-}
-
-const char *playstyleName(int ps) {
-    static const char *names[PLAYSTYLE_COUNT] = {
-        "Daywalker", "Killer", "Arcanist", "Charmer"
-    };
-    if (ps < 0 || ps >= PLAYSTYLE_COUNT) return "???";
-    return names[ps];
-}
-
-int xpToNext(void) {
-    return 20 + player.level * 10;
-}
-
-int awardXp(int amount) {
-    int xp = (int)player.xp + amount;
-    int gained = 0;
-    while (xp >= xpToNext()) {
-        xp -= xpToNext();
-        player.level++;
-        player.maxHp += 5;
-        if (player.attack < 255) player.attack  += 1;
-        if (player.defense< 255) player.defense += 1;
-        if (player.skillPoints < 255) player.skillPoints++;
-        player.hp = player.maxHp;
-        gained++;
-    }
-    player.xp = (uint16_t)xp;
-    return gained;
+    player.maxHp        = 20;
+    player.attack       =  5;
+    player.defense      =  5;
+    player.stamina      =  3;
+    player.intelligence =  3;
+    player.perception   =  3;
+    player.charisma     =  3;
+    player.agility      =  3;
+    player.hp           = player.maxHp;
 }
 
 void enterDeath(void) {
-    player.xp = 0;        /* lose XP progress within current level — level is kept */
-    player.hp  = player.maxHp; /* healed by the town healer */
+    player.hp = player.maxHp;
     state     = STATE_DEATH;
 }

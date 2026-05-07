@@ -5,10 +5,10 @@
 #include <string.h>
 #include "combat.h"
 #include "actions.h"
+#include "domains.h"
 #include "game.h"
 #include "player.h"
 #include "items.h"
-#include "skills.h"
 #include "gfx.h"
 #include "quests.h"
 #include "loot.h"
@@ -122,10 +122,9 @@ void startCombat(const EnemyDef *def) {
     combat.isFirstTurn        = 1;
     combat.skipEnemyAttack    = 0;
     combat.phase              = COMBAT_PHASE_ACTIVE;
-    combat.gainedXp           = 0;
     combat.gainedGold         = 0;
-    combat.leveledUp          = 0;
     combat.droppedCount       = 0;
+    memset(combat.gainedDomainXp, 0, sizeof(combat.gainedDomainXp));
     generateActions();
     state = STATE_COMBAT;
 }
@@ -140,11 +139,11 @@ static void performPlayerAction(void) {
             break;
 
         case ACTION_STRONG:
-            combat.enemy.hp -= getAttack() + a->power + player.skills[SKILL_BLADES];
+            combat.enemy.hp -= getAttack() + a->power;
             break;
 
         case ACTION_HEAL: {
-            int newHp = (int)player.hp + a->power + player.skills[SKILL_SURVIVAL];
+            int newHp = (int)player.hp + a->power;
             int cap   = getMaxHp();
             player.hp = (uint16_t)(newHp > cap ? cap : newHp);
             break;
@@ -160,7 +159,7 @@ static void performPlayerAction(void) {
             break;
 
         case ACTION_BACKSTAB:
-            combat.enemy.hp    -= getAttack() + a->power + player.skills[SKILL_SNEAK];
+            combat.enemy.hp    -= getAttack() + a->power;
             combat.skipEnemyAttack = 1;
             break;
 
@@ -177,22 +176,25 @@ static void performPlayerAction(void) {
             break;
 
         case ACTION_HIDE:
-            combat.skipEnemyAttack = (player.skills[SKILL_SNEAK] > combat.enemy.perception);
+            combat.skipEnemyAttack = (player.agility > combat.enemy.perception);
             break;
 
         case ACTION_EXECUTE:
-            combat.enemy.hp -= getAttack() * 2 + a->power + player.skills[SKILL_BLADES];
+            combat.enemy.hp -= getAttack() * 2 + a->power;
             break;
 
         default:
             break;
     }
 
-    /* Playstyle XP for the action used */
+    /* Domain XP for the action used */
     {
-        uint8_t ps = actionGetPlaystyle((uint8_t)a->type);
-        if (ps < PLAYSTYLE_COUNT && player.playstyleXp[ps] < 65535)
-            player.playstyleXp[ps]++;
+        uint8_t dom = actionGetDomain((uint8_t)a->type);
+        if (dom != 0xFF) {
+            domainAwardXp(dom, 1);
+            if (combat.gainedDomainXp[dom] < 255)
+                combat.gainedDomainXp[dom]++;
+        }
     }
 
     /* Enemy counter-attack */
@@ -204,8 +206,6 @@ static void performPlayerAction(void) {
     }
 
     if (combat.enemy.hp <= 0) {
-        combat.gainedXp  = combat.enemy.xpReward;
-        combat.leveledUp = awardXp(combat.enemy.xpReward);
         combat.gainedGold = 0;
         if (combat.enemy.goldDrop > 0) {
             combat.gainedGold = rand() % combat.enemy.goldDrop + 1;
@@ -329,21 +329,22 @@ void renderCombat(void) {
     /* ── Victory screen ─────────────────────────────────────────── */
     if (combat.phase == COMBAT_PHASE_VICTORY) {
         drawText(bx, y, "VICTORY!", rgb(255, 220, 50), 2);  y += 28;
-        snprintf(buf, sizeof(buf), "+%d XP", combat.gainedXp);
-        drawText(bx, y, buf, rgb(140, 255, 140), 2);        y += 22;
+
+        for (int i = 0; i < 4; i++) {
+            if (combat.gainedDomainXp[i] == 0) continue;
+            snprintf(buf, sizeof(buf), "+%d %s xp",
+                     combat.gainedDomainXp[i], domainName(i));
+            drawText(bx, y, buf, rgb(140, 200, 255), 2);    y += 20;
+        }
+
         if (combat.gainedGold > 0) {
             snprintf(buf, sizeof(buf), "+%d Solmark%s",
                      combat.gainedGold, combat.gainedGold == 1 ? "" : "s");
-            drawText(bx, y, buf, rgb(255, 215, 0), 2);      y += 22;
+            drawText(bx, y, buf, rgb(255, 215, 0), 2);      y += 20;
         }
         for (int i = 0; i < combat.droppedCount; i++) {
             snprintf(buf, sizeof(buf), "Found: %s", itemName(combat.droppedItems[i]));
             drawText(bx, y, buf, rgb(140, 255, 200), 1);    y += 14;
-        }
-        if (combat.leveledUp) {
-            drawText(bx, y, "LEVEL UP!", rgb(255, 255, 80), 2);  y += 22;
-            snprintf(buf, sizeof(buf), "Now Lv.%d", player.level);
-            drawText(bx, y, buf, rgb(200, 200, 80), 2);
         }
         drawText(bx, LP_Y + LP_H - 20, "Enter to continue", rgb(100, 90, 80), 1);
         return;
@@ -384,9 +385,6 @@ void renderCombat(void) {
     drawText(bx, y, buf, rgb(210, 90, 90), 1);
     snprintf(buf, sizeof(buf), "DEF  %d", getDefense());
     drawText(bx + 90, y, buf, rgb(90, 140, 210), 1);  y += 16;
-
-    snprintf(buf, sizeof(buf), "LVL  %d", player.level);
-    drawText(bx, y, buf, rgb(200, 180, 80), 1);
 
     /* ── Action cards ───────────────────────────────────────────── */
     for (int i = 0; i < combat.actionCount; i++) {

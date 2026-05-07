@@ -8,8 +8,8 @@
 #define DIALOG_MAX_TREES   64
 
 typedef struct {
-    uint8_t requiredSkill;  /* SKILL_* or 0xFF = no requirement */
-    uint8_t requiredLevel;
+    uint8_t requiredDomain; /* DOMAIN_* or 0xFF = no requirement */
+    uint8_t requiredLevel;  /* minimum domain level */
     int8_t  nextNode;       /* index into tree's node array, or -1 = close dialog */
     char    text[41];       /* what the player says/chooses */
 } DialogOption;             /* 44 bytes */

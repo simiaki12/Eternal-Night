@@ -90,7 +90,8 @@ static void checkCompletion(int qi) {
             return;
     }
     questSt.status[qi] = QUEST_DONE;
-    if (q->rewardXp)             awardXp(q->rewardXp);
+    /* Quest XP reward: domain routing TBD — skipped for now */
+    (void)q->rewardXp;
     if (q->rewardItemId != 0xFF) addItem(q->rewardItemId);
 
     char l1[48], l2[24];

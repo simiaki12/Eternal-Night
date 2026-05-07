@@ -5,8 +5,8 @@
 #include "town.h"
 #include "game.h"
 #include "player.h"
+#include "domains.h"
 #include "items.h"
-#include "skills.h"
 #include "gfx.h"
 #include "quests.h"
 #include "shop.h"
@@ -82,7 +82,7 @@ int loadDialogs(PakData data) {
 
             for (int k = 0; k < (int)oc; k++) {
                 DialogOption *o = &n->options[k];
-                if (!dlgReadByte(d, data.size, &pos, &o->requiredSkill)) goto done;
+                if (!dlgReadByte(d, data.size, &pos, &o->requiredDomain)) goto done;
                 if (!dlgReadByte(d, data.size, &pos, &o->requiredLevel)) goto done;
                 if (!dlgReadByte(d, data.size, &pos, (uint8_t *)&o->nextNode)) goto done;
                 if (!dlgReadStr(d, data.size, &pos, o->text, 41)) goto done;
@@ -118,8 +118,9 @@ void startDialog(int treeId, GameState returnTo) {
 }
 
 static int optionUnlocked(const DialogOption *opt) {
-    if (opt->requiredSkill == 0xFF) return 1;
-    return player.skills[opt->requiredSkill] >= opt->requiredLevel;
+    if (opt->requiredDomain == 0xFF) return 1;
+    if (opt->requiredDomain >= DOMAIN_COUNT) return 0;
+    return player.domains[opt->requiredDomain].level >= opt->requiredLevel;
 }
 
 /* ----------------------------------------------------------------------- */
@@ -262,9 +263,9 @@ void renderDialog(void) {
                 sel ? "> " : "  ", opt->text);
             drawText(textX, optY, buf, sel ? rgb(255, 255, 100) : rgb(200, 200, 200), 2);
         } else {
-            snprintf(buf, sizeof(buf), "%s[Locked. %s %d required]",
+            snprintf(buf, sizeof(buf), "%s[Locked. Domain Lv.%d required]",
                 sel ? "> " : "  ",
-                skillName(opt->requiredSkill), opt->requiredLevel);
+                opt->requiredLevel);
             drawText(textX, optY, buf, sel ? rgb(120, 120, 160) : rgb(70, 70, 90), 2);
         }
         optY += optH;

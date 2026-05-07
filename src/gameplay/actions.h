@@ -47,4 +47,4 @@ int              loadActions(PakData data);
 const ActionDef *getActionDef(uint8_t id);
 int              buildActionPool(uint8_t out[ACTION_MAX]);
 void             renderActionPanel(const char *title, const uint8_t *ids, int count, int sel);
-uint8_t          actionGetPlaystyle(uint8_t id); /* returns PLAYSTYLE_* or 0xFF if unaffiliated */
+uint8_t          actionGetDomain(uint8_t id); /* returns DOMAIN_* or 0xFF if unaffiliated */

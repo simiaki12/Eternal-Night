@@ -2,7 +2,7 @@
 #include "gfx.h"
 #include "player.h"
 #include "items.h"
-#include "skills.h"
+#include "domains.h"
 #include <string.h>
 
 ActionDef actionDefs[ACTION_MAX];
@@ -42,6 +42,26 @@ const ActionDef *getActionDef(uint8_t id) {
     return NULL;
 }
 
+/* Domain affiliation per action — 0xFF means no affiliation.
+   Actions are unlocked by domain nodes; this drives XP award direction. */
+static const uint8_t g_actionDomain[ACTION_COUNT] = {
+    [ACTION_ATTACK]   = DOMAIN_COMBAT,
+    [ACTION_STRONG]   = DOMAIN_COMBAT,
+    [ACTION_HEAL]     = DOMAIN_BLOOD,
+    [ACTION_DEFEND]   = DOMAIN_COMBAT,
+    [ACTION_DISARM]   = DOMAIN_TRICKERY,
+    [ACTION_BACKSTAB] = DOMAIN_TRICKERY,
+    [ACTION_STUN]     = DOMAIN_COMBAT,
+    [ACTION_CALM]     = DOMAIN_CHARM,
+    [ACTION_HIDE]     = DOMAIN_TRICKERY,
+    [ACTION_EXECUTE]  = DOMAIN_COMBAT,
+};
+
+uint8_t actionGetDomain(uint8_t id) {
+    if (id >= ACTION_COUNT) return 0xFF;
+    return g_actionDomain[id];
+}
+
 int buildActionPool(uint8_t out[ACTION_MAX]) {
     int count = 0;
 
@@ -54,6 +74,7 @@ int buildActionPool(uint8_t out[ACTION_MAX]) {
 
     ADD(ACTION_ATTACK);
 
+    /* Equipment-granted actions */
     for (int s = 0; s < EQUIP_SLOTS; s++) {
         if (player.equipped[s] == ITEM_UNEQUIPPED) continue;
         const ItemDef *d = itemGetDef(player.equipped[s]);
@@ -61,34 +82,20 @@ int buildActionPool(uint8_t out[ACTION_MAX]) {
         for (int j = 0; j < 4; j++) ADD(d->actions[j]);
     }
 
-    for (int sk = 0; sk < SKILL_COUNT; sk++) {
-        if (player.skills[sk] == 0) continue;
-        uint8_t acts[4];
-        skillGetActions(sk, acts);
-        for (int j = 0; j < 4; j++) ADD(acts[j]);
+    /* Domain node-unlocked actions */
+    for (int di = 0; di < DOMAIN_COUNT; di++) {
+        const Domain *dom = &domains[di];
+        for (int ni = 0; ni < DOMAIN_NODE_MAX; ni++) {
+            const DomainNode *node = &dom->nodes[ni];
+            if (node->name[0] == '\0') break; /* end of defined nodes */
+            if (node->type != NODE_REWARD_ACTION) continue;
+            if (!domainNodeUnlocked((uint8_t)di, (uint8_t)ni)) continue;
+            ADD((uint8_t)node->reward_value);
+        }
     }
 
     #undef ADD
     return count;
-}
-
-/* Playstyle affiliation per action — 0xFF means no affiliation */
-static const uint8_t g_actionPlaystyle[ACTION_COUNT] = {
-    [ACTION_ATTACK]   = 0xFF,
-    [ACTION_STRONG]   = PLAYSTYLE_KILLER,
-    [ACTION_HEAL]     = PLAYSTYLE_DAYWALKER,
-    [ACTION_DEFEND]   = 0xFF,
-    [ACTION_DISARM]   = PLAYSTYLE_KILLER,
-    [ACTION_BACKSTAB] = PLAYSTYLE_DAYWALKER,
-    [ACTION_STUN]     = PLAYSTYLE_KILLER,
-    [ACTION_CALM]     = PLAYSTYLE_CHARMER,
-    [ACTION_HIDE]     = PLAYSTYLE_DAYWALKER,
-    [ACTION_EXECUTE]  = PLAYSTYLE_KILLER,
-};
-
-uint8_t actionGetPlaystyle(uint8_t id) {
-    if (id >= ACTION_COUNT) return 0xFF;
-    return g_actionPlaystyle[id];
 }
 
 void renderActionPanel(const char *title, const uint8_t *ids, int count, int sel) {
@@ -99,18 +106,15 @@ void renderActionPanel(const char *title, const uint8_t *ids, int count, int sel
     const int PY   = gfxHeight / 2 - PH / 2;
     const int TX   = PX + 16;
 
-    /* Box */
     fillRect(PX,        PY,       PW, PH,  rgb(8,  14, 30));
     fillRect(PX,        PY,       PW,  1,  rgb(80, 120, 200));
     fillRect(PX,        PY+PH-1,  PW,  1,  rgb(80, 120, 200));
     fillRect(PX,        PY,        1, PH,  rgb(80, 120, 200));
     fillRect(PX+PW-1,   PY,        1, PH,  rgb(80, 120, 200));
 
-    /* Title */
     drawText(TX, PY + 10, title, rgb(200, 220, 255), 2);
     fillRect(PX + 8, PY + 32, PW - 16, 1, rgb(50, 70, 130));
 
-    /* Action list */
     int y = PY + 40;
     for (int i = 0; i < count; i++) {
         const ActionDef *a = getActionDef(ids[i]);
@@ -126,7 +130,6 @@ void renderActionPanel(const char *title, const uint8_t *ids, int count, int sel
         y += LH;
     }
 
-    /* Divider + description */
     fillRect(PX + 8, y + 4, PW - 16, 1, rgb(50, 70, 130));
     y += 12;
     if (sel >= 0 && sel < count) {

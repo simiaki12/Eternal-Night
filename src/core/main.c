@@ -14,7 +14,7 @@
 #include "combat.h"
 #include "town.h"
 #include "world.h"
-#include "skills.h"
+#include "domains.h"
 #include "quests.h"
 #include "mainmenu.h"
 #include "pausemenu.h"
@@ -36,7 +36,7 @@ static int       g_musicStarted  = 0;
 static GameState g_lastMusicState = STATE_MAIN_MENU;
 
 /* Overlay states sit on top of the world and don't affect music. */
-#define IS_OVERLAY(s) ((s)==STATE_INVENTORY||(s)==STATE_SKILLS|| \
+#define IS_OVERLAY(s) ((s)==STATE_INVENTORY||(s)==STATE_DOMAINS|| \
                        (s)==STATE_QUEST_LOG||(s)==STATE_CHAR_SHEET|| \
                        (s)==STATE_PAUSE_MENU||(s)==STATE_DIALOG|| \
                        (s)==STATE_OPTIONS||(s)==STATE_SHOP)
@@ -96,23 +96,15 @@ static void handleInventoryInput(int key) {
 }
 
 static GameState g_charSheetReturn;
-static int       g_charSheetSel = 0;
 
 static void openCharSheet(GameState from) {
     g_charSheetReturn = from;
-    g_charSheetSel    = player.playstyle;
     state = STATE_CHAR_SHEET;
 }
 
 static void handleCharSheetInput(int key) {
     if (key == VK_ESCAPE || key == 'C')
         state = g_charSheetReturn;
-    else if (key == VK_UP)
-        g_charSheetSel = (g_charSheetSel + PLAYSTYLE_COUNT - 1) % PLAYSTYLE_COUNT;
-    else if (key == VK_DOWN)
-        g_charSheetSel = (g_charSheetSel + 1) % PLAYSTYLE_COUNT;
-    else if (key == VK_RETURN)
-        player.playstyle = (uint8_t)g_charSheetSel;
 }
 
 static void handleLoadingInput(int key) {
@@ -224,42 +216,35 @@ static void renderCharSheet(void) {
         snprintf(buf, sizeof(buf), label ": %d", val); \
         drawText(x, y, buf, col, 2); y += lineH;
 
-    CSTAT("LVL", player.level,       rgb(220, 200, 100))
-    snprintf(buf, sizeof(buf), "XP : %d / %d", player.xp, xpToNext());
-    drawText(x, y, buf, rgb(180, 160, 80), 2); y += lineH;
-    y += 6;
     snprintf(buf, sizeof(buf), "HP : %d / %d", player.hp, getMaxHp());
     drawText(x, y, buf, rgb(100, 220, 100), 2); y += lineH;
-    CSTAT("ATK", getAttack(),         rgb(220, 100, 100))
-    CSTAT("DEF", getDefense(),        rgb(100, 160, 220))
+    CSTAT("ATK", getAttack(),       rgb(220, 100, 100))
+    CSTAT("DEF", getDefense(),      rgb(100, 160, 220))
     y += 6;
-    CSTAT("INT", getIntelligence(),   rgb(180, 100, 220))
-    CSTAT("PER", getPerception(),     rgb(220, 180, 100))
-    CSTAT("STA", getStamina(),        rgb(100, 220, 180))
+    CSTAT("INT", player.intelligence, rgb(180, 100, 220))
+    CSTAT("PER", player.perception,   rgb(220, 180, 100))
+    CSTAT("STA", player.stamina,      rgb(100, 220, 180))
+    CSTAT("CHA", player.charisma,     rgb(220, 160, 200))
+    CSTAT("AGI", player.agility,      rgb(160, 220, 160))
     #undef CSTAT
 
     y += 2;
     fillRect(x, y, gfxWidth - 120, 1, rgb(60, 60, 100));
     y += 6;
-    drawText(x, y, "PLAYSTYLE", rgb(180, 180, 255), 2);
+    drawText(x, y, "DOMAINS", rgb(180, 180, 255), 2);
     y += lineH;
 
-    for (int i = 0; i < PLAYSTYLE_COUNT; i++) {
-        int      isSel     = (i == g_charSheetSel);
-        int      isActive  = (i == (int)player.playstyle);
-        uint32_t col       = isSel    ? rgb(255, 255, 100) :
-                             isActive ? rgb(160, 220, 255) :
-                                        rgb(100, 100, 100);
-        snprintf(buf, sizeof(buf), "%s%-10s%s  %u xp",
-                 isSel ? "> " : "  ",
-                 playstyleName(i),
-                 isActive ? "*" : " ",
-                 (unsigned)player.playstyleXp[i]);
-        drawText(x, y, buf, col, 2);
+    for (int i = 0; i < 4; i++) {   /* show base domains only */
+        const PlayerDomainState *d = &player.domains[i];
+        snprintf(buf, sizeof(buf), "%-14s Lv.%d  %u/%u xp",
+                 domainName(i), d->level,
+                 (unsigned)d->xp,
+                 (unsigned)domainXpToNext(d->level));
+        drawText(x, y, buf, rgb(160, 180, 220), 2);
         y += lineH;
     }
 
-    drawText(x, gfxHeight - 80, "UP/DN: choose   ENTER: confirm   C/ESC: close", rgb(80, 80, 80), 1);
+    drawText(x, gfxHeight - 80, "C/ESC: close", rgb(80, 80, 80), 1);
 }
 
 static void handleDeathInput(int key) {
@@ -435,9 +420,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     if (g_pendingKey == VK_UP   && g_worldActSel > 0)       g_worldActSel--;
                     if (g_pendingKey == VK_DOWN  && g_worldActSel < cnt - 1) g_worldActSel++;
                 }
-            /* P is a global hotkey — opens skills from world, closes from skills */
-            } else if (g_pendingKey == 'P' && (state == STATE_WORLD || state == STATE_SKILLS)) {
-                state = (state == STATE_SKILLS) ? STATE_WORLD : STATE_SKILLS;
+            /* P is a global hotkey — opens domain tree from world */
+            } else if (g_pendingKey == 'P' && (state == STATE_WORLD || state == STATE_DOMAINS)) {
+                state = (state == STATE_DOMAINS) ? STATE_WORLD : STATE_DOMAINS;
             /* J toggles the quest log from any non-combat state */
             } else if (g_pendingKey == 'J' && state != STATE_COMBAT) {
                 if (state == STATE_QUEST_LOG) {
@@ -459,7 +444,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     case STATE_COMBAT:  handleCombatInput(g_pendingKey);  break;
                     case STATE_MAIN_MENU: handleMainMenuInput(g_pendingKey); break;
                     case STATE_INVENTORY: handleInventoryInput(g_pendingKey); break;
-                    case STATE_SKILLS:  handleSkillsInput(g_pendingKey);  break;
+                    case STATE_DOMAINS: handleDomainsInput(g_pendingKey); break;
                     case STATE_DIALOG:  handleDialogInput(g_pendingKey);  break;
                     case STATE_DUNGEON:   handleDungeonInput(g_pendingKey);   break;
                     case STATE_TOWN:     handleTownInput(g_pendingKey);      break;
@@ -511,7 +496,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             case STATE_LOADING:   renderLoading();   break;
             case STATE_MAIN_MENU: renderMainMenu(); break;
             case STATE_INVENTORY: renderInventory(); break;
-            case STATE_SKILLS:  renderSkills();  break;
+            case STATE_DOMAINS: renderDomains(); break;
             case STATE_DIALOG:  renderDialog();  break;
             case STATE_DUNGEON:   renderDungeon();   break;
             case STATE_TOWN:     renderTown();      break;
