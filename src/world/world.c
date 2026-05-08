@@ -15,6 +15,7 @@
 #include "tiles8x8.h"
 #include "pak.h"
 #include "shop.h"
+#include "world_enemies.h"
 
 /* ── iso tile images, lazy-loaded on first render ── */
 #define TIMG_GRASS       0
@@ -187,30 +188,36 @@ int worldLoadNamed(const char *name) {
         g_plrOffY      = g_plrOffStartY   = 0;
         g_targetCount  = 0;
         g_targetIdx    = 0;
+        worldEnemiesInit();
     }
     return ok;
 }
 
 void updateWorld(void) {
-    if (!g_moving) { g_walkFrame = 0; return; }
-    DWORD elapsed = GetTickCount() - g_moveStart;
-    if (elapsed >= SLIDE_MS) {
-        g_camSlideX = 0;
-        g_camSlideY = 0;
-        g_plrOffX   = 0;
-        g_plrOffY   = 0;
-        g_moving    = 0;
+    if (!g_moving) {
+        g_walkFrame = 0;
     } else {
-        if (!g_midToggled && elapsed >= SLIDE_MS / 2) {
-            g_walkFrame  ^= 1;
-            g_midToggled  = 1;
+        DWORD elapsed = GetTickCount() - g_moveStart;
+        if (elapsed >= SLIDE_MS) {
+            g_camSlideX = 0;
+            g_camSlideY = 0;
+            g_plrOffX   = 0;
+            g_plrOffY   = 0;
+            g_moving    = 0;
+        } else {
+            if (!g_midToggled && elapsed >= SLIDE_MS / 2) {
+                g_walkFrame  ^= 1;
+                g_midToggled  = 1;
+            }
+            int rem      = (int)(SLIDE_MS - elapsed);
+            g_camSlideX  = g_camSlideStartX * rem / SLIDE_MS;
+            g_camSlideY  = g_camSlideStartY * rem / SLIDE_MS;
+            g_plrOffX    = g_plrOffStartX   * rem / SLIDE_MS;
+            g_plrOffY    = g_plrOffStartY   * rem / SLIDE_MS;
         }
-        int rem      = (int)(SLIDE_MS - elapsed);
-        g_camSlideX  = g_camSlideStartX * rem / SLIDE_MS;
-        g_camSlideY  = g_camSlideStartY * rem / SLIDE_MS;
-        g_plrOffX    = g_plrOffStartX   * rem / SLIDE_MS;
-        g_plrOffY    = g_plrOffStartY   * rem / SLIDE_MS;
     }
+    int poolId = worldEnemiesUpdate((uint32_t)GetTickCount());
+    if (poolId >= 0) startCombatFromPool((uint8_t)poolId);
 }
 
 static void triggerMapEvent(const MapEvent *ev) {
@@ -298,11 +305,13 @@ void handleWorldInput(int key) {
         ambientCheckLocation(currentMapName, (uint8_t)newX, (uint8_t)newY);
 
         /* Enemies auto-trigger on step; town/dungeon/portal wait for E key. */
-        const MapEvent *ev = findEvent(newX, newY);
-        if (ev) {
-            questOnZoneEntered(ev->id);
-            if (ev->type == MAP_EV_ENEMY)
-                startCombatFromPool(ev->id);
+        const WorldEnemy *we = worldEnemyAt(newX, newY);
+        if (we) {
+            questOnZoneEntered(we->pool_id);
+            startCombatFromPool(we->pool_id);
+        } else {
+            const MapEvent *ev = findEvent(newX, newY);
+            if (ev && ev->type != MAP_EV_ENEMY) questOnZoneEntered(ev->id);
         }
     }
 }
@@ -316,6 +325,7 @@ void returnToTown(void) {
 void renderWorld(void) {
     if (!g_tilesLoaded) loadTileImgs();
 
+    uint32_t now  = (uint32_t)GetTickCount();
     int rCamX = camX + g_camSlideX;
     int rCamY = camY + g_camSlideY;
 
@@ -352,18 +362,23 @@ void renderWorld(void) {
                 case GFX_CAVE_WALL:      img_idx = TIMG_CAVE_WALL;   break;
                 case GFX_TAVERN_WALL:    img_idx = TIMG_TAVERN_WALL; break;
                 default: {
-                    const MapEvent *ev = findEvent(tx, ty);
-                    if (ev) {
-                        switch (ev->type) {
-                            case MAP_EV_ENEMY:   img_idx = TIMG_GRASS_ENEMY; break;
-                            case MAP_EV_TOWN:    img_idx = TIMG_GRASS_TOWN;  break;
-                            case MAP_EV_DUNGEON: img_idx = TIMG_GRASS_DUNG;  break;
-                            case MAP_EV_PORTAL:  img_idx = TIMG_GRASS_PORT;  break;
-                            default:             img_idx = TIMG_GRASS;        break;
-                        }
+                    if (worldEnemyAt(tx, ty)) {
+                        /* Enemy present — draw terrain only; icon rendered in overlay pass */
+                        static const int g_evars[] = { TIMG_GRASS, TIMG_GRASS_1, TIMG_GRASS_2 };
+                        img_idx = g_evars[tileHash(tx, ty, 3)];
                     } else {
-                        static const int g_vars[] = { TIMG_GRASS, TIMG_GRASS_1, TIMG_GRASS_2 };
-                        img_idx = g_vars[tileHash(tx, ty, 3)];
+                        const MapEvent *ev = findEvent(tx, ty);
+                        if (ev && ev->type != MAP_EV_ENEMY) {
+                            switch (ev->type) {
+                                case MAP_EV_TOWN:    img_idx = TIMG_GRASS_TOWN; break;
+                                case MAP_EV_DUNGEON: img_idx = TIMG_GRASS_DUNG; break;
+                                case MAP_EV_PORTAL:  img_idx = TIMG_GRASS_PORT; break;
+                                default:             img_idx = TIMG_GRASS;      break;
+                            }
+                        } else {
+                            static const int g_vars[] = { TIMG_GRASS, TIMG_GRASS_1, TIMG_GRASS_2 };
+                            img_idx = g_vars[tileHash(tx, ty, 3)];
+                        }
                     }
                     break;
                 }
@@ -392,6 +407,23 @@ void renderWorld(void) {
                 int py = cy + g_plrOffY;
                 const uint8_t *spr = g_walkFrame ? SPRITE_PLAYER_2 : SPRITE_PLAYER;
                 drawSprite8(px - 16, py + TILE_H / 2 - 32, spr, TILE_PAL, 4);
+            }
+        }
+    }
+
+    /* --- Enemy overlay pass — drawn after terrain so the icon slides without moving the ground --- */
+    {
+        PakData *etd = &g_tileImgs[TIMG_GRASS_ENEMY];
+        if (etd->data) {
+            int eTileH = (int)((const uint8_t *)etd->data)[1];
+            for (int i = 0; i < worldEnemyCount; i++) {
+                const WorldEnemy *we = &worldEnemies[i];
+                int offX = 0, offY = 0;
+                if (we->is_moving) worldEnemySlideOffset(we, now, &offX, &offY);
+                int ex = (we->x - we->y) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
+                int ey = (we->x + we->y) * (TILE_H / 2) - rCamY + gfxHeight / 2;
+                drawBin(ex - TILE_W / 2 + offX, ey + TILE_H - eTileH * 2 + offY,
+                        (const uint8_t *)etd->data, 2, 0, 255);
             }
         }
     }
