@@ -103,7 +103,7 @@ Domain domains[DOMAIN_COUNT] = {
 
 const char *domainName(int id) {
     switch (id) {
-        case DOMAIN_COMBAT:   return "Direct Combat";
+        case DOMAIN_COMBAT:   return "Combat";
         case DOMAIN_TRICKERY: return "Trickery";
         case DOMAIN_BLOOD:    return "Blood";
         case DOMAIN_CHARM:    return "Charm";
