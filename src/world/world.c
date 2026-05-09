@@ -73,6 +73,8 @@ static int tileHash(int x, int y, int n) {
     return (int)(h % (uint32_t)n);
 }
 
+int g_enemyWallTransparency = 0; /* OFF by default — enemies hide behind walls */
+
 #define AMBIENT_MS 5000
 static char  g_ambientMsg[128] = {0};
 static DWORD g_ambientExpiry   = 0;
@@ -363,7 +365,7 @@ void renderWorld(void) {
                 case GFX_TAVERN_WALL:    img_idx = TIMG_TAVERN_WALL; break;
                 default: {
                     if (worldEnemyAt(tx, ty)) {
-                        /* Enemy present — draw terrain only; icon rendered in overlay pass */
+                        /* Enemy present — draw terrain only; icon drawn after tile below */
                         static const int g_evars[] = { TIMG_GRASS, TIMG_GRASS_1, TIMG_GRASS_2 };
                         img_idx = g_evars[tileHash(tx, ty, 3)];
                     } else {
@@ -392,11 +394,23 @@ void renderWorld(void) {
             PakData *td = &g_tileImgs[img_idx];
             if (td->data) {
                 int tileH  = (int)((const uint8_t *)td->data)[1];
-                int draw_y = cy + TILE_H - tileH * 2;
+                int draw_y = cy + TILE_H - tileH * 2 + (tileH >= TILE_H/2 ? 2 : 0);
                 uint8_t alpha = 255;
                 if (tileH > TILE_H / 2 && sum > playerSum) {
                     if (abs(cx - plrScreenX) < TILE_W / 2 + 16 && draw_y < plrScreenY + 16)
                         alpha = 100;
+                }
+                if (g_enemyWallTransparency && alpha == 255 && tileH > TILE_H / 2) {
+                    for (int ei = 0; ei < worldEnemyCount; ei++) {
+                        const WorldEnemy *we = &worldEnemies[ei];
+                        if (sum <= (int)(we->x + we->y)) continue;
+                        int ex = (we->x - we->y) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
+                        int ey = (we->x + we->y) * (TILE_H / 2) - rCamY + gfxHeight / 2;
+                        if (abs(cx - ex) < TILE_W / 2 + 16 && draw_y < ey + 16) {
+                            alpha = 100;
+                            break;
+                        }
+                    }
                 }
                 drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, rotate, alpha);
             }
@@ -408,22 +422,30 @@ void renderWorld(void) {
                 const uint8_t *spr = g_walkFrame ? SPRITE_PLAYER_2 : SPRITE_PLAYER;
                 drawSprite8(px - 16, py + TILE_H / 2 - 32, spr, TILE_PAL, 4);
             }
-        }
-    }
-
-    /* --- Enemy overlay pass — drawn after terrain so the icon slides without moving the ground --- */
-    {
-        PakData *etd = &g_tileImgs[TIMG_GRASS_ENEMY];
-        if (etd->data) {
-            int eTileH = (int)((const uint8_t *)etd->data)[1];
-            for (int i = 0; i < worldEnemyCount; i++) {
-                const WorldEnemy *we = &worldEnemies[i];
-                int offX = 0, offY = 0;
-                if (we->is_moving) worldEnemySlideOffset(we, now, &offX, &offY);
-                int ex = (we->x - we->y) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
-                int ey = (we->x + we->y) * (TILE_H / 2) - rCamY + gfxHeight / 2;
-                drawBin(ex - TILE_W / 2 + offX, ey + TILE_H - eTileH * 2 + offY,
-                        (const uint8_t *)etd->data, 2, 0, 255);
+            {
+                PakData *etd = &g_tileImgs[TIMG_GRASS_ENEMY];
+                if (etd->data) {
+                    int eTileH = (int)((const uint8_t *)etd->data)[1];
+                    for (int ei = 0; ei < worldEnemyCount; ei++) {
+                        const WorldEnemy *we = &worldEnemies[ei];
+                        /* Draw at the higher-sum tile so the source tile (painted
+                           later in the loop) never overwrites the enemy sprite. */
+                        int draw_tx = we->x, draw_ty = we->y;
+                        if (we->is_moving &&
+                            (int)(we->prev_x + we->prev_y) > (int)(we->x + we->y)) {
+                            draw_tx = we->prev_x;
+                            draw_ty = we->prev_y;
+                        }
+                        if (tx != draw_tx || ty != draw_ty) continue;
+                        int ex = (we->x - we->y) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
+                        int ey = (we->x + we->y) * (TILE_H / 2) - rCamY + gfxHeight / 2;
+                        int eDrawY = ey + TILE_H - eTileH * 2 + (eTileH >= TILE_H/2 ? 2 : 0);
+                        int offX = 0, offY = 0;
+                        if (we->is_moving) worldEnemySlideOffset(we, now, &offX, &offY);
+                        drawBin(ex - TILE_W / 2 + offX, eDrawY + offY,
+                                (const uint8_t *)etd->data, 2, 0, 255);
+                    }
+                }
             }
         }
     }

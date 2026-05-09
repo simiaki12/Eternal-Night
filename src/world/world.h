@@ -58,6 +58,7 @@ typedef struct {
 
 #define MAX_MAP_EVENTS 255
 
+extern int      g_enemyWallTransparency;
 extern int      worldPlayerX;
 extern int      worldPlayerY;
 extern int      camX;

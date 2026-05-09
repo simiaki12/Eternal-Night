@@ -5,12 +5,13 @@
 #include "game.h"
 #include "audio.h"
 #include "options.h"
+#include "world.h"
 
 static GameState g_returnState;
 static int       g_vol;
 static int       g_row;
 
-#define OPT_ROWS 7  /* fullscreen + volume + 5 CRT toggles */
+#define OPT_ROWS 8  /* fullscreen + volume + 5 CRT toggles + enemy wall transparency */
 
 void enterOptions(GameState from) {
     g_returnState = from;
@@ -26,6 +27,7 @@ static int *crtFlag(int row) {
         case 4: return &g_crtBleed;
         case 5: return &g_crtBlur;
         case 6: return &g_crtVignette;
+        case 7: return &g_enemyWallTransparency;
     }
     return NULL;
 }
@@ -63,7 +65,7 @@ void renderOptions(void) {
     const int cx    = gfxWidth  / 2;
     const int cy    = gfxHeight / 2;
     const int boxW  = 300;
-    const int boxH  = 278;
+    const int boxH  = 306;
     const int boxX  = cx - boxW / 2;
     const int boxY  = cy - boxH / 2;
     const int lineH = 28;
@@ -104,7 +106,8 @@ void renderOptions(void) {
 
     /* CRT toggle rows */
     static const char *labels[] = {
-        "Scanlines", "Pixel Grid", "Color Bleed", "Blur", "Vignette"
+        "Scanlines", "Pixel Grid", "Color Bleed", "Blur", "Vignette",
+        "Enemy X-ray"
     };
     for (int i = 2; i < OPT_ROWS; i++) {
         int sel = (g_row == i);
