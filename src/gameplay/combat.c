@@ -12,6 +12,7 @@
 #include "gfx.h"
 #include "quests.h"
 #include "loot.h"
+#include "world_enemies.h"
 
 CombatState combat;
 
@@ -124,6 +125,7 @@ void startCombat(const EnemyDef *def) {
     combat.phase              = COMBAT_PHASE_ACTIVE;
     combat.gainedGold         = 0;
     combat.droppedCount       = 0;
+    combat.fromWorldEnemy     = 0;
     memset(combat.gainedDomainXp, 0, sizeof(combat.gainedDomainXp));
     generateActions();
     state = STATE_COMBAT;
@@ -227,7 +229,11 @@ static void performPlayerAction(void) {
 
 void handleCombatInput(int key) {
     if (combat.phase == COMBAT_PHASE_VICTORY) {
-        if (key == VK_RETURN || key == VK_ESCAPE) state = STATE_WORLD;
+        if (key == VK_RETURN || key == VK_ESCAPE) {
+            if (combat.fromWorldEnemy)
+                worldEnemyRemoveAt(combat.worldEnemyX, combat.worldEnemyY);
+            state = STATE_WORLD;
+        }
         return;
     }
     switch (key) {

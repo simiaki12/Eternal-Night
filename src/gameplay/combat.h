@@ -45,6 +45,8 @@ typedef struct {
     uint8_t     droppedItems[4];
     int         droppedCount;
     PakData     enemyImg;
+    uint8_t     fromWorldEnemy; /* 1 if triggered by a WorldEnemy on the map */
+    uint8_t     worldEnemyX, worldEnemyY;
 } CombatState;
 
 extern CombatState combat;

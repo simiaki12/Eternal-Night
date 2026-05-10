@@ -29,6 +29,15 @@ void worldEnemiesInit(void) {
     }
 }
 
+void worldEnemyRemoveAt(int x, int y) {
+    for (int i = 0; i < worldEnemyCount; i++) {
+        if (worldEnemies[i].x == (uint8_t)x && worldEnemies[i].y == (uint8_t)y) {
+            worldEnemies[i] = worldEnemies[--worldEnemyCount];
+            return;
+        }
+    }
+}
+
 const WorldEnemy *worldEnemyAt(int x, int y) {
     if (x < 0 || y < 0) return NULL;
     for (int i = 0; i < worldEnemyCount; i++)

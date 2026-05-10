@@ -219,7 +219,12 @@ void updateWorld(void) {
         }
     }
     int poolId = worldEnemiesUpdate((uint32_t)GetTickCount());
-    if (poolId >= 0) startCombatFromPool((uint8_t)poolId);
+    if (poolId >= 0) {
+        startCombatFromPool((uint8_t)poolId);
+        combat.fromWorldEnemy = 1;
+        combat.worldEnemyX    = (uint8_t)worldPlayerX;
+        combat.worldEnemyY    = (uint8_t)worldPlayerY;
+    }
 }
 
 static void triggerMapEvent(const MapEvent *ev) {
@@ -309,8 +314,12 @@ void handleWorldInput(int key) {
         /* Enemies auto-trigger on step; town/dungeon/portal wait for E key. */
         const WorldEnemy *we = worldEnemyAt(newX, newY);
         if (we) {
+            uint8_t ex = we->x, ey = we->y;
             questOnZoneEntered(we->pool_id);
             startCombatFromPool(we->pool_id);
+            combat.fromWorldEnemy = 1;
+            combat.worldEnemyX    = ex;
+            combat.worldEnemyY    = ey;
         } else {
             const MapEvent *ev = findEvent(newX, newY);
             if (ev && ev->type != MAP_EV_ENEMY) questOnZoneEntered(ev->id);
@@ -337,7 +346,16 @@ void renderWorld(void) {
     int plrScreenX = (worldPlayerX - worldPlayerY) * (TILE_W / 2) - rCamX + gfxWidth  / 2 + g_plrOffX;
     int plrScreenY = (worldPlayerX + worldPlayerY) * (TILE_H / 2) - rCamY + gfxHeight / 2 + g_plrOffY;
 
+    /* Tall tiles are deferred within each sum pass so entities drawn in the
+       flat-tile pass always end up behind walls/trees at the same depth. */
+    typedef struct { int tx, ty, img_idx; } DeferredTall;
+    DeferredTall deferred[128];
+    int nDeferred = 0;
+
     for (int sum = 0; sum < mapWidth + mapHeight - 1; sum++) {
+        nDeferred = 0;
+
+        /* --- Sub-pass 1: flat tiles + NPCs + player + enemies --- */
         for (int tx = 0; tx <= sum; tx++) {
             int ty = sum - tx;
             if (tx < 0 || tx >= mapWidth || ty < 0 || ty >= mapHeight) continue;
@@ -393,26 +411,15 @@ void renderWorld(void) {
 
             PakData *td = &g_tileImgs[img_idx];
             if (td->data) {
-                int tileH  = (int)((const uint8_t *)td->data)[1];
-                int draw_y = cy + TILE_H - tileH * 2 + (tileH >= TILE_H/2 ? 2 : 0);
-                uint8_t alpha = 255;
-                if (tileH > TILE_H / 2 && sum > playerSum) {
-                    if (abs(cx - plrScreenX) < TILE_W / 2 + 16 && draw_y < plrScreenY + 16)
-                        alpha = 100;
+                int tileH = (int)((const uint8_t *)td->data)[1];
+                if (tileH > TILE_H / 2) {
+                    /* Tall tile — defer until after entities at this sum level. */
+                    if (nDeferred < 128)
+                        deferred[nDeferred++] = (DeferredTall){tx, ty, img_idx};
+                } else {
+                    int draw_y = cy + TILE_H - tileH * 2 + (tileH >= TILE_H/2 ? 2 : 0);
+                    drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, rotate, 255);
                 }
-                if (g_enemyWallTransparency && alpha == 255 && tileH > TILE_H / 2) {
-                    for (int ei = 0; ei < worldEnemyCount; ei++) {
-                        const WorldEnemy *we = &worldEnemies[ei];
-                        if (sum <= (int)(we->x + we->y)) continue;
-                        int ex = (we->x - we->y) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
-                        int ey = (we->x + we->y) * (TILE_H / 2) - rCamY + gfxHeight / 2;
-                        if (abs(cx - ex) < TILE_W / 2 + 16 && draw_y < ey + 16) {
-                            alpha = 100;
-                            break;
-                        }
-                    }
-                }
-                drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, rotate, alpha);
             }
 
             renderNpcs(tx, ty, rCamX, rCamY);
@@ -428,8 +435,8 @@ void renderWorld(void) {
                     int eTileH = (int)((const uint8_t *)etd->data)[1];
                     for (int ei = 0; ei < worldEnemyCount; ei++) {
                         const WorldEnemy *we = &worldEnemies[ei];
-                        /* Draw at the higher-sum tile so the source tile (painted
-                           later in the loop) never overwrites the enemy sprite. */
+                        /* Draw at the higher-sum tile so the source flat tile
+                           (painted later in the loop) never overwrites the sprite. */
                         int draw_tx = we->x, draw_ty = we->y;
                         if (we->is_moving &&
                             (int)(we->prev_x + we->prev_y) > (int)(we->x + we->y)) {
@@ -447,6 +454,38 @@ void renderWorld(void) {
                     }
                 }
             }
+        }
+
+        /* --- Sub-pass 2: tall tiles, drawn after all entities at this sum level --- */
+        for (int di = 0; di < nDeferred; di++) {
+            int tx = deferred[di].tx;
+            int ty = deferred[di].ty;
+            int img_idx = deferred[di].img_idx;
+            int cx = (tx - ty) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
+            int cy = (tx + ty) * (TILE_H / 2) - rCamY + gfxHeight / 2;
+            PakData *td = &g_tileImgs[img_idx];
+            if (!td->data) continue;
+            int tileH  = (int)((const uint8_t *)td->data)[1];
+            int draw_y = cy + TILE_H - tileH * 2 + (tileH >= TILE_H/2 ? 2 : 0);
+            uint8_t alpha = 255;
+            /* >= because tall tiles now render after player even at same sum level */
+            if (sum >= playerSum) {
+                if (abs(cx - plrScreenX) < TILE_W / 2 + 16 && draw_y < plrScreenY + 16)
+                    alpha = 100;
+            }
+            if (g_enemyWallTransparency && alpha == 255) {
+                for (int ei = 0; ei < worldEnemyCount; ei++) {
+                    const WorldEnemy *we = &worldEnemies[ei];
+                    if (sum < (int)(we->x + we->y)) continue;
+                    int ex = (we->x - we->y) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
+                    int ey = (we->x + we->y) * (TILE_H / 2) - rCamY + gfxHeight / 2;
+                    if (abs(cx - ex) < TILE_W / 2 + 16 && draw_y < ey + 16) {
+                        alpha = 100;
+                        break;
+                    }
+                }
+            }
+            drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, 0, alpha);
         }
     }
 

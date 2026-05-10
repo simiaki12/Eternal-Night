@@ -30,4 +30,5 @@ extern int        worldEnemyCount;
 void              worldEnemiesInit(void);
 int               worldEnemiesUpdate(uint32_t now); /* returns pool_id if enemy stepped on player, else -1 */
 const WorldEnemy *worldEnemyAt(int x, int y);
+void              worldEnemyRemoveAt(int x, int y);
 void              worldEnemySlideOffset(const WorldEnemy *we, uint32_t now, int *offX, int *offY);
