@@ -4,7 +4,11 @@ A dark fantasy retro RPG optimized for distribution on floppies
 
 ## The Game
 
-The Kingdom of Lucernia is in turmoil. The Queen has been kidnapped and the only one who can save her is the mysterious vampire knight, the Daywalker. Will he be able to save the day, what other mysteries will he uncover, can he prepare for a final confrontation with his arch-nemesis.
+The Kingdom of Lucernia is in turmoil. The Queen has been kidnapped, and the only one who can save her is Azrael — the Daywalker.
+
+Eternal Night is a dark fantasy RPG with world overworld to navigate, towns to visit, and a cast of NPCs with their own agendas. Exploration is real-time: enemies roam the world and react to your presence. Combat triggers when you engage and plays out as a turn-based exchange of actions.
+
+Azrael grows not through levelling up, but through how he fights. The more you rely on a fighting style, the deeper you go into that domain, unlocking new capabilities that reflect the kind of warrior you're becoming.
 
 ## The Constraint
 
@@ -37,13 +41,28 @@ The packer runs automatically as part of the build and bundles everything with a
 
 ## Combat
 
-Combats are round based. Each turn the player can choose from a selection of 4 actions, which are determined semi-eandomly based on their equipment, skills, enemy and surrounding. 
+Combat is turn-based. Each round you are offered 4 actions drawn from your available repertoire. The chance of certain actions appearing is weighted by your domain levels, your equipment, the enemy type, and your surroundings. Pick an action, pick a target, and resolve. Then enemies act in sequence.
+
+Encounters support up to 1 enemy at once, multiple is planned. Each enemy will have its own action set, so groups feel distinct rather than just multiplying the same threat.
+
+Outside of combat, enemies move in real time. Most are slower than Azrael, so you can choose your fights. Enemies have behaviour archetypes: some hunt you at range, some ignore you until you cross their territory, some flee and try to call allies. Breaking line of sight will eventually cause them to give up the chase.
 
 ---
 
-## Skills
+## Domain System
 
-Skills unlock new abilities and increase the power of Azrael.
+Azrael has no base level or XP. Progression is entirely domain-based: using actions in combat earns XP in the relevant domain, levelling it up and unlocking nodes in its tree. Nodes grant stat boosts, new actions, action upgrades, or passive scaling.
+
+There are 14 domains in three tiers:
+
+- **4 base domains** — always available: Direct Combat, Trickery/Environment, Blood/Vampire, Charm/Diplomacy
+- **story-gated and fusion domains** — revealed by significant story beats or when Azrael reaches high proficiency in multiple base domains.
+
+Each domain tree has ~25 nodes. Nodes give stat boosts, action unlocks,upgrade existing actions or even passive abilities. Players can also opt into RNG variance via nodes — choosing `5–10 damage` over a flat `7` if they want it.
+
+HP growth is domain-driven: Direct Combat grants more, Charm/Diplomacy less. Blood may grant vampiric HP variants.
+
+Combat action selection is weighted toward Azrael's most-levelled domain, adjusted for circumstance and a small random factor.
 
 ---
 
@@ -96,7 +115,7 @@ All formats are raw binary structs, `memcpy`-loadable with no parsing step.
 ```
 src/
   core/       main loop, gfx, audio, pak loader, save
-  gameplay/   combat, actions, items, skills, player, enemies, loot
+  gameplay/   combat, actions, items, domains, player, enemies, loot
   world/      world map, town
   ui/         menus, inventory, shop, quests, dialog, npcs
   data/       embedded font and tile data
