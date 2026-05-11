@@ -112,7 +112,7 @@ static const SongDef  *s_cur_song = NULL;
 static SongDef *s_loaded_song = NULL;
 static char     s_loaded_name[64];
 
-static volatile int    s_vol = 0;
+static volatile int    s_vol = 1;
 static HWAVEOUT        s_wo     = NULL;
 static HANDLE          s_thread = NULL;
 static HANDLE          s_evt    = NULL;

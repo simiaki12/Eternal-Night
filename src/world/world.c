@@ -41,6 +41,10 @@
 static PakData g_tileImgs[N_TILE_IMGS];
 static int     g_tilesLoaded = 0;
 
+/* Per-pool world map tiles — loaded lazily on first draw */
+static PakData g_poolTiles[ENEMY_POOL_MAX];
+static int     g_poolTileLoaded[ENEMY_POOL_MAX];
+
 static void loadTileImgs(void) {
     static const char *paths[N_TILE_IMGS] = {
         "assets/tiles/grass.til",
@@ -430,28 +434,43 @@ void renderWorld(void) {
                 drawSprite8(px - 16, py + TILE_H / 2 - 32, spr, TILE_PAL, 4);
             }
             {
-                PakData *etd = &g_tileImgs[TIMG_GRASS_ENEMY];
-                if (etd->data) {
-                    int eTileH = (int)((const uint8_t *)etd->data)[1];
-                    for (int ei = 0; ei < worldEnemyCount; ei++) {
-                        const WorldEnemy *we = &worldEnemies[ei];
-                        /* Draw at the higher-sum tile so the source flat tile
-                           (painted later in the loop) never overwrites the sprite. */
-                        int draw_tx = we->x, draw_ty = we->y;
-                        if (we->is_moving &&
-                            (int)(we->prev_x + we->prev_y) > (int)(we->x + we->y)) {
-                            draw_tx = we->prev_x;
-                            draw_ty = we->prev_y;
-                        }
-                        if (tx != draw_tx || ty != draw_ty) continue;
-                        int ex = (we->x - we->y) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
-                        int ey = (we->x + we->y) * (TILE_H / 2) - rCamY + gfxHeight / 2;
-                        int eDrawY = ey + TILE_H - eTileH * 2 + (eTileH >= TILE_H/2 ? 2 : 0);
-                        int offX = 0, offY = 0;
-                        if (we->is_moving) worldEnemySlideOffset(we, now, &offX, &offY);
-                        drawBin(ex - TILE_W / 2 + offX, eDrawY + offY,
-                                (const uint8_t *)etd->data, 2, 0, 255);
+                for (int ei = 0; ei < worldEnemyCount; ei++) {
+                    const WorldEnemy *we = &worldEnemies[ei];
+                    /* Draw at the higher-sum tile so the source flat tile
+                       (painted later in the loop) never overwrites the sprite. */
+                    int draw_tx = we->x, draw_ty = we->y;
+                    if (we->is_moving &&
+                        (int)(we->prev_x + we->prev_y) > (int)(we->x + we->y)) {
+                        draw_tx = we->prev_x;
+                        draw_ty = we->prev_y;
                     }
+                    if (tx != draw_tx || ty != draw_ty) continue;
+
+                    /* Resolve pool tile — lazy load on first use. */
+                    PakData *etd = &g_tileImgs[TIMG_GRASS_ENEMY];
+                    int pi = (int)we->pool_id - 1;
+                    if (pi >= 0 && pi < enemyPoolCount) {
+                        if (!g_poolTileLoaded[pi]) {
+                            g_poolTileLoaded[pi] = 1;
+                            const char *tn = enemyPools[pi].tileName;
+                            if (tn[0]) {
+                                char path[48];
+                                snprintf(path, sizeof(path), "assets/tiles/%s.til", tn);
+                                g_poolTiles[pi] = pakRead(path);
+                            }
+                        }
+                        if (g_poolTiles[pi].data) etd = &g_poolTiles[pi];
+                    }
+
+                    if (!etd->data) continue;
+                    int eTileH = (int)((const uint8_t *)etd->data)[1];
+                    int ex = (we->x - we->y) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
+                    int ey = (we->x + we->y) * (TILE_H / 2) - rCamY + gfxHeight / 2;
+                    int eDrawY = ey + TILE_H - eTileH * 2 + (eTileH >= TILE_H/2 ? 2 : 0);
+                    int offX = 0, offY = 0;
+                    if (we->is_moving) worldEnemySlideOffset(we, now, &offX, &offY);
+                    drawBin(ex - TILE_W / 2 + offX, eDrawY + offY,
+                            (const uint8_t *)etd->data, 2, 0, 255);
                 }
             }
         }

@@ -13,11 +13,11 @@ int       enemyPoolCount = 0;
 static void initBuiltinEnemies(void) {
     /* --- defs --- */
     static const EnemyDef builtins[] = {
-        /*  name          hp  atk def siz spd int per flags                                              xp gold loot  img   pad */
-        { "Goblin",       12,  4,  1,  1,  3,  1,  2, EDEF_EXECUTABLE | EDEF_STUNNABLE,                 8,  1,  0,  "go", {0} },
-        { "Wolf",         10,  5,  0,  2,  4,  1,  3, EDEF_STUNNABLE,                                   7,  1, 0xFF,"wo", {0} },
-        { "Skeleton",     20,  6,  2,  2,  2,  1,  1, EDEF_HAS_WEAPON|EDEF_BLOCKABLE|EDEF_EXECUTABLE,  14,  3, 0xFF,"sk", {0} },
-        { "Bandit",       18,  7,  2,  2,  3,  3,  3, EDEF_HAS_WEAPON|EDEF_EXECUTABLE|EDEF_STUNNABLE,  16,  5, 0xFF,"ba", {0} },
+        /*  name          hp  atk def siz spd int per flags                                              xp gold loot  imgName      pad */
+        { "Goblin",       12,  4,  1,  1,  3,  1,  2, EDEF_EXECUTABLE | EDEF_STUNNABLE,                 8,  1,  0,  "goblin",  {0} },
+        { "Wolf",         10,  5,  0,  2,  4,  1,  3, EDEF_STUNNABLE,                                   7,  1, 0xFF,"wolf",    {0} },
+        { "Skeleton",     20,  6,  2,  2,  2,  1,  1, EDEF_HAS_WEAPON|EDEF_BLOCKABLE|EDEF_EXECUTABLE,  14,  3, 0xFF,"skeleton",{0} },
+        { "Bandit",       18,  7,  2,  2,  3,  3,  3, EDEF_HAS_WEAPON|EDEF_EXECUTABLE|EDEF_STUNNABLE,  16,  5, 0xFF,"bandit",  {0} },
     };
     int n = (int)(sizeof(builtins) / sizeof(builtins[0]));
     memcpy(enemyDefs, builtins, (size_t)n * sizeof(EnemyDef));

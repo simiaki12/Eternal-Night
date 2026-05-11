@@ -30,17 +30,18 @@ typedef struct {
     uint8_t xpReward;
     uint8_t goldDrop;
     uint8_t lootTableId;
-    char    imgName[3];
-    uint8_t _pad[2];
-} EnemyDef;  /* 32 bytes */
+    char    imgName[16];
+    uint8_t _pad[5];
+} EnemyDef;  /* 48 bytes */
 
 typedef struct {
     uint8_t enemyIds[ENEMY_POOL_SIZE];
     uint8_t count;
     uint8_t _pad[3];
-} EnemyPool;  /* 8 bytes */
+    char    tileName[16];
+} EnemyPool;  /* 24 bytes */
 
-typedef char check_size[(sizeof(EnemyDef) == 32) ? 1 : -1];
+typedef char check_size[(sizeof(EnemyDef) == 48) ? 1 : -1];
 /* ------------------------------------------------ */
 
 #define MAX_ENEMIES 32
@@ -114,7 +115,7 @@ typedef enum {
 } Field;
 
 static const char *fieldNames[] = {
-    "Name", "Image (2 chars)",
+    "Name", "Image",
     "HP", "ATK", "DEF",
     "Size (1-5)", "Speed", "Intelligence", "Perception",
     "XP Reward", "Gold Drop", "Loot Table ID",
@@ -180,7 +181,7 @@ static void screenEdit(int idx) {
                 if (sel == F_NAME) {
                     if (editString(sel + 4, 22, e->name, 16)) dirty = 1;
                 } else if (sel == F_IMG) {
-                    if (editString(sel + 4, 22, e->imgName, 3)) dirty = 1;
+                    if (editString(sel + 4, 22, e->imgName, 16)) dirty = 1;
                 }
                 break;
 

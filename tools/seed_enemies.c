@@ -20,34 +20,35 @@ typedef struct {
     uint8_t xpReward;
     uint8_t goldDrop;
     uint8_t lootTableId; /* 0xFF = none */
-    char    imgName[3];  /* 2-char sprite base name, e.g. "go" → assets/go.bin */
-    uint8_t _pad[2];
+    char    imgName[16]; /* sprite base name, e.g. "goblin" → assets/sprites/goblin.bin */
+    uint8_t _pad[5];
 } EnemyDef;
 
 typedef struct {
     uint8_t enemyIds[4];
     uint8_t count;
     uint8_t _pad[3];
+    char    tileName[16];
 } EnemyPool;
 
 static EnemyDef defs[] = {
-    /* name           hp  atk def siz spd int per  flags                                              xp gold loot  img  pad */
-    { "Goblin",       12,  4,  1,  1,  3,  1,  2,  EDEF_EXECUTABLE | EDEF_STUNNABLE,                 8,  1,  0,  "go",{0} },
-    { "Wolf",         10,  5,  0,  2,  4,  1,  3,  EDEF_STUNNABLE,                                   7,  1, 0xFF,"wo",{0} },
-    { "Skeleton",     20,  6,  2,  2,  2,  1,  1,  EDEF_HAS_WEAPON|EDEF_BLOCKABLE|EDEF_EXECUTABLE,  14,  3, 0xFF,"sk",{0} },
-    { "Bandit",       18,  7,  2,  2,  3,  3,  3,  EDEF_HAS_WEAPON|EDEF_EXECUTABLE|EDEF_STUNNABLE,  16,  5, 0xFF,"ba",{0} },
-    { "Giant Spider",  16,  5,  1,  2,  3,  1,  4,  EDEF_EXECUTABLE | EDEF_STUNNABLE,                10,  2, 0xFF,"sp",{0} },
-    { "Dark Mage",    25,  8,  1,  1,  2,  5,  2,  EDEF_EXECUTABLE,                                 18,  4, 0xFF,"dm",{0} },
+    /* name           hp  atk def siz spd int per  flags                                              xp gold loot  imgName       pad */
+    { "Goblin",       12,  4,  1,  1,  3,  1,  2,  EDEF_EXECUTABLE | EDEF_STUNNABLE,                 8,  1,  0,  "goblin",     {0} },
+    { "Wolf",         10,  5,  0,  2,  4,  1,  3,  EDEF_STUNNABLE,                                   7,  1, 0xFF,"wolf",       {0} },
+    { "Skeleton",     20,  6,  2,  2,  2,  1,  1,  EDEF_HAS_WEAPON|EDEF_BLOCKABLE|EDEF_EXECUTABLE,  14,  3, 0xFF,"skeleton",   {0} },
+    { "Bandit",       18,  7,  2,  2,  3,  3,  3,  EDEF_HAS_WEAPON|EDEF_EXECUTABLE|EDEF_STUNNABLE,  16,  5, 0xFF,"bandit",     {0} },
+    { "Giant Spider",  16,  5,  1,  2,  3,  1,  4,  EDEF_EXECUTABLE | EDEF_STUNNABLE,                10,  2, 0xFF,"giant_spider",{0} },
+    { "Dark Mage",    25,  8,  1,  1,  2,  5,  2,  EDEF_EXECUTABLE,                                 18,  4, 0xFF,"dark_mage",  {0} },
 };
 
 /* Pool 1 (loc 0x01): outdoor / forest */
 /* Pool 2 (loc 0x02): dungeon / underground */
 /* Pool 3 (loc 0x03): cave / spider nests  */
 static EnemyPool pools[] = {
-    { {0, 1, 0xFF, 0xFF}, 2, {0} },   /* pool 1: Goblin, Wolf           */
-    { {2, 3, 0xFF, 0xFF}, 2, {0} },   /* pool 2: Skeleton, Bandit       */
-    { {4, 0, 0xFF, 0xFF}, 2, {0} },   /* pool 3: Giant Spider, Goblin   */
-    { {5, 3, 0xFF, 0xFF}, 2, {0} },   /* pool 4: Dark Mage, Bandit      */
+    { {0, 1, 0xFF, 0xFF}, 2, {0}, "enemy_forest"  },  /* pool 1: Goblin, Wolf         */
+    { {2, 3, 0xFF, 0xFF}, 2, {0}, "enemy_dungeon" },  /* pool 2: Skeleton, Bandit     */
+    { {4, 0, 0xFF, 0xFF}, 2, {0}, "enemy_cave"    },  /* pool 3: Giant Spider, Goblin */
+    { {5, 3, 0xFF, 0xFF}, 2, {0}, "enemy_mage"    },  /* pool 4: Dark Mage, Bandit    */
 };
 
 int main(void) {

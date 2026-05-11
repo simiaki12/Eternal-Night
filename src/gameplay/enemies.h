@@ -12,7 +12,7 @@
 #define ENEMY_POOL_MAX   15
 #define ENEMY_POOL_SIZE   4
 
-/* 32 bytes — fixed stats, no per-level scaling */
+/* 48 bytes — fixed stats, no per-level scaling */
 typedef struct {
     char    name[16];
     uint8_t hp;
@@ -26,16 +26,17 @@ typedef struct {
     uint8_t xpReward;
     uint8_t goldDrop;        /* max gold dropped; actual = rand(1..goldDrop) */
     uint8_t lootTableId;     /* index into lootTables[]; 0xFF = no loot table */
-    char    imgName[3];      /* 2-char base name of .bin sprite, e.g. "go" → assets/go.bin */
-    uint8_t _pad[2];
-} EnemyDef;                  /* 32 bytes */
+    char    imgName[16];     /* base name of .bin sprite, e.g. "goblin" → assets/sprites/goblin.bin */
+    uint8_t _pad[5];
+} EnemyDef;                  /* 48 bytes */
 
-/* 8 bytes — maps a pool ID (loc tile value 0x01-0x0F) to a set of enemy types */
+/* 24 bytes — maps a pool ID (loc tile value 0x01-0x0F) to a set of enemy types */
 typedef struct {
     uint8_t enemyIds[ENEMY_POOL_SIZE]; /* indices into enemyDefs[], 0xFF = empty */
     uint8_t count;
     uint8_t _pad[3];
-} EnemyPool;                /* 8 bytes */
+    char    tileName[16];   /* world map tile base name, e.g. "enemy_goblin" → assets/tiles/enemy_goblin.til */
+} EnemyPool;                /* 24 bytes */
 
 /* File format (enemies.dat):
  *   [1]      enemy count
