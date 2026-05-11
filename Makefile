@@ -33,6 +33,15 @@ debug: pack $(RES)
 release: pack $(RES)
 	$(CC) $(CFLAGS) $(RELEASEFLAGS) $(SRC) $(RES) -o $(OUT) $(LDFLAGS_STATIC) -s
 	ls -lh $(OUT)
+	$(MAKE) update_readme_sizes
+
+update_readme_sizes:
+	@EXE_SIZE=$$(stat -c%s $(OUT)); \
+	PAK_SIZE=$$(stat -c%s data.pak); \
+	TOTAL=$$((EXE_SIZE + PAK_SIZE)); \
+	PERCENT=$$((TOTAL * 100 / 1474560)); \
+	sed -i "s/^Current size:.*/Current size: $$((EXE_SIZE / 1024)) KB exe + $$((PAK_SIZE / 1024)) KB data.pak ($${PERCENT}% of 1.44 MB floppy)/" README.md; \
+	echo "Updated README: $$((EXE_SIZE / 1024)) KB exe + $$((PAK_SIZE / 1024)) KB data.pak ($${PERCENT}% of floppy)"
 
 audio_demo:
 	mkdir -p build
