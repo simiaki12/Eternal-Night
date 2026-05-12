@@ -17,11 +17,11 @@ static int       g_fullscreen = 1;
 static int       g_logW = 0, g_logH = 0;
 
 /* ── CRT post-processing ── */
-int g_crtScanlines = 1;
-int g_crtBleed     = 1;
-int g_crtBlur      = 1;
-int g_crtVignette  = 1;
-int g_crtGrid      = 1;
+int g_crtScanlines = 1; // Enable scanline effect
+int g_crtBleed     = 1; // Enable color bleed effect
+int g_crtBlur      = 1; // Enable blur effect
+int g_crtVignette  = 1; // Enable vignette effect
+int g_crtGrid      = 0; // Disable pixel grid for a cleaner look
 
 static uint8_t  *g_vigBuf  = NULL; /* precomputed vignette factors [0..255] */
 static uint32_t *g_tempBuf = NULL; /* scratch buffer for bleed/blur passes  */
@@ -67,7 +67,7 @@ static void crtInitBuffers(void) {
             // Shape the curve (stronger edges, flat center)
             t = t * t * t; // quadratic (try t*t*t for even harsher edges)
 
-            int minBright = 180; // how dark edges get
+            int minBright = 200; // Increase this value to make the edges darker
             int f = (int)(255 - t * (255 - minBright));
             if (f < 0) f = 0;
             g_vigBuf[y * gfxWidth + x] = (uint8_t)f;
