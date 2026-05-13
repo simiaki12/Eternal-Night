@@ -415,7 +415,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                 if (g_pendingKey == VK_ESCAPE) {
                     g_worldActPanel = 0;
                 } else {
-                    uint8_t pool[64]; int cnt = buildActionPool(pool);
+                    uint8_t pool[64]; int cnt = buildActionPool(pool, ACT_CAT_ANY);
                     if (g_pendingKey == VK_UP   && g_worldActSel > 0)       g_worldActSel--;
                     if (g_pendingKey == VK_DOWN  && g_worldActSel < cnt - 1) g_worldActSel++;
                 }
@@ -486,7 +486,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             case STATE_WORLD:
                 renderWorld();
                 if (g_worldActPanel) {
-                    uint8_t pool[ACTION_MAX]; int cnt = buildActionPool(pool);
+                    uint8_t pool[ACTION_MAX]; int cnt = buildActionPool(pool, ACT_CAT_ANY);
                     if (g_worldActSel >= cnt) g_worldActSel = cnt > 0 ? cnt - 1 : 0;
                     renderActionPanel("Your Actions", pool, cnt, g_worldActSel);
                 }

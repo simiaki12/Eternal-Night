@@ -10,6 +10,7 @@
 #define DOMAIN_BLOOD    2
 #define DOMAIN_CHARM    3
 /* Fusion domains 4-9, story domains 10-13 — names TBD */
+#define DOMAIN_NONE     0xFF /* sentinel: no domain selected / unaffiliated */
 
 /* Stat IDs for NODE_REWARD_STAT — packed into reward_value as (stat<<8)|delta */
 #define DSTAT_ATTACK       0

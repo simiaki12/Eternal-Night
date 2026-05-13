@@ -18,6 +18,7 @@ void playerInit(void) {
     player.charisma     =  3;
     player.agility      =  3;
     player.hp           = player.maxHp;
+    player.focusedDomain = DOMAIN_NONE;
 }
 
 void enterDeath(void) {

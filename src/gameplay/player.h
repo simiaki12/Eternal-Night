@@ -26,6 +26,7 @@ typedef struct {
     uint16_t          gold;
     /* Domain progression — replaces level/xp/skillPoints/skills/playstyle */
     PlayerDomainState domains[DOMAIN_COUNT];
+    uint8_t           focusedDomain; /* DOMAIN_* or DOMAIN_NONE if no domain is in focus */
 } PlayerData;
 
 extern PlayerData player;

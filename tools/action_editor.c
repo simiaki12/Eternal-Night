@@ -12,12 +12,26 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* ---- mirror of src/gameplay/actions.h (keep in sync) ---- */
-#define ACT_CTX_FIRST_TURN   (1<<0)
-#define ACT_CTX_ENEMY_WEAPON (1<<1)
-#define ACT_CTX_EXECUTABLE   (1<<2)
-#define ACT_CTX_CAN_STUN     (1<<3)
-#define ACT_CTX_PLAYER_HURT  (1<<4)
+/* ---- mirror of src/gameplay/actions.h and domains.h (keep in sync) ---- */
+#define ACT_CTX_FIRST_TURN    (1<<0)
+#define ACT_CTX_ENEMY_WEAPON  (1<<1)
+#define ACT_CTX_EXECUTABLE    (1<<2)
+#define ACT_CTX_CAN_STUN      (1<<3)
+#define ACT_CTX_PLAYER_HURT   (1<<4)
+#define ACT_CTX_REQUIRES_DARK (1<<5)
+#define ACT_CTX_BLOCKED_HOLY  (1<<6)
+
+#define ACT_CAT_COMBAT        (1<<0)
+#define ACT_CAT_SOCIAL        (1<<1)
+#define ACT_CAT_INVESTIGATION (1<<2)
+#define ACT_CAT_HUNT          (1<<3)
+#define ACT_CAT_ENVIRONMENTAL (1<<4)
+
+#define DOMAIN_COMBAT   0
+#define DOMAIN_TRICKERY 1
+#define DOMAIN_BLOOD    2
+#define DOMAIN_CHARM    3
+#define DOMAIN_NONE     0xFF
 
 #define ACTION_MAX 64
 
@@ -29,11 +43,13 @@ typedef struct {
     char     name[16];
     char     imgName[8];
     char     desc[32];
-    uint8_t  _pad[4];
+    uint8_t  domain;
+    uint8_t  encounterCat;
+    uint8_t  _pad[2];
 } ActionDef;
 
 typedef char _check_size[(sizeof(ActionDef) == 64) ? 1 : -1];
-/* ---------------------------------------------------------- */
+/* ----------------------------------------------------------------------- */
 
 static ActionDef actions[ACTION_MAX];
 static int       actionCount = 0;
@@ -91,11 +107,15 @@ typedef enum {
     F_IMG,
     F_WEIGHT,
     F_POWER,
+    F_DOMAIN,
+    F_ENCOUNTER_CAT,
     F_CTX_FIRST_TURN,
     F_CTX_ENEMY_WEAPON,
     F_CTX_EXECUTABLE,
     F_CTX_CAN_STUN,
     F_CTX_PLAYER_HURT,
+    F_CTX_REQUIRES_DARK,
+    F_CTX_BLOCKED_HOLY,
     F_COUNT
 } Field;
 
@@ -106,11 +126,15 @@ static const char *fieldNames[] = {
     "Image (sprite base)",
     "Base weight",
     "Power",
+    "Domain (0=Combat 1=Trickery 2=Blood 3=Charm FF=none)",
+    "Encounter cat (bit: 1=combat 2=social 4=invest 8=hunt 10=env)",
     "Ctx: first turn only",
     "Ctx: enemy has weapon",
     "Ctx: enemy executable",
     "Ctx: enemy stunnable",
     "Ctx: player hurt (<50%)",
+    "Ctx: requires darkness",
+    "Ctx: blocked on holy ground",
 };
 
 static void renderEdit(ActionDef *a, int sel, const char *status) {
@@ -123,22 +147,43 @@ static void renderEdit(ActionDef *a, int sel, const char *status) {
         if (i == sel) attron(A_REVERSE);
         int row = i + 4;
         switch (i) {
-            case F_ID:     mvprintw(row, 2, "%-24s  %d",  fieldNames[i], a->id);         break;
-            case F_NAME:   mvprintw(row, 2, "%-24s  %s",  fieldNames[i], a->name);       break;
-            case F_DESC:   mvprintw(row, 2, "%-24s  %s",  fieldNames[i], a->desc);       break;
-            case F_IMG:    mvprintw(row, 2, "%-24s  %s",  fieldNames[i], a->imgName);    break;
-            case F_WEIGHT: mvprintw(row, 2, "%-24s  %d",  fieldNames[i], a->baseWeight); break;
-            case F_POWER:  mvprintw(row, 2, "%-24s  %d",  fieldNames[i], a->power);      break;
+            case F_ID:     mvprintw(row, 2, "%-42s  %d",  fieldNames[i], a->id);         break;
+            case F_NAME:   mvprintw(row, 2, "%-42s  %s",  fieldNames[i], a->name);       break;
+            case F_DESC:   mvprintw(row, 2, "%-42s  %s",  fieldNames[i], a->desc);       break;
+            case F_IMG:    mvprintw(row, 2, "%-42s  %s",  fieldNames[i], a->imgName);    break;
+            case F_WEIGHT: mvprintw(row, 2, "%-42s  %d",  fieldNames[i], a->baseWeight); break;
+            case F_POWER:  mvprintw(row, 2, "%-42s  %d",  fieldNames[i], a->power);      break;
+            case F_DOMAIN:
+                if (a->domain == DOMAIN_NONE)
+                    mvprintw(row, 2, "%-42s  none (FF)", fieldNames[i]);
+                else
+                    mvprintw(row, 2, "%-42s  %d", fieldNames[i], a->domain);
+                break;
+            case F_ENCOUNTER_CAT: {
+                char cats[48] = "";
+                if (a->encounterCat & ACT_CAT_COMBAT)        strcat(cats, "combat ");
+                if (a->encounterCat & ACT_CAT_SOCIAL)        strcat(cats, "social ");
+                if (a->encounterCat & ACT_CAT_INVESTIGATION) strcat(cats, "invest ");
+                if (a->encounterCat & ACT_CAT_HUNT)          strcat(cats, "hunt ");
+                if (a->encounterCat & ACT_CAT_ENVIRONMENTAL) strcat(cats, "env ");
+                if (!cats[0]) strcat(cats, "(universal)");
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], cats);
+                break;
+            }
             case F_CTX_FIRST_TURN:
-                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_FIRST_TURN)   ? "[X]" : "[ ]"); break;
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_FIRST_TURN)   ? "[X]" : "[ ]"); break;
             case F_CTX_ENEMY_WEAPON:
-                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_ENEMY_WEAPON) ? "[X]" : "[ ]"); break;
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_ENEMY_WEAPON) ? "[X]" : "[ ]"); break;
             case F_CTX_EXECUTABLE:
-                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_EXECUTABLE)   ? "[X]" : "[ ]"); break;
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_EXECUTABLE)   ? "[X]" : "[ ]"); break;
             case F_CTX_CAN_STUN:
-                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_CAN_STUN)     ? "[X]" : "[ ]"); break;
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_CAN_STUN)     ? "[X]" : "[ ]"); break;
             case F_CTX_PLAYER_HURT:
-                mvprintw(row, 2, "%-24s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_PLAYER_HURT)  ? "[X]" : "[ ]"); break;
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_PLAYER_HURT)  ? "[X]" : "[ ]"); break;
+            case F_CTX_REQUIRES_DARK:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_REQUIRES_DARK) ? "[X]" : "[ ]"); break;
+            case F_CTX_BLOCKED_HOLY:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_BLOCKED_HOLY)  ? "[X]" : "[ ]"); break;
         }
         if (i == sel) attroff(A_REVERSE);
     }
@@ -176,14 +221,19 @@ static void screenEdit(int idx) {
             case '+': case '=':
                 dirty = 1;
                 switch (sel) {
-                    case F_ID:     if (a->id         < 255) a->id++;         break;
-                    case F_WEIGHT: if (a->baseWeight < 255) a->baseWeight++; break;
-                    case F_POWER:  if (a->power      < 255) a->power++;      break;
-                    case F_CTX_FIRST_TURN:    a->contextFlags ^= ACT_CTX_FIRST_TURN;   break;
-                    case F_CTX_ENEMY_WEAPON:  a->contextFlags ^= ACT_CTX_ENEMY_WEAPON; break;
-                    case F_CTX_EXECUTABLE:    a->contextFlags ^= ACT_CTX_EXECUTABLE;   break;
-                    case F_CTX_CAN_STUN:      a->contextFlags ^= ACT_CTX_CAN_STUN;     break;
-                    case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;  break;
+                    case F_ID:              if (a->id           < 255) a->id++;           break;
+                    case F_WEIGHT:          if (a->baseWeight   < 255) a->baseWeight++;   break;
+                    case F_POWER:           if (a->power        < 255) a->power++;        break;
+                    case F_DOMAIN:          if (a->domain       < 254) a->domain++;
+                                            else a->domain = DOMAIN_NONE;                 break;
+                    case F_ENCOUNTER_CAT:   if (a->encounterCat < 255) a->encounterCat++; break;
+                    case F_CTX_FIRST_TURN:    a->contextFlags ^= ACT_CTX_FIRST_TURN;      break;
+                    case F_CTX_ENEMY_WEAPON:  a->contextFlags ^= ACT_CTX_ENEMY_WEAPON;    break;
+                    case F_CTX_EXECUTABLE:    a->contextFlags ^= ACT_CTX_EXECUTABLE;      break;
+                    case F_CTX_CAN_STUN:      a->contextFlags ^= ACT_CTX_CAN_STUN;        break;
+                    case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;     break;
+                    case F_CTX_REQUIRES_DARK: a->contextFlags ^= ACT_CTX_REQUIRES_DARK;   break;
+                    case F_CTX_BLOCKED_HOLY:  a->contextFlags ^= ACT_CTX_BLOCKED_HOLY;    break;
                     default: dirty = 0; break;
                 }
                 break;
@@ -191,14 +241,19 @@ static void screenEdit(int idx) {
             case '-':
                 dirty = 1;
                 switch (sel) {
-                    case F_ID:     if (a->id         > 0) a->id--;         break;
-                    case F_WEIGHT: if (a->baseWeight > 1) a->baseWeight--; break;
-                    case F_POWER:  if (a->power      > 0) a->power--;      break;
-                    case F_CTX_FIRST_TURN:    a->contextFlags ^= ACT_CTX_FIRST_TURN;   break;
-                    case F_CTX_ENEMY_WEAPON:  a->contextFlags ^= ACT_CTX_ENEMY_WEAPON; break;
-                    case F_CTX_EXECUTABLE:    a->contextFlags ^= ACT_CTX_EXECUTABLE;   break;
-                    case F_CTX_CAN_STUN:      a->contextFlags ^= ACT_CTX_CAN_STUN;     break;
-                    case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;  break;
+                    case F_ID:              if (a->id         > 0) a->id--;           break;
+                    case F_WEIGHT:          if (a->baseWeight > 1) a->baseWeight--;   break;
+                    case F_POWER:           if (a->power      > 0) a->power--;        break;
+                    case F_DOMAIN:          if (a->domain     > 0 && a->domain != DOMAIN_NONE) a->domain--;
+                                            else a->domain = DOMAIN_NONE;             break;
+                    case F_ENCOUNTER_CAT:   if (a->encounterCat > 0) a->encounterCat--; break;
+                    case F_CTX_FIRST_TURN:    a->contextFlags ^= ACT_CTX_FIRST_TURN;    break;
+                    case F_CTX_ENEMY_WEAPON:  a->contextFlags ^= ACT_CTX_ENEMY_WEAPON;  break;
+                    case F_CTX_EXECUTABLE:    a->contextFlags ^= ACT_CTX_EXECUTABLE;    break;
+                    case F_CTX_CAN_STUN:      a->contextFlags ^= ACT_CTX_CAN_STUN;      break;
+                    case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;   break;
+                    case F_CTX_REQUIRES_DARK: a->contextFlags ^= ACT_CTX_REQUIRES_DARK; break;
+                    case F_CTX_BLOCKED_HOLY:  a->contextFlags ^= ACT_CTX_BLOCKED_HOLY;  break;
                     default: dirty = 0; break;
                 }
                 break;

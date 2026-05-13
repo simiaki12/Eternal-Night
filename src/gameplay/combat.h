@@ -4,6 +4,24 @@
 #include "pak.h"
 #include "actions.h"
 
+/* Encounter type — values are ACT_CAT_* bits so they can be passed directly
+   to buildActionPool() as the category filter. */
+typedef enum {
+    ENCOUNTER_COMBAT        = ACT_CAT_COMBAT,
+    ENCOUNTER_SOCIAL        = ACT_CAT_SOCIAL,
+    ENCOUNTER_INVESTIGATION = ACT_CAT_INVESTIGATION,
+    ENCOUNTER_HUNT          = ACT_CAT_HUNT,
+    ENCOUNTER_ENVIRONMENTAL = ACT_CAT_ENVIRONMENTAL,
+} EncounterType;
+
+/* Encounter modifiers — environmental conditions that shift action weights
+   and gate modifier-dependent context flags. */
+#define ENCOUNTER_MOD_DARK        (1<<0)
+#define ENCOUNTER_MOD_RAINING     (1<<1)
+#define ENCOUNTER_MOD_HOLY_GROUND (1<<2)
+#define ENCOUNTER_MOD_CROWDED     (1<<3)
+#define ENCOUNTER_MOD_BURNING     (1<<4)
+
 /* --- Enemy capability flags --- */
 #define ENEMY_HAS_WEAPON  (1<<0)
 #define ENEMY_EXECUTABLE  (1<<1)
@@ -47,6 +65,8 @@ typedef struct {
     PakData     enemyImg;
     uint8_t     fromWorldEnemy; /* 1 if triggered by a WorldEnemy on the map */
     uint8_t     worldEnemyX, worldEnemyY;
+    EncounterType encounterType;
+    uint32_t    modifiers;     /* ENCOUNTER_MOD_* bitmask */
 } CombatState;
 
 extern CombatState combat;

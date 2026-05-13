@@ -26,6 +26,8 @@ static int checkContext(const ActionDef *def) {
     if ((ctx & ACT_CTX_ENEMY_WEAPON) && !(combat.enemy.flags & ENEMY_HAS_WEAPON)) return 0;
     if ((ctx & ACT_CTX_CAN_STUN)     && !(combat.enemy.flags & ENEMY_STUNNABLE))  return 0;
     if ((ctx & ACT_CTX_PLAYER_HURT)  && (int)player.hp >= getMaxHp() / 2)          return 0;
+    if ((ctx & ACT_CTX_REQUIRES_DARK) && !(combat.modifiers & ENCOUNTER_MOD_DARK))      return 0;
+    if ((ctx & ACT_CTX_BLOCKED_HOLY)  && (combat.modifiers & ENCOUNTER_MOD_HOLY_GROUND)) return 0;
     if (ctx & ACT_CTX_EXECUTABLE) {
         if (!(combat.enemy.flags & ENEMY_EXECUTABLE))  return 0;
         if (combat.enemy.hp > combat.enemy.maxHp / 3)  return 0;
@@ -53,13 +55,40 @@ static int computeWeight(const ActionDef *def) {
         default:
             break;
     }
+
+    /* Encounter modifier adjustments */
+    if (combat.modifiers & ENCOUNTER_MOD_DARK) {
+        if (def->id == ACTION_BACKSTAB) w += 15;
+        if (def->id == ACTION_HIDE)     w += 10;
+    }
+    if (combat.modifiers & ENCOUNTER_MOD_HOLY_GROUND) {
+        if (def->id == ACTION_HEAL)     w -= 20;
+    }
+    if (combat.modifiers & ENCOUNTER_MOD_CROWDED) {
+        if (def->id == ACTION_CALM)     w += 15;
+        if (def->id == ACTION_HIDE)     w += 10;
+    }
+    if (combat.modifiers & ENCOUNTER_MOD_BURNING) {
+        if (def->id == ACTION_STRONG)   w += 10;
+        if (def->id == ACTION_DEFEND)   w -= 10;
+    }
+
+    /* Domain affinity — reward what the player has invested in */
+    uint8_t primary = domainPrimary();
+    if (player.domains[primary].level > 0 && def->domain == primary)
+        w += 20;
+
+    /* Focused domain — stronger pull toward the player's chosen style */
+    if (player.focusedDomain != DOMAIN_NONE && def->domain == player.focusedDomain)
+        w += 35;
+
     return w < 1 ? 1 : w;
 }
 
 
 static void generateActions(void) {
     uint8_t pool[ACTION_MAX];
-    int poolSize = buildActionPool(pool);
+    int poolSize = buildActionPool(pool, (uint8_t)combat.encounterType);
 
     typedef struct { uint8_t id; int weight; } Candidate;
     Candidate candidates[ACTION_MAX];
@@ -126,6 +155,8 @@ void startCombat(const EnemyDef *def) {
     combat.gainedGold         = 0;
     combat.droppedCount       = 0;
     combat.fromWorldEnemy     = 0;
+    combat.encounterType      = ENCOUNTER_COMBAT;
+    combat.modifiers          = 0;
     memset(combat.gainedDomainXp, 0, sizeof(combat.gainedDomainXp));
     generateActions();
     state = STATE_COMBAT;

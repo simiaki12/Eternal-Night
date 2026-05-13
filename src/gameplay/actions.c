@@ -9,16 +9,16 @@ ActionDef actionDefs[ACTION_MAX];
 int       actionDefCount = 0;
 
 static const ActionDef builtinDefs[] = {
-    { ACTION_ATTACK,   0,                    70,  0,  "Slash",         "a1",  "A quick, reliable strike.",        {0} },
-    { ACTION_STRONG,   0,                    35,  4,  "Strong Attack",  "a2",  "Heavy blow dealing bonus damage.", {0} },
-    { ACTION_HEAL,     ACT_CTX_PLAYER_HURT,  55, 10,  "Regenerate",    "a3",  "Draw on vitality to restore HP.",  {0} },
-    { ACTION_DEFEND,   0,                    28,  0,  "Parry",         "a4",  "Brace and halve incoming damage.", {0} },
-    { ACTION_DISARM,   ACT_CTX_ENEMY_WEAPON, 48,  0,  "Disarm",        "a5",  "Strip the weapon from the enemy.", {0} },
-    { ACTION_BACKSTAB, ACT_CTX_FIRST_TURN,   60,  6,  "Moonstep",      "a6",  "Strike first. Skip the counter.", {0} },
-    { ACTION_STUN,     ACT_CTX_CAN_STUN,     42,  0,  "Stun",          "a7",  "Stun the enemy, skip their turn.", {0} },
-    { ACTION_CALM,     0,                    22,  0,  "Persuade",      "a8",  "Persuade the enemy, lower aggro.", {0} },
-    { ACTION_HIDE,     0,                    20,  0,  "Blindspot",     "a9",  "Find cover. Avoid the counter.",   {0} },
-    { ACTION_EXECUTE,  ACT_CTX_EXECUTABLE,   78, 15,  "Death star",    "a10", "Lethal blow on a weakened enemy.", {0} },
+    { ACTION_ATTACK,   0,                    70,  0,  "Slash",         "a1",  "A quick, reliable strike.",        DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
+    { ACTION_STRONG,   0,                    35,  4,  "Strong Attack",  "a2",  "Heavy blow dealing bonus damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
+    { ACTION_HEAL,     ACT_CTX_PLAYER_HURT,  55, 10,  "Regenerate",    "a3",  "Draw on vitality to restore HP.",  DOMAIN_BLOOD,    ACT_CAT_COMBAT,                    {0} },
+    { ACTION_DEFEND,   0,                    28,  0,  "Parry",         "a4",  "Brace and halve incoming damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
+    { ACTION_DISARM,   ACT_CTX_ENEMY_WEAPON, 48,  0,  "Disarm",        "a5",  "Strip the weapon from the enemy.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                    {0} },
+    { ACTION_BACKSTAB, ACT_CTX_FIRST_TURN,   60,  6,  "Moonstep",      "a6",  "Strike first. Skip the counter.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                    {0} },
+    { ACTION_STUN,     ACT_CTX_CAN_STUN,     42,  0,  "Stun",          "a7",  "Stun the enemy, skip their turn.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
+    { ACTION_CALM,     0,                    22,  0,  "Persuade",      "a8",  "Persuade the enemy, lower aggro.", DOMAIN_CHARM,    ACT_CAT_COMBAT|ACT_CAT_SOCIAL,     {0} },
+    { ACTION_HIDE,     0,                    20,  0,  "Blindspot",     "a9",  "Find cover. Avoid the counter.",   DOMAIN_TRICKERY, ACT_CAT_COMBAT,                    {0} },
+    { ACTION_EXECUTE,  ACT_CTX_EXECUTABLE,   78, 15,  "Death star",    "a10", "Lethal blow on a weakened enemy.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
 };
 #define BUILTIN_COUNT (int)(sizeof(builtinDefs)/sizeof(builtinDefs[0]))
 
@@ -42,31 +42,20 @@ const ActionDef *getActionDef(uint8_t id) {
     return NULL;
 }
 
-/* Domain affiliation per action — 0xFF means no affiliation.
-   Actions are unlocked by domain nodes; this drives XP award direction. */
-static const uint8_t g_actionDomain[ACTION_COUNT] = {
-    [ACTION_ATTACK]   = DOMAIN_COMBAT,
-    [ACTION_STRONG]   = DOMAIN_COMBAT,
-    [ACTION_HEAL]     = DOMAIN_BLOOD,
-    [ACTION_DEFEND]   = DOMAIN_COMBAT,
-    [ACTION_DISARM]   = DOMAIN_TRICKERY,
-    [ACTION_BACKSTAB] = DOMAIN_TRICKERY,
-    [ACTION_STUN]     = DOMAIN_COMBAT,
-    [ACTION_CALM]     = DOMAIN_CHARM,
-    [ACTION_HIDE]     = DOMAIN_TRICKERY,
-    [ACTION_EXECUTE]  = DOMAIN_COMBAT,
-};
-
 uint8_t actionGetDomain(uint8_t id) {
-    if (id >= ACTION_COUNT) return 0xFF;
-    return g_actionDomain[id];
+    const ActionDef *def = getActionDef(id);
+    return def ? def->domain : 0xFF;
 }
 
-int buildActionPool(uint8_t out[ACTION_MAX]) {
+int buildActionPool(uint8_t out[ACTION_MAX], uint8_t encounterCat) {
     int count = 0;
 
     #define ADD(id) do { \
         if ((id) == 0xFF) break; \
+        const ActionDef *_def = getActionDef(id); \
+        if (!_def) break; \
+        if (encounterCat != ACT_CAT_ANY && _def->encounterCat != 0 \
+            && !(_def->encounterCat & encounterCat)) break; \
         int dup = 0; \
         for (int _j = 0; _j < count; _j++) if (out[_j] == (id)) { dup = 1; break; } \
         if (!dup) out[count++] = (id); \
