@@ -68,6 +68,10 @@ void startCombatFromPool(uint8_t poolId, int triggerX, int triggerY) {
     int idx = (int)poolId - 1;
     if (idx < 0 || idx >= enemyPoolCount || enemyPools[idx].count == 0) {
         if (enemyDefCount > 0) startCombat(&enemyDefs[0]);
+        else return;
+        combat.fromWorldEnemy[0] = 1;
+        combat.worldEnemyX[0]    = (uint8_t)triggerX;
+        combat.worldEnemyY[0]    = (uint8_t)triggerY;
         return;
     }
     EnemyPool *pool = &enemyPools[idx];

@@ -9,7 +9,7 @@ PlayerData player;
 void playerInit(void) {
     memset(&player, 0, sizeof(player));
     memset(player.equipped, ITEM_UNEQUIPPED, EQUIP_SLOTS);
-    player.maxHp        = 20;
+    player.maxHp        = 100;
     player.attack       =  5;
     player.defense      =  5;
     player.stamina      =  3;

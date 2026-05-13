@@ -172,9 +172,14 @@ static void fillEnemySlot(int slot, const EnemyDef *def) {
 }
 
 void startCombat(const EnemyDef *def) {
-    /* Free all enemy images */
+    /* Free all enemy images and clear stale slot data */
     for (int i = 0; i < COMBAT_MAX_ENEMIES; i++) {
         if (combat.enemyImgs[i].data) { free(combat.enemyImgs[i].data); combat.enemyImgs[i].data = NULL; }
+        combat.enemies[i].hp           = 0;
+        combat.enemies[i].maxHp        = 0;
+        combat.fromWorldEnemy[i]       = 0;
+        combat.worldEnemyX[i]          = 0;
+        combat.worldEnemyY[i]          = 0;
     }
 
     fillEnemySlot(0, def);
