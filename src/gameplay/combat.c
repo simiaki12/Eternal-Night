@@ -216,6 +216,148 @@ static void performPlayerAction(void) {
             combat.enemy.hp -= getAttack() * 2 + a->power;
             break;
 
+        /* ── Domain: Combat ─────────────────────────────────────── */
+        case ACTION_INTIMIDATE:
+            combat.enemy.attack = combat.enemy.attack > 1 ? combat.enemy.attack / 2 : 1;
+            combat.skipEnemyAttack = 1;
+            break;
+
+        case ACTION_COUNTER:
+            combat.enemy.hp -= getAttack() * 2;
+            combat.skipEnemyAttack = 1;
+            break;
+
+        case ACTION_WAR_CRY:
+            combat.skipEnemyAttack = 1;
+            break;
+
+        case ACTION_THREATEN:
+            if (combat.encounterType == ENCOUNTER_SOCIAL)
+                combat.phase = COMBAT_PHASE_VICTORY;
+            else
+                combat.enemy.attack = combat.enemy.attack > 1 ? combat.enemy.attack / 2 : 1;
+            break;
+
+        case ACTION_AMBUSH:
+            combat.enemy.hp -= getAttack() + a->power;
+            combat.skipEnemyAttack = 1;
+            break;
+
+        /* ── Domain: Trickery ───────────────────────────────────── */
+        case ACTION_VANISH:
+            combat.skipEnemyAttack = 1;
+            combat.enemy.perception = combat.enemy.perception > 1 ? combat.enemy.perception - 1 : 0;
+            break;
+
+        case ACTION_POISON:
+            combat.enemy.hp -= getAttack();
+            combat.enemy.attack = combat.enemy.attack > 1 ? combat.enemy.attack - 1 : 1;
+            break;
+
+        case ACTION_SET_TRAP:
+            combat.enemy.hp -= a->power;
+            combat.skipEnemyAttack = 1;
+            break;
+
+        case ACTION_DECEIVE:
+            combat.phase = COMBAT_PHASE_VICTORY;
+            break;
+
+        case ACTION_PICKPOCKET: {
+            int stolen = combat.enemy.goldDrop / 2 + 1;
+            player.gold += (uint16_t)stolen;
+            combat.gainedGold += stolen;
+            combat.skipEnemyAttack = 1;
+            break;
+        }
+
+        case ACTION_INSPECT:
+            combat.enemy.defense = combat.enemy.defense > 1 ? combat.enemy.defense / 2 : 0;
+            combat.skipEnemyAttack = 1;
+            break;
+
+        case ACTION_TRACK:
+            combat.enemy.hp -= getAttack() + a->power;
+            combat.skipEnemyAttack = 1;
+            break;
+
+        /* ── Domain: Blood ──────────────────────────────────────── */
+        case ACTION_BLOOD_DRAIN: {
+            int dmg = getAttack() + a->power;
+            combat.enemy.hp -= dmg;
+            int newHp = (int)player.hp + dmg / 2;
+            int cap   = getMaxHp();
+            player.hp = (uint16_t)(newHp > cap ? cap : newHp);
+            break;
+        }
+
+        case ACTION_BITE:
+            combat.enemy.hp -= getAttack() * 2 + a->power;
+            break;
+
+        case ACTION_BLOOD_HOWL:
+            /* damages all enemies — until multi-enemy, hits the single target */
+            combat.enemy.hp -= a->power;
+            break;
+
+        case ACTION_BLOOD_SURGE: {
+            int cost = a->power / 2;
+            player.hp = ((int)player.hp > cost) ? (uint16_t)(player.hp - cost) : 1;
+            combat.enemy.hp -= getAttack() * 2 + a->power;
+            combat.skipEnemyAttack = 1;
+            break;
+        }
+
+        case ACTION_BLOOD_SCENT: {
+            int bonus = (combat.enemy.hp < combat.enemy.maxHp / 2) ? a->power * 2 : a->power;
+            combat.enemy.hp -= getAttack() + bonus;
+            break;
+        }
+
+        /* ── Domain: Charm ──────────────────────────────────────── */
+        case ACTION_DOMINATE:
+            combat.phase = COMBAT_PHASE_VICTORY;
+            break;
+
+        case ACTION_MESMERIZE:
+            combat.skipEnemyAttack = 1;
+            combat.enemy.flags &= ~ENEMY_STUNNABLE;
+            break;
+
+        case ACTION_BRIBE: {
+            const int BRIBE_COST = 15;
+            if (player.gold >= BRIBE_COST) {
+                player.gold -= BRIBE_COST;
+                combat.phase = COMBAT_PHASE_VICTORY;
+            } else {
+                combat.skipEnemyAttack = 1; /* not enough gold — enemy hesitates */
+            }
+            break;
+        }
+
+        case ACTION_SILVER_TONGUE:
+            combat.phase = COMBAT_PHASE_VICTORY;
+            break;
+
+        case ACTION_INTERROGATE:
+            combat.enemy.defense = combat.enemy.defense > 1 ? combat.enemy.defense / 2 : 0;
+            combat.skipEnemyAttack = 1;
+            break;
+
+        /* ── Environmental ──────────────────────────────────────── */
+        case ACTION_FEED:
+        case ACTION_RALLY: {
+            int newHp = (int)player.hp + a->power;
+            int cap   = getMaxHp();
+            player.hp = (uint16_t)(newHp > cap ? cap : newHp);
+            break;
+        }
+
+        case ACTION_BLEND_IN:
+            combat.skipEnemyAttack = 1;
+            combat.enemy.perception = combat.enemy.perception > 2 ? combat.enemy.perception - 2 : 0;
+            break;
+
         default:
             break;
     }

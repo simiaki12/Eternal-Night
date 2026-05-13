@@ -51,6 +51,36 @@ static const ActionDef defaults[] = {
     { 7, 0,                    22,  0, "Persuade",     "a8",  "Persuade the enemy, lower aggro.", DOMAIN_CHARM,    ACT_CAT_COMBAT|ACT_CAT_SOCIAL, {0} },
     { 8, 0,                    20,  0, "Blindspot",    "a9",  "Find cover. Avoid the counter.",   DOMAIN_TRICKERY, ACT_CAT_COMBAT,                {0} },
     { 9, ACT_CTX_EXECUTABLE,   78, 15, "Death star",   "a10", "Lethal blow on a weakened enemy.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                {0} },
+    /* Domain: Combat */
+    { 10, 0,                   45,  0, "Intimidate",   "a11", "Lower enemy attack, skip ctr.",    DOMAIN_COMBAT,   ACT_CAT_COMBAT|ACT_CAT_SOCIAL, {0} },
+    { 11, ACT_CTX_PLAYER_HURT, 65,  8, "Counter",      "a12", "Strike hard while wounded.",       DOMAIN_COMBAT,   ACT_CAT_COMBAT,                {0} },
+    { 12, 0,                   35,  0, "War Cry",      "a13", "A fierce cry staggers the foe.",   DOMAIN_COMBAT,   ACT_CAT_COMBAT,                {0} },
+    { 13, 0,                   30,  0, "Threaten",     "a14", "Force the threat of violence.",    DOMAIN_COMBAT,   ACT_CAT_SOCIAL,                {0} },
+    { 14, ACT_CTX_FIRST_TURN,  55,  8, "Ambush",       "a15", "Strike from cover, skip ctr.",     DOMAIN_COMBAT,   ACT_CAT_HUNT,                  {0} },
+    /* Domain: Trickery */
+    { 15, 0,                   35,  0, "Vanish",       "a16", "Disappear, skip enemy attack.",    DOMAIN_TRICKERY, ACT_CAT_COMBAT,                {0} },
+    { 16, 0,                   40,  3, "Poison Blade", "a17", "Coat the blade in slow toxin.",    DOMAIN_TRICKERY, ACT_CAT_COMBAT,                {0} },
+    { 17, 0,                   38,  5, "Set Trap",     "a18", "Lay a trap, skip next attack.",    DOMAIN_TRICKERY, ACT_CAT_COMBAT|ACT_CAT_HUNT,   {0} },
+    { 18, 0,                   45,  0, "Deceive",      "a19", "Spin a web of lies, escape.",      DOMAIN_TRICKERY, ACT_CAT_SOCIAL,                {0} },
+    { 19, 0,                   30,  0, "Pickpocket",   "a20", "Lift gold from their pocket.",     DOMAIN_TRICKERY, ACT_CAT_SOCIAL,                {0} },
+    { 20, 0,                   40,  0, "Inspect",      "a21", "Study weakness, cut defense.",     DOMAIN_TRICKERY, ACT_CAT_INVESTIGATION,         {0} },
+    { 21, ACT_CTX_FIRST_TURN,  50,  4, "Track",        "a22", "Follow the trail, first blow.",    DOMAIN_TRICKERY, ACT_CAT_HUNT,                  {0} },
+    /* Domain: Blood */
+    { 22, ACT_CTX_REQUIRES_DARK,55, 6, "Blood Drain",  "a23", "Drain blood. Restore your HP.",    DOMAIN_BLOOD,    ACT_CAT_COMBAT,                {0} },
+    { 23, ACT_CTX_BLOCKED_HOLY,65, 12, "Lethal Bite",  "a24", "Pierce deep. Massive damage.",     DOMAIN_BLOOD,    ACT_CAT_COMBAT,                {0} },
+    { 24, 0,                   40,  5, "Blood Howl",   "a25", "Howl and strike every enemy.",     DOMAIN_BLOOD,    ACT_CAT_COMBAT,                {0} },
+    { 25, 0,                   30, 18, "Blood Surge",  "a26", "Savage burst. Costs your HP.",     DOMAIN_BLOOD,    ACT_CAT_COMBAT,                {0} },
+    { 26, 0,                   50,  8, "Blood Scent",  "a27", "Track wounds. Bonus on prey.",     DOMAIN_BLOOD,    ACT_CAT_HUNT,                  {0} },
+    /* Domain: Charm */
+    { 27, 0,                   45,  0, "Dominate",     "a28", "Bend their will, end the fight.",  DOMAIN_CHARM,    ACT_CAT_COMBAT|ACT_CAT_SOCIAL, {0} },
+    { 28, ACT_CTX_CAN_STUN,    48,  0, "Mesmerize",    "a29", "Trap the mind, stun and skip.",    DOMAIN_CHARM,    ACT_CAT_COMBAT,                {0} },
+    { 29, 0,                   35,  0, "Bribe",        "a30", "Pay them off to end the fight.",   DOMAIN_CHARM,    ACT_CAT_SOCIAL,                {0} },
+    { 30, 0,                   50,  0, "Silver Tongue","a31", "Words of silver end conflict.",    DOMAIN_CHARM,    ACT_CAT_SOCIAL,                {0} },
+    { 31, 0,                   40,  0, "Interrogate",  "a32", "Demand answers, cut defense.",     DOMAIN_CHARM,    ACT_CAT_INVESTIGATION,         {0} },
+    /* Environmental */
+    { 32, ACT_CTX_REQUIRES_DARK,60,15, "Feed",         "a33", "Feed on the dark to restore HP.",  DOMAIN_BLOOD,    ACT_CAT_ENVIRONMENTAL,         {0} },
+    { 33, 0,                   35,  0, "Blend In",     "a34", "Melt into shadow, skip hit.",      DOMAIN_TRICKERY, ACT_CAT_ENVIRONMENTAL,         {0} },
+    { 34, 0,                   40, 12, "Rally",        "a35", "Gather resolve, restore HP.",      DOMAIN_COMBAT,   ACT_CAT_ENVIRONMENTAL,         {0} },
 };
 
 int main(void) {
