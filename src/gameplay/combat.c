@@ -32,36 +32,38 @@ static void logPush(const char *msg) {
 }
 
 static int checkContext(const ActionDef *def) {
+    const Enemy *tgt = &combat.enemies[combat.targetIndex];
     uint8_t ctx = def->contextFlags;
-    if ((ctx & ACT_CTX_FIRST_TURN)   && !combat.isFirstTurn)                      return 0;
-    if ((ctx & ACT_CTX_ENEMY_WEAPON) && !(combat.enemy.flags & ENEMY_HAS_WEAPON)) return 0;
-    if ((ctx & ACT_CTX_CAN_STUN)     && !(combat.enemy.flags & ENEMY_STUNNABLE))  return 0;
-    if ((ctx & ACT_CTX_PLAYER_HURT)  && (int)player.hp >= getMaxHp() / 2)          return 0;
-    if ((ctx & ACT_CTX_REQUIRES_DARK) && !(combat.modifiers & ENCOUNTER_MOD_DARK))      return 0;
+    if ((ctx & ACT_CTX_FIRST_TURN)   && !combat.isFirstTurn)               return 0;
+    if ((ctx & ACT_CTX_ENEMY_WEAPON) && !(tgt->flags & ENEMY_HAS_WEAPON))  return 0;
+    if ((ctx & ACT_CTX_CAN_STUN)     && !(tgt->flags & ENEMY_STUNNABLE))   return 0;
+    if ((ctx & ACT_CTX_PLAYER_HURT)  && (int)player.hp >= getMaxHp() / 2)  return 0;
+    if ((ctx & ACT_CTX_REQUIRES_DARK) && !(combat.modifiers & ENCOUNTER_MOD_DARK))       return 0;
     if ((ctx & ACT_CTX_BLOCKED_HOLY)  && (combat.modifiers & ENCOUNTER_MOD_HOLY_GROUND)) return 0;
     if (ctx & ACT_CTX_EXECUTABLE) {
-        if (!(combat.enemy.flags & ENEMY_EXECUTABLE))  return 0;
-        if (combat.enemy.hp > combat.enemy.maxHp / 3)  return 0;
+        if (!(tgt->flags & ENEMY_EXECUTABLE))  return 0;
+        if (tgt->hp > tgt->maxHp / 3)          return 0;
     }
     return 1;
 }
 
 static int computeWeight(const ActionDef *def) {
+    const Enemy *tgt = &combat.enemies[combat.targetIndex];
     int w = def->baseWeight;
     switch (def->id) {
         case ACTION_STRONG:
-            w += combat.enemy.size  * 5;
-            w -= combat.enemy.speed * 3;
+            w += tgt->size  * 5;
+            w -= tgt->speed * 3;
             break;
         case ACTION_DISARM:
-            w += combat.enemy.speed * 3;
+            w += tgt->speed * 3;
             break;
         case ACTION_BACKSTAB:
         case ACTION_HIDE:
-            w -= combat.enemy.perception * 4;
+            w -= tgt->perception * 4;
             break;
         case ACTION_CALM:
-            w += combat.enemy.intelligence * 5;
+            w += tgt->intelligence * 5;
             break;
         default:
             break;
@@ -134,55 +136,78 @@ static void generateActions(void) {
     combat.selectedIndex = 0;
 }
 
-void startCombat(const EnemyDef *def) {
-    /* Free previous enemy image if any */
-    if (combat.enemyImg.data) { free(combat.enemyImg.data); combat.enemyImg.data = NULL; }
-
-    /* Load sprite */
-    if (def->imgName[0]) {
+static void loadEnemyImg(int slot, const char *imgName) {
+    if (combat.enemyImgs[slot].data) {
+        free(combat.enemyImgs[slot].data);
+        combat.enemyImgs[slot].data = NULL;
+    }
+    if (imgName[0]) {
         char path[32];
-        snprintf(path, sizeof(path), "assets/sprites/%s.bin", def->imgName);
-        combat.enemyImg = pakRead(path);
+        snprintf(path, sizeof(path), "assets/sprites/%s.bin", imgName);
+        combat.enemyImgs[slot] = pakRead(path);
+    }
+}
+
+static void fillEnemySlot(int slot, const EnemyDef *def) {
+    Enemy *e = &combat.enemies[slot];
+    memcpy(e->name, def->name, 16);
+    e->hp           = def->hp;
+    e->maxHp        = def->hp;
+    e->attack       = def->attack;
+    e->defense      = def->defense;
+    e->size         = def->size;
+    e->speed        = def->speed;
+    e->intelligence = def->intelligence;
+    e->perception   = def->perception;
+    e->flags        = def->flags;
+    e->xpReward     = def->xpReward;
+    e->goldDrop     = def->goldDrop;
+    e->lootTableId  = def->lootTableId;
+    int idx = (int)(def - enemyDefs);
+    combat.enemyDefIds[slot]    = (idx >= 0 && idx < enemyDefCount) ? (uint8_t)idx : 0xFF;
+    combat.fromWorldEnemy[slot] = 0;
+    combat.worldEnemyX[slot]    = 0;
+    combat.worldEnemyY[slot]    = 0;
+    loadEnemyImg(slot, def->imgName);
+}
+
+void startCombat(const EnemyDef *def) {
+    /* Free all enemy images */
+    for (int i = 0; i < COMBAT_MAX_ENEMIES; i++) {
+        if (combat.enemyImgs[i].data) { free(combat.enemyImgs[i].data); combat.enemyImgs[i].data = NULL; }
     }
 
-    int idx = (int)(def - enemyDefs);
-    combat.enemyDefId = (idx >= 0 && idx < enemyDefCount) ? (uint8_t)idx : 0xFF;
-    memcpy(combat.enemy.name, def->name, 16);
-    combat.enemy.hp           = def->hp;
-    combat.enemy.maxHp        = def->hp;
-    combat.enemy.attack       = def->attack;
-    combat.enemy.defense      = def->defense;
-    combat.enemy.size         = def->size;
-    combat.enemy.speed        = def->speed;
-    combat.enemy.intelligence = def->intelligence;
-    combat.enemy.perception   = def->perception;
-    combat.enemy.flags        = def->flags;
-    combat.enemy.xpReward     = def->xpReward;
-    combat.enemy.goldDrop     = def->goldDrop;
-    combat.enemy.lootTableId  = def->lootTableId;
-    combat.isFirstTurn        = 1;
-    combat.skipEnemyAttack    = 0;
-    combat.phase              = COMBAT_PHASE_ACTIVE;
-    combat.gainedGold         = 0;
-    combat.droppedCount       = 0;
-    combat.fromWorldEnemy     = 0;
-    combat.encounterType      = ENCOUNTER_COMBAT;
-    combat.modifiers          = 0;
-    combat.logCount           = 0;
+    fillEnemySlot(0, def);
+    combat.enemyCount      = 1;
+    combat.targetIndex     = 0;
+    combat.isFirstTurn     = 1;
+    combat.skipEnemyAttack = 0;
+    combat.phase           = COMBAT_PHASE_ACTIVE;
+    combat.gainedGold      = 0;
+    combat.droppedCount    = 0;
+    combat.encounterType   = ENCOUNTER_COMBAT;
+    combat.modifiers       = 0;
+    combat.logCount        = 0;
     memset(combat.gainedDomainXp, 0, sizeof(combat.gainedDomainXp));
-    /* Atmospheric opening line */
     {
         char opening[28];
-        if      (combat.modifiers & ENCOUNTER_MOD_DARK)        snprintf(opening, 28, "Darkness surrounds you.");
-        else if (combat.modifiers & ENCOUNTER_MOD_HOLY_GROUND) snprintf(opening, 28, "Sacred ground burns you.");
-        else if (combat.modifiers & ENCOUNTER_MOD_RAINING)     snprintf(opening, 28, "Rain hammers the ground.");
-        else if (combat.modifiers & ENCOUNTER_MOD_CROWDED)     snprintf(opening, 28, "Voices echo around you.");
-        else if (combat.modifiers & ENCOUNTER_MOD_BURNING)     snprintf(opening, 28, "Flames crackle nearby.");
-        else                                                    snprintf(opening, 28, "%.12s bars your path.", combat.enemy.name);
+        snprintf(opening, 28, "%.12s bars your path.", combat.enemies[0].name);
         logPush(opening);
     }
     generateActions();
     state = STATE_COMBAT;
+}
+
+void combatAddEnemy(const EnemyDef *def, uint8_t wx, uint8_t wy) {
+    if (combat.enemyCount >= COMBAT_MAX_ENEMIES) return;
+    int slot = combat.enemyCount++;
+    fillEnemySlot(slot, def);
+    combat.fromWorldEnemy[slot] = 1;
+    combat.worldEnemyX[slot]    = wx;
+    combat.worldEnemyY[slot]    = wy;
+    char msg[28];
+    snprintf(msg, 28, "%.12s joins the fight!", def->name);
+    logPush(msg);
 }
 
 void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods) {
@@ -202,19 +227,41 @@ void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods) {
     generateActions();
 }
 
+/* Kill one enemy: roll loot/gold, fire quest hook, log the fall. */
+static void killEnemy(int slot) {
+    Enemy *e = &combat.enemies[slot];
+    if (e->goldDrop > 0) {
+        int g = rand() % e->goldDrop + 1;
+        player.gold       += (uint16_t)g;
+        combat.gainedGold += g;
+    }
+    rollLoot(e->lootTableId, combat.droppedItems, &combat.droppedCount);
+    questOnEnemyKilled(combat.enemyDefIds[slot]);
+    char vm[28]; snprintf(vm, 28, "%.20s falls.", e->name); logPush(vm);
+}
+
+/* Advance targetIndex to the next alive enemy (wrapping). */
+static void advanceTarget(void) {
+    for (int i = 1; i <= combat.enemyCount; i++) {
+        int next = (combat.targetIndex + i) % combat.enemyCount;
+        if (combat.enemies[next].hp > 0) { combat.targetIndex = next; return; }
+    }
+}
+
 static void performPlayerAction(void) {
-    Action *a = &combat.actions[combat.selectedIndex];
+    Action *a   = &combat.actions[combat.selectedIndex];
+    Enemy  *tgt = &combat.enemies[combat.targetIndex];
     combat.skipEnemyAttack = 0;
-    int ehpBefore = combat.enemy.hp;
+    int ehpBefore = tgt->hp;
     int phpBefore = (int)player.hp;
 
     switch (a->type) {
         case ACTION_ATTACK:
-            combat.enemy.hp -= getAttack();
+            tgt->hp -= getAttack();
             break;
 
         case ACTION_STRONG:
-            combat.enemy.hp -= getAttack() + a->power;
+            tgt->hp -= getAttack() + a->power;
             break;
 
         case ACTION_HEAL: {
@@ -225,47 +272,44 @@ static void performPlayerAction(void) {
         }
 
         case ACTION_DEFEND:
-            /* Damage reduction applied below in enemy counter-attack */
             break;
 
         case ACTION_DISARM:
-            combat.enemy.flags  &= ~ENEMY_HAS_WEAPON;
-            combat.enemy.attack  = combat.enemy.attack > 1 ? combat.enemy.attack / 2 : 1;
+            tgt->flags  &= ~ENEMY_HAS_WEAPON;
+            tgt->attack  = tgt->attack > 1 ? tgt->attack / 2 : 1;
             break;
 
         case ACTION_BACKSTAB:
-            combat.enemy.hp    -= getAttack() + a->power;
+            tgt->hp -= getAttack() + a->power;
             combat.skipEnemyAttack = 1;
             break;
 
         case ACTION_STUN:
             combat.skipEnemyAttack = 1;
-            /* Remove stunnable flag so Stun won't appear again */
-            combat.enemy.flags &= ~ENEMY_STUNNABLE;
+            tgt->flags &= ~ENEMY_STUNNABLE;
             break;
 
         case ACTION_CALM:
-            combat.enemy.attack  = combat.enemy.attack > 1 ? combat.enemy.attack / 2 : 1;
-            /* Remove calm option once used */
-            combat.enemy.intelligence = 0;
+            tgt->attack       = tgt->attack > 1 ? tgt->attack / 2 : 1;
+            tgt->intelligence = 0;
             break;
 
         case ACTION_HIDE:
-            combat.skipEnemyAttack = (player.agility > combat.enemy.perception);
+            combat.skipEnemyAttack = (player.agility > tgt->perception);
             break;
 
         case ACTION_EXECUTE:
-            combat.enemy.hp -= getAttack() * 2 + a->power;
+            tgt->hp -= getAttack() * 2 + a->power;
             break;
 
         /* ── Domain: Combat ─────────────────────────────────────── */
         case ACTION_INTIMIDATE:
-            combat.enemy.attack = combat.enemy.attack > 1 ? combat.enemy.attack / 2 : 1;
+            tgt->attack = tgt->attack > 1 ? tgt->attack / 2 : 1;
             combat.skipEnemyAttack = 1;
             break;
 
         case ACTION_COUNTER:
-            combat.enemy.hp -= getAttack() * 2;
+            tgt->hp -= getAttack() * 2;
             combat.skipEnemyAttack = 1;
             break;
 
@@ -278,28 +322,28 @@ static void performPlayerAction(void) {
                 combat.phase = COMBAT_PHASE_VICTORY;
                 combat.skipEnemyAttack = 1;
             } else {
-                combat.enemy.attack = combat.enemy.attack > 1 ? combat.enemy.attack / 2 : 1;
+                tgt->attack = tgt->attack > 1 ? tgt->attack / 2 : 1;
             }
             break;
 
         case ACTION_AMBUSH:
-            combat.enemy.hp -= getAttack() + a->power;
+            tgt->hp -= getAttack() + a->power;
             combat.skipEnemyAttack = 1;
             break;
 
         /* ── Domain: Trickery ───────────────────────────────────── */
         case ACTION_VANISH:
             combat.skipEnemyAttack = 1;
-            combat.enemy.perception = combat.enemy.perception > 1 ? combat.enemy.perception - 1 : 0;
+            tgt->perception = tgt->perception > 1 ? tgt->perception - 1 : 0;
             break;
 
         case ACTION_POISON:
-            combat.enemy.hp -= getAttack();
-            combat.enemy.attack = combat.enemy.attack > 1 ? combat.enemy.attack - 1 : 1;
+            tgt->hp     -= getAttack();
+            tgt->attack  = tgt->attack > 1 ? tgt->attack - 1 : 1;
             break;
 
         case ACTION_SET_TRAP:
-            combat.enemy.hp -= a->power;
+            tgt->hp -= a->power;
             combat.skipEnemyAttack = 1;
             break;
 
@@ -309,27 +353,27 @@ static void performPlayerAction(void) {
             break;
 
         case ACTION_PICKPOCKET: {
-            int stolen = combat.enemy.goldDrop / 2 + 1;
-            player.gold += (uint16_t)stolen;
-            combat.gainedGold += stolen;
+            int stolen = tgt->goldDrop / 2 + 1;
+            player.gold        += (uint16_t)stolen;
+            combat.gainedGold  += stolen;
             combat.skipEnemyAttack = 1;
             break;
         }
 
         case ACTION_INSPECT:
-            combat.enemy.defense = combat.enemy.defense > 1 ? combat.enemy.defense / 2 : 0;
+            tgt->defense = tgt->defense > 1 ? tgt->defense / 2 : 0;
             combat.skipEnemyAttack = 1;
             break;
 
         case ACTION_TRACK:
-            combat.enemy.hp -= getAttack() + a->power;
+            tgt->hp -= getAttack() + a->power;
             combat.skipEnemyAttack = 1;
             break;
 
         /* ── Domain: Blood ──────────────────────────────────────── */
         case ACTION_BLOOD_DRAIN: {
             int dmg = getAttack() + a->power;
-            combat.enemy.hp -= dmg;
+            tgt->hp -= dmg;
             int newHp = (int)player.hp + dmg / 2;
             int cap   = getMaxHp();
             player.hp = (uint16_t)(newHp > cap ? cap : newHp);
@@ -337,25 +381,26 @@ static void performPlayerAction(void) {
         }
 
         case ACTION_BITE:
-            combat.enemy.hp -= getAttack() * 2 + a->power;
+            tgt->hp -= getAttack() * 2 + a->power;
             break;
 
         case ACTION_BLOOD_HOWL:
-            /* damages all enemies — until multi-enemy, hits the single target */
-            combat.enemy.hp -= a->power;
+            /* AoE — hits all alive enemies */
+            for (int i = 0; i < combat.enemyCount; i++)
+                if (combat.enemies[i].hp > 0) combat.enemies[i].hp -= a->power;
             break;
 
         case ACTION_BLOOD_SURGE: {
             int cost = a->power / 2;
             player.hp = ((int)player.hp > cost) ? (uint16_t)(player.hp - cost) : 1;
-            combat.enemy.hp -= getAttack() * 2 + a->power;
+            tgt->hp -= getAttack() * 2 + a->power;
             combat.skipEnemyAttack = 1;
             break;
         }
 
         case ACTION_BLOOD_SCENT: {
-            int bonus = (combat.enemy.hp < combat.enemy.maxHp / 2) ? a->power * 2 : a->power;
-            combat.enemy.hp -= getAttack() + bonus;
+            int bonus = (tgt->hp < tgt->maxHp / 2) ? a->power * 2 : a->power;
+            tgt->hp -= getAttack() + bonus;
             break;
         }
 
@@ -367,7 +412,7 @@ static void performPlayerAction(void) {
 
         case ACTION_MESMERIZE:
             combat.skipEnemyAttack = 1;
-            combat.enemy.flags &= ~ENEMY_STUNNABLE;
+            tgt->flags &= ~ENEMY_STUNNABLE;
             break;
 
         case ACTION_BRIBE: {
@@ -376,7 +421,7 @@ static void performPlayerAction(void) {
                 player.gold -= BRIBE_COST;
                 combat.phase = COMBAT_PHASE_VICTORY;
             } else {
-                combat.skipEnemyAttack = 1; /* not enough gold — enemy hesitates */
+                combat.skipEnemyAttack = 1;
             }
             break;
         }
@@ -387,7 +432,7 @@ static void performPlayerAction(void) {
             break;
 
         case ACTION_INTERROGATE:
-            combat.enemy.defense = combat.enemy.defense > 1 ? combat.enemy.defense / 2 : 0;
+            tgt->defense = tgt->defense > 1 ? tgt->defense / 2 : 0;
             combat.skipEnemyAttack = 1;
             break;
 
@@ -402,16 +447,16 @@ static void performPlayerAction(void) {
 
         case ACTION_BLEND_IN:
             combat.skipEnemyAttack = 1;
-            combat.enemy.perception = combat.enemy.perception > 2 ? combat.enemy.perception - 2 : 0;
+            tgt->perception = tgt->perception > 2 ? tgt->perception - 2 : 0;
             break;
 
         default:
             break;
     }
 
-    /* Log action result */
+    /* Log action result (use target HP delta for single-target; for AoE log separately) */
     {
-        int dealt  = ehpBefore - combat.enemy.hp;
+        int dealt  = ehpBefore - tgt->hp;
         int healed = (int)player.hp - phpBefore;
         const ActionDef *adef = getActionDef((uint8_t)a->type);
         const char *nm = adef ? adef->name : "?";
@@ -440,29 +485,49 @@ static void performPlayerAction(void) {
         combat.skipEnemyAttack = 1;
     }
 
-    /* Enemy counter-attack */
-    if (combat.enemy.hp > 0 && !combat.skipEnemyAttack && combat.phase == COMBAT_PHASE_ACTIVE) {
-        int dmg = combat.enemy.attack;
-        if (a->type == ACTION_DEFEND)
-            dmg = dmg / 2 + 1;
-        player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
-        char cm[28];
-        snprintf(cm, 28, "%.10s: %d dmg.", combat.enemy.name, dmg);
-        logPush(cm);
+    /* Kill any enemies that reached 0 HP; check for full victory */
+    if (combat.phase == COMBAT_PHASE_ACTIVE) {
+        int allDead = 1;
+        for (int i = 0; i < combat.enemyCount; i++) {
+            if (combat.enemies[i].hp <= 0 && combat.enemies[i].maxHp > 0) {
+                combat.enemies[i].hp = 0; /* clamp */
+                /* Only kill once — gate on maxHp still positive */
+                /* We repurpose maxHp=0 as "already processed" marker */
+                if (combat.enemies[i].maxHp > 0) {
+                    killEnemy(i);
+                    combat.enemies[i].maxHp = 0;
+                }
+            }
+            if (combat.enemies[i].maxHp > 0) allDead = 0;
+        }
+        if (allDead) {
+            combat.phase = COMBAT_PHASE_VICTORY;
+            combat.skipEnemyAttack = 1;
+        } else if (combat.enemies[combat.targetIndex].maxHp == 0) {
+            advanceTarget();
+        }
     }
 
-    if (combat.enemy.hp <= 0) {
-        combat.gainedGold = 0;
-        if (combat.enemy.goldDrop > 0) {
-            combat.gainedGold = rand() % combat.enemy.goldDrop + 1;
-            player.gold += (uint16_t)combat.gainedGold;
-        }
-        rollLoot(combat.enemy.lootTableId, combat.droppedItems, &combat.droppedCount);
-        combat.phase = COMBAT_PHASE_VICTORY;
-        questOnEnemyKilled(combat.enemyDefId);
-        { char vm[28]; snprintf(vm, 28, "%.20s falls.", combat.enemy.name); logPush(vm); }
+    if (player.hp == 0) {
+        logPush("You fall unconscious.");
+        enterDeath();
         return;
     }
+
+    /* Each surviving enemy counter-attacks */
+    if (!combat.skipEnemyAttack && combat.phase == COMBAT_PHASE_ACTIVE) {
+        for (int i = 0; i < combat.enemyCount; i++) {
+            if (combat.enemies[i].maxHp == 0) continue; /* dead */
+            int dmg = combat.enemies[i].attack;
+            if (a->type == ACTION_DEFEND) dmg = dmg / 2 + 1;
+            player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
+            char cm[28];
+            snprintf(cm, 28, "%.10s: %d dmg.", combat.enemies[i].name, dmg);
+            logPush(cm);
+            if (player.hp == 0) break;
+        }
+    }
+
     if (player.hp == 0) {
         logPush("You fall unconscious.");
         enterDeath();
@@ -476,8 +541,9 @@ static void performPlayerAction(void) {
 void handleCombatInput(int key) {
     if (combat.phase == COMBAT_PHASE_VICTORY) {
         if (key == VK_RETURN || key == VK_ESCAPE) {
-            if (combat.fromWorldEnemy)
-                worldEnemyRemoveAt(combat.worldEnemyX, combat.worldEnemyY);
+            for (int i = 0; i < combat.enemyCount; i++)
+                if (combat.fromWorldEnemy[i])
+                    worldEnemyRemoveAt(combat.worldEnemyX[i], combat.worldEnemyY[i]);
             state = STATE_WORLD;
         }
         return;
@@ -490,6 +556,10 @@ void handleCombatInput(int key) {
         case VK_RIGHT:
         case VK_DOWN:
             combat.selectedIndex = (combat.selectedIndex + 1) % combat.actionCount;
+            break;
+        case VK_TAB:
+            advanceTarget();
+            generateActions();
             break;
         case VK_RETURN: performPlayerAction(); break;
         case VK_ESCAPE: state = STATE_WORLD;  break;
@@ -577,15 +647,18 @@ void renderCombat(void) {
     fillRect(LP_X,              LP_Y,              1,    LP_H,   bdPanel);
     fillRect(LP_X + LP_W - 1,  LP_Y,              1,    LP_H,   bdPanel);
 
-    /* ── Monster image ──────────────────────────────────────────── */
-    if (combat.enemyImg.data) {
-        int iw    = combat.enemyImg.data[0];
-        int ih    = combat.enemyImg.data[1];
-        int scale = IMG_SZ / (iw > ih ? iw : ih);
-        if (scale < 1) scale = 1;
-        int dx    = IMG_X + (IMG_SZ - iw * scale) / 2;
-        int dy    = IMG_Y + (IMG_SZ - ih * scale) / 2;
-        drawBin(dx, dy, combat.enemyImg.data, scale, 0, 255);
+    /* ── Monster image (targeted enemy) ────────────────────────── */
+    {
+        const PakData *img = &combat.enemyImgs[combat.targetIndex];
+        if (img->data) {
+            int iw    = img->data[0];
+            int ih    = img->data[1];
+            int scale = IMG_SZ / (iw > ih ? iw : ih);
+            if (scale < 1) scale = 1;
+            int dx    = IMG_X + (IMG_SZ - iw * scale) / 2;
+            int dy    = IMG_Y + (IMG_SZ - ih * scale) / 2;
+            drawBin(dx, dy, img->data, scale, 0, 255);
+        }
     }
 
     char buf[48];
@@ -617,18 +690,33 @@ void renderCombat(void) {
         return;
     }
 
-    /* ── Enemy section ──────────────────────────────────────────── */
-    drawText(bx, y, "ENEMY", rgb(100, 50, 50), 1);  y += 12;
-    drawText(bx, y, combat.enemy.name, rgb(220, 90, 90), 2);  y += 22;
-
-    int eHpFill = (combat.enemy.maxHp > 0)
-                ? combat.enemy.hp * barW / combat.enemy.maxHp : 0;
-    if (eHpFill < 0) eHpFill = 0;
-    fillRect(bx, y, barW, 10, rgb(40, 12, 12));
-    if (eHpFill > 0) fillRect(bx, y, eHpFill, 10, rgb(200, 50, 50));
-    y += 12;
-    snprintf(buf, sizeof(buf), "HP  %d / %d", combat.enemy.hp, combat.enemy.maxHp);
-    drawText(bx, y, buf, rgb(150, 70, 70), 1);  y += 18;
+    /* ── Enemy section (all enemies) ───────────────────────────── */
+    drawText(bx, y, "ENEMIES", rgb(100, 50, 50), 1);  y += 12;
+    for (int ei = 0; ei < combat.enemyCount; ei++) {
+        const Enemy *e  = &combat.enemies[ei];
+        int          sel = (ei == combat.targetIndex);
+        int          dead = (e->maxHp == 0);
+        uint32_t     nameCol = dead   ? rgb(60, 50, 50)
+                             : sel    ? rgb(255, 210, 80)
+                             :          rgb(200, 90, 90);
+        /* target indicator + name */
+        char nbuf[20];
+        nbuf[0] = sel ? '>' : ' '; nbuf[1] = ' ';
+        int nl = 0; while (e->name[nl] && nl < 16) nl++;
+        for (int c = 0; c < nl && c < 17; c++) nbuf[2 + c] = e->name[c];
+        nbuf[2 + (nl < 17 ? nl : 17)] = '\0';
+        drawText(bx, y, nbuf, nameCol, 1);  y += 11;
+        /* HP bar */
+        if (!dead && e->maxHp > 0) {
+            int fill = e->hp * barW / e->maxHp;
+            if (fill < 0) fill = 0;
+            fillRect(bx, y, barW, 6, rgb(40, 12, 12));
+            if (fill > 0) fillRect(bx, y, fill, 6, sel ? rgb(220, 160, 40) : rgb(180, 50, 50));
+        } else {
+            fillRect(bx, y, barW, 6, rgb(28, 18, 18));
+        }
+        y += 10;
+    }
 
     /* ── Divider ────────────────────────────────────────────────── */
     fillRect(LP_X + 8, y + 4, LP_W - 16, 1, rgb(55, 35, 35));  y += 14;
@@ -713,5 +801,10 @@ void renderCombat(void) {
 
         if (sel)
             fillRect(cx + CARD_W/2 - 2, CARD_Y + CARD_H - 8, 4, 4, rgb(220, 200, 50));
+    }
+
+    if (combat.enemyCount > 1) {
+        drawText(CARD_X0, CARD_Y + CARD_H + 4,
+                 "TAB: switch target", rgb(55, 55, 80), 1);
     }
 }

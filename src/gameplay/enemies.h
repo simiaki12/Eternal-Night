@@ -51,4 +51,4 @@ extern EnemyPool enemyPools[ENEMY_POOL_MAX];
 extern int       enemyPoolCount;
 
 int  loadEnemies(PakData data);
-void startCombatFromPool(uint8_t poolId);  /* poolId = loc tile value 0x01-0x0F */
+void startCombatFromPool(uint8_t poolId, int triggerX, int triggerY);

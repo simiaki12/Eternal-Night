@@ -49,9 +49,13 @@ typedef struct { ActionId type; uint8_t power; } Action;
 
 typedef enum { COMBAT_PHASE_ACTIVE, COMBAT_PHASE_VICTORY } CombatPhase;
 
+#define COMBAT_MAX_ENEMIES 3
+
 typedef struct {
-    Enemy       enemy;
-    uint8_t     enemyDefId;
+    Enemy       enemies[COMBAT_MAX_ENEMIES];
+    int         enemyCount;
+    int         targetIndex;
+    uint8_t     enemyDefIds[COMBAT_MAX_ENEMIES];
     Action      actions[4];
     int         actionCount;
     int         selectedIndex;
@@ -62,9 +66,10 @@ typedef struct {
     uint8_t     gainedDomainXp[14]; /* indexed by DOMAIN_* — XP earned this fight */
     uint8_t     droppedItems[4];
     int         droppedCount;
-    PakData     enemyImg;
-    uint8_t     fromWorldEnemy; /* 1 if triggered by a WorldEnemy on the map */
-    uint8_t     worldEnemyX, worldEnemyY;
+    PakData     enemyImgs[COMBAT_MAX_ENEMIES];
+    uint8_t     fromWorldEnemy[COMBAT_MAX_ENEMIES];
+    uint8_t     worldEnemyX[COMBAT_MAX_ENEMIES];
+    uint8_t     worldEnemyY[COMBAT_MAX_ENEMIES];
     EncounterType encounterType;
     uint32_t    modifiers;     /* ENCOUNTER_MOD_* bitmask */
     char        log[8][28];   /* encounter log — newest at highest index */
@@ -74,6 +79,7 @@ typedef struct {
 extern CombatState combat;
 
 void startCombat(const EnemyDef *def);
+void combatAddEnemy(const EnemyDef *def, uint8_t wx, uint8_t wy);
 void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods);
 void handleCombatInput(int key);
 void renderCombat(void);

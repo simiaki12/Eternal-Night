@@ -223,12 +223,8 @@ void updateWorld(void) {
         }
     }
     int poolId = worldEnemiesUpdate((uint32_t)GetTickCount());
-    if (poolId >= 0) {
-        startCombatFromPool((uint8_t)poolId);
-        combat.fromWorldEnemy = 1;
-        combat.worldEnemyX    = (uint8_t)worldPlayerX;
-        combat.worldEnemyY    = (uint8_t)worldPlayerY;
-    }
+    if (poolId >= 0)
+        startCombatFromPool((uint8_t)poolId, worldPlayerX, worldPlayerY);
 }
 
 static void triggerMapEvent(const MapEvent *ev) {
@@ -318,12 +314,8 @@ void handleWorldInput(int key) {
         /* Enemies auto-trigger on step; town/dungeon/portal wait for E key. */
         const WorldEnemy *we = worldEnemyAt(newX, newY);
         if (we) {
-            uint8_t ex = we->x, ey = we->y;
             questOnZoneEntered(we->pool_id);
-            startCombatFromPool(we->pool_id);
-            combat.fromWorldEnemy = 1;
-            combat.worldEnemyX    = ex;
-            combat.worldEnemyY    = ey;
+            startCombatFromPool(we->pool_id, newX, newY);
         } else {
             const MapEvent *ev = findEvent(newX, newY);
             if (ev && ev->type != MAP_EV_ENEMY) questOnZoneEntered(ev->id);

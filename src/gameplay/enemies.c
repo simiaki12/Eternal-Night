@@ -3,6 +3,7 @@
 #include <windows.h>
 #include "enemies.h"
 #include "combat.h"
+#include "world_enemies.h"
 
 EnemyDef  enemyDefs[ENEMY_DEF_MAX];
 int       enemyDefCount = 0;
@@ -60,17 +61,34 @@ int loadEnemies(PakData data) {
     return dc;
 }
 
-void startCombatFromPool(uint8_t poolId) {
-    /* poolId is a loc tile value (0x01-0x0F); maps to pool index poolId-1 */
+static const int s_ndx[8] = { -1, 0, 1, -1, 1, -1, 0,  1 };
+static const int s_ndy[8] = { -1,-1,-1,  0, 0,  1, 1,  1 };
+
+void startCombatFromPool(uint8_t poolId, int triggerX, int triggerY) {
     int idx = (int)poolId - 1;
     if (idx < 0 || idx >= enemyPoolCount || enemyPools[idx].count == 0) {
-        /* Fallback: first defined enemy */
         if (enemyDefCount > 0) startCombat(&enemyDefs[0]);
         return;
     }
     EnemyPool *pool = &enemyPools[idx];
-    int pick = rand() % pool->count;
-    uint8_t defId = pool->enemyIds[pick];
+    uint8_t defId = pool->enemyIds[rand() % pool->count];
     if (defId >= (uint8_t)enemyDefCount) defId = 0;
     startCombat(&enemyDefs[defId]);
+    combat.fromWorldEnemy[0] = 1;
+    combat.worldEnemyX[0]    = (uint8_t)triggerX;
+    combat.worldEnemyY[0]    = (uint8_t)triggerY;
+
+    /* Pull neighboring world enemies (up to COMBAT_MAX_ENEMIES total) */
+    for (int d = 0; d < 8 && combat.enemyCount < COMBAT_MAX_ENEMIES; d++) {
+        int nx = triggerX + s_ndx[d];
+        int ny = triggerY + s_ndy[d];
+        const WorldEnemy *nwe = worldEnemyAt(nx, ny);
+        if (!nwe) continue;
+        int nidx = (int)nwe->pool_id - 1;
+        if (nidx < 0 || nidx >= enemyPoolCount || enemyPools[nidx].count == 0) continue;
+        EnemyPool *np  = &enemyPools[nidx];
+        uint8_t nDefId = np->enemyIds[rand() % np->count];
+        if (nDefId >= (uint8_t)enemyDefCount) continue;
+        combatAddEnemy(&enemyDefs[nDefId], (uint8_t)nx, (uint8_t)ny);
+    }
 }
