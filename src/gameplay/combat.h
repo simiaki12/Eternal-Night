@@ -67,6 +67,8 @@ typedef struct {
     uint8_t     worldEnemyX, worldEnemyY;
     EncounterType encounterType;
     uint32_t    modifiers;     /* ENCOUNTER_MOD_* bitmask */
+    char        log[8][28];   /* encounter log — newest at highest index */
+    int         logCount;
 } CombatState;
 
 extern CombatState combat;

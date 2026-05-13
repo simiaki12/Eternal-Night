@@ -20,6 +20,17 @@ CombatState combat;
 /* Lazily-loaded sprites for action cards — indexed by action id, loaded on first render */
 static PakData actionImgs[ACTION_MAX];
 
+static void logPush(const char *msg) {
+    if (combat.logCount == 8) {
+        for (int i = 0; i < 7; i++)
+            memcpy(combat.log[i], combat.log[i + 1], sizeof(combat.log[0]));
+        combat.logCount = 7;
+    }
+    strncpy(combat.log[combat.logCount], msg, sizeof(combat.log[0]) - 1);
+    combat.log[combat.logCount][sizeof(combat.log[0]) - 1] = '\0';
+    combat.logCount++;
+}
+
 static int checkContext(const ActionDef *def) {
     uint8_t ctx = def->contextFlags;
     if ((ctx & ACT_CTX_FIRST_TURN)   && !combat.isFirstTurn)                      return 0;
@@ -157,7 +168,19 @@ void startCombat(const EnemyDef *def) {
     combat.fromWorldEnemy     = 0;
     combat.encounterType      = ENCOUNTER_COMBAT;
     combat.modifiers          = 0;
+    combat.logCount           = 0;
     memset(combat.gainedDomainXp, 0, sizeof(combat.gainedDomainXp));
+    /* Atmospheric opening line */
+    {
+        char opening[28];
+        if      (combat.modifiers & ENCOUNTER_MOD_DARK)        snprintf(opening, 28, "Darkness surrounds you.");
+        else if (combat.modifiers & ENCOUNTER_MOD_HOLY_GROUND) snprintf(opening, 28, "Sacred ground burns you.");
+        else if (combat.modifiers & ENCOUNTER_MOD_RAINING)     snprintf(opening, 28, "Rain hammers the ground.");
+        else if (combat.modifiers & ENCOUNTER_MOD_CROWDED)     snprintf(opening, 28, "Voices echo around you.");
+        else if (combat.modifiers & ENCOUNTER_MOD_BURNING)     snprintf(opening, 28, "Flames crackle nearby.");
+        else                                                    snprintf(opening, 28, "%.12s bars your path.", combat.enemy.name);
+        logPush(opening);
+    }
     generateActions();
     state = STATE_COMBAT;
 }
@@ -165,6 +188,8 @@ void startCombat(const EnemyDef *def) {
 static void performPlayerAction(void) {
     Action *a = &combat.actions[combat.selectedIndex];
     combat.skipEnemyAttack = 0;
+    int ehpBefore = combat.enemy.hp;
+    int phpBefore = (int)player.hp;
 
     switch (a->type) {
         case ACTION_ATTACK:
@@ -232,10 +257,12 @@ static void performPlayerAction(void) {
             break;
 
         case ACTION_THREATEN:
-            if (combat.encounterType == ENCOUNTER_SOCIAL)
+            if (combat.encounterType == ENCOUNTER_SOCIAL) {
                 combat.phase = COMBAT_PHASE_VICTORY;
-            else
+                combat.skipEnemyAttack = 1;
+            } else {
                 combat.enemy.attack = combat.enemy.attack > 1 ? combat.enemy.attack / 2 : 1;
+            }
             break;
 
         case ACTION_AMBUSH:
@@ -261,6 +288,7 @@ static void performPlayerAction(void) {
 
         case ACTION_DECEIVE:
             combat.phase = COMBAT_PHASE_VICTORY;
+            combat.skipEnemyAttack = 1;
             break;
 
         case ACTION_PICKPOCKET: {
@@ -317,6 +345,7 @@ static void performPlayerAction(void) {
         /* ── Domain: Charm ──────────────────────────────────────── */
         case ACTION_DOMINATE:
             combat.phase = COMBAT_PHASE_VICTORY;
+            combat.skipEnemyAttack = 1;
             break;
 
         case ACTION_MESMERIZE:
@@ -337,6 +366,7 @@ static void performPlayerAction(void) {
 
         case ACTION_SILVER_TONGUE:
             combat.phase = COMBAT_PHASE_VICTORY;
+            combat.skipEnemyAttack = 1;
             break;
 
         case ACTION_INTERROGATE:
@@ -362,6 +392,21 @@ static void performPlayerAction(void) {
             break;
     }
 
+    /* Log action result */
+    {
+        int dealt  = ehpBefore - combat.enemy.hp;
+        int healed = (int)player.hp - phpBefore;
+        const ActionDef *adef = getActionDef((uint8_t)a->type);
+        const char *nm = adef ? adef->name : "?";
+        char lm[28];
+        if      (dealt > 0 && healed > 0) snprintf(lm, 28, "%.10s: %d dmg+%d HP.", nm, dealt, healed);
+        else if (dealt > 0)               snprintf(lm, 28, "%.12s: %d dmg.", nm, dealt);
+        else if (healed > 0)              snprintf(lm, 28, "%.14s: +%d HP.", nm, healed);
+        else if (healed < 0)              snprintf(lm, 28, "%.8s: -%d HP.", nm, -healed);
+        else                              snprintf(lm, 28, "%.26s.", nm);
+        logPush(lm);
+    }
+
     /* Domain XP for the action used */
     {
         uint8_t dom = actionGetDomain((uint8_t)a->type);
@@ -373,11 +418,14 @@ static void performPlayerAction(void) {
     }
 
     /* Enemy counter-attack */
-    if (combat.enemy.hp > 0 && !combat.skipEnemyAttack) {
+    if (combat.enemy.hp > 0 && !combat.skipEnemyAttack && combat.phase == COMBAT_PHASE_ACTIVE) {
         int dmg = combat.enemy.attack;
         if (a->type == ACTION_DEFEND)
             dmg = dmg / 2 + 1;
         player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
+        char cm[28];
+        snprintf(cm, 28, "%.10s: %d dmg.", combat.enemy.name, dmg);
+        logPush(cm);
     }
 
     if (combat.enemy.hp <= 0) {
@@ -387,11 +435,13 @@ static void performPlayerAction(void) {
             player.gold += (uint16_t)combat.gainedGold;
         }
         rollLoot(combat.enemy.lootTableId, combat.droppedItems, &combat.droppedCount);
-        combat.phase     = COMBAT_PHASE_VICTORY;
+        combat.phase = COMBAT_PHASE_VICTORY;
         questOnEnemyKilled(combat.enemyDefId);
+        { char vm[28]; snprintf(vm, 28, "%.20s falls.", combat.enemy.name); logPush(vm); }
         return;
     }
     if (player.hp == 0) {
+        logPush("You fall unconscious.");
         enterDeath();
         return;
     }
@@ -564,6 +614,20 @@ void renderCombat(void) {
     drawText(bx, y, buf, rgb(210, 90, 90), 1);
     snprintf(buf, sizeof(buf), "DEF  %d", getDefense());
     drawText(bx + 90, y, buf, rgb(90, 140, 210), 1);  y += 16;
+
+    /* ── Encounter log ──────────────────────────────────────────── */
+    if (combat.logCount > 0) {
+        fillRect(LP_X + 8, y + 4, LP_W - 16, 1, rgb(45, 30, 30));  y += 12;
+        for (int i = 0; i < combat.logCount; i++) {
+            int age = combat.logCount - 1 - i;  /* 0 = newest */
+            uint32_t lc = age == 0 ? rgb(180, 170, 210)
+                        : age == 1 ? rgb(130, 120, 155)
+                        : age <= 3 ? rgb(85,  78,  108)
+                        :            rgb(52,  48,  70);
+            drawText(bx, y, combat.log[i], lc, 1);
+            y += 12;
+        }
+    }
 
     /* ── Action cards ───────────────────────────────────────────── */
     for (int i = 0; i < combat.actionCount; i++) {
