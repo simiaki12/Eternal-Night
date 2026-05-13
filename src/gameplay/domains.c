@@ -242,6 +242,12 @@ void handleDomainsInput(int key) {
                 }
                 break;
             case VK_ESCAPE: case 'P': state = STATE_WORLD; break;
+            case 'F': case 'f':
+                if (player.focusedDomain == (uint8_t)g_domainSel)
+                    player.focusedDomain = DOMAIN_NONE;
+                else
+                    player.focusedDomain = (uint8_t)g_domainSel;
+                break;
         }
         return;
     }
@@ -377,10 +383,14 @@ static void renderOverview(void) {
 
         snprintf(buf, sizeof(buf), "%d / %d nodes", unlockedCount((uint8_t)i), nodeCount((uint8_t)i));
         drawText(tx, ty, buf, rgb(100,95,130), 1);
+
+        if (player.focusedDomain == (uint8_t)i) {
+            drawText(px + PW - 52, PY + 8, "FOCUS", accent, 1);
+        }
     }
 
     drawText(BOX_X + 16, BOX_Y + BOX_H - 20,
-             "LEFT/RIGHT: select   ENTER: open tree   P/ESC: close",
+             "LEFT/RIGHT: select   ENTER: open tree   F: toggle focus   P/ESC: close",
              rgb(55,50,80), 1);
 }
 
