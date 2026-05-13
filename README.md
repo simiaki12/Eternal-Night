@@ -6,7 +6,7 @@ A dark fantasy retro RPG optimized for distribution on floppies
 
 The Kingdom of Lucernia is in turmoil. The Queen has been kidnapped, and the only one who can save her is Azrael — the Daywalker.
 
-Eternal Night is a dark fantasy RPG with world overworld to navigate, towns to visit, and a cast of NPCs with their own agendas. Exploration is real-time: enemies roam the world and react to your presence. Combat triggers when you engage and plays out as a turn-based exchange of actions.
+Eternal Night is a dark fantasy RPG with an isometric overworld to navigate, towns to visit, and a cast of NPCs with their own agendas. Exploration is real-time: enemies roam the world and react to your presence. Combat triggers when you engage and plays out as a turn-based exchange of actions.
 
 Azrael grows not through levelling up, but through how he fights. The more you rely on a fighting style, the deeper you go into that domain, unlocking new capabilities that reflect the kind of warrior you're becoming.
 

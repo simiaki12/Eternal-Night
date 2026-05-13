@@ -21,7 +21,6 @@
 #include "save.h"
 #include "loot.h"
 #include "audio.h"
-#include "songs.h"
 #include "options.h"
 #include "npcs.h"
 #include "shop.h"
@@ -524,3 +523,4 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     gfxShutdown();
     return 0;
 }
+

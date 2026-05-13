@@ -20,62 +20,6 @@
 #define REV_COMB2 1801
 #define REV_AP     521
 
-/* --- Built-in world theme (110 BPM) --- */
-#define QN 12027   /* quarter note at 110 BPM */
-#define HN (QN*2)
-#define WN (QN*4)
-#define DH (QN*3)
-
-#define C3f 130.81f
-#define D3f 146.83f
-#define E3f 164.81f
-#define F3f 174.61f
-#define G3f 196.00f
-#define A3f 220.00f
-#define C4f 261.63f
-#define D4f 293.66f
-#define E4f 329.63f
-#define F4f 349.23f
-#define G4f 392.00f
-#define A4f 440.00f
-#define C5f 523.25f
-
-static const Note s_mel[] = {
-    {C4f,QN,1.0f},{E4f,QN,1.0f},{G4f,QN,1.0f},{A4f,QN,1.0f},
-    {G4f,DH,1.0f},{E4f,QN,1.0f},
-    {D4f,QN,1.0f},{E4f,QN,1.0f},{G4f,QN,1.0f},{E4f,QN,1.0f},
-    {C4f,WN,1.0f},
-    {A4f,QN,1.0f},{G4f,QN,1.0f},{E4f,QN,1.0f},{G4f,QN,1.0f},
-    {C5f,QN,1.0f},{A4f,QN,1.0f},{G4f,QN,1.0f},{E4f,QN,1.0f},
-    {F4f,QN,1.0f},{G4f,QN,1.0f},{A4f,QN,1.0f},{G4f,QN,1.0f},
-    {E4f,HN,1.0f},{C4f,HN,1.0f},
-};
-static const Note s_har[] = {
-    {E4f,WN,1.0f},{G4f,WN,1.0f},{E4f,HN,1.0f},{C4f,HN,1.0f},{E4f,WN,1.0f},
-    {C4f,WN,1.0f},{D4f,WN,1.0f},{C4f,WN,1.0f},{G4f,WN,1.0f},
-};
-static const Note s_bas[] = {
-    {C3f,HN,1.0f},{C3f,HN,1.0f},{G3f,HN,1.0f},{G3f,HN,1.0f},{A3f,HN,1.0f},{E3f,HN,1.0f},{C3f,WN,1.0f},
-    {F3f,HN,1.0f},{G3f,HN,1.0f},{F3f,HN,1.0f},{G3f,HN,1.0f},{F3f,HN,1.0f},{G3f,HN,1.0f},{C3f,WN,1.0f},
-};
-static const Note s_drm[] = {
-    {0.0f,QN,1.0f},{1.0f,QN,1.0f},{0.0f,QN,1.0f},{1.0f,QN,1.0f},
-};
-#define MEL_N (int)(sizeof(s_mel)/sizeof(s_mel[0]))
-#define HAR_N (int)(sizeof(s_har)/sizeof(s_har[0]))
-#define BAS_N (int)(sizeof(s_bas)/sizeof(s_bas[0]))
-#define DRM_N (int)(sizeof(s_drm)/sizeof(s_drm[0]))
-
-static const SongDef s_world_song = {
-    4, {
-        { s_mel, MEL_N, 4, 1.0f, 0.5f, 0 },   /* sine   — melody  */
-        { s_har, HAR_N, 1, 1.0f, 0.5f, 0 },   /* square — harmony */
-        { s_bas, BAS_N, 5, 1.0f, 0.5f, 0 },   /* KS     — bass    */
-        { s_drm, DRM_N, 3, 1.0f, 0.5f, 0 },   /* noise  — drums   */
-    },
-    0.12f
-};
-
 /* --- ADSR envelope --- */
 typedef enum { ENV_ATK, ENV_DCY, ENV_SUS, ENV_REL, ENV_OFF } EnvPhase;
 
@@ -555,10 +499,6 @@ void audioPlaySong(const SongDef *song) {
     s_thread = CreateThread(NULL, 0, audio_thread, NULL, 0, NULL);
 }
 
-void audioPlayWorld(void) {
-    audioPlaySong(&s_world_song);
-}
-
 void audioStop(void) {
     if (!s_wo) return;
     InterlockedExchange(&s_stop, 1);
@@ -581,3 +521,4 @@ void audioCleanup(void) {
     audioStop();
     free(s_loaded_song); s_loaded_song = NULL; s_loaded_name[0] = 0;
 }
+
