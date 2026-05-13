@@ -437,6 +437,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     state = g_charSheetReturn;
                 else
                     openCharSheet(state);
+            /* 1-5: test-fire encounter types from world */
+            } else if (g_pendingKey >= '1' && g_pendingKey <= '5' && state == STATE_WORLD && enemyDefCount > 0) {
+                static const EncounterType encTypes[5] = {
+                    ENCOUNTER_COMBAT, ENCOUNTER_SOCIAL, ENCOUNTER_INVESTIGATION,
+                    ENCOUNTER_ENVIRONMENTAL, ENCOUNTER_HUNT
+                };
+                startEncounter(encTypes[g_pendingKey - '1'], &enemyDefs[0], 0);
             } else {
                 switch (state) {
                     case STATE_WORLD:   handleWorldInput(g_pendingKey);   break;

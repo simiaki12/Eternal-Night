@@ -13,7 +13,7 @@ Azrael grows not through levelling up, but through how he fights. The more you r
 ## The Constraint
 
 This project is designed to fit on a single floppy disk and the be playable on a Windows system with no additional dependencies or requirements. 
-Current size: 113 KB exe + 306 KB data.pak (29% of 1.44 MB floppy)
+Current size: 114 KB exe + 306 KB data.pak (29% of 1.44 MB floppy)
 
 This heavily impacts many design descisions: simple graphics, synthetized music and sound effect. Focus on efficent data storage and compression, using a Win32/GDI renderer with no external runtime dependencies.
 

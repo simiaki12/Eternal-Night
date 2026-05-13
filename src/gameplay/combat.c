@@ -185,6 +185,23 @@ void startCombat(const EnemyDef *def) {
     state = STATE_COMBAT;
 }
 
+void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods) {
+    startCombat(def);
+    combat.encounterType = type;
+    combat.modifiers     = mods;
+    combat.logCount      = 0;
+    const char *opener;
+    switch (type) {
+        case ENCOUNTER_SOCIAL:        opener = "A tense exchange begins.";  break;
+        case ENCOUNTER_INVESTIGATION: opener = "Something demands scrutiny."; break;
+        case ENCOUNTER_HUNT:          opener = "You are on the hunt.";      break;
+        case ENCOUNTER_ENVIRONMENTAL: opener = "The environment closes in."; break;
+        default:                      opener = NULL;                         break;
+    }
+    if (opener) logPush(opener);
+    generateActions();
+}
+
 static void performPlayerAction(void) {
     Action *a = &combat.actions[combat.selectedIndex];
     combat.skipEnemyAttack = 0;
@@ -417,6 +434,12 @@ static void performPlayerAction(void) {
         }
     }
 
+    /* Non-combat encounters: any action resolves the scene */
+    if (combat.encounterType != ENCOUNTER_COMBAT && combat.phase == COMBAT_PHASE_ACTIVE) {
+        combat.phase = COMBAT_PHASE_VICTORY;
+        combat.skipEnemyAttack = 1;
+    }
+
     /* Enemy counter-attack */
     if (combat.enemy.hp > 0 && !combat.skipEnemyAttack && combat.phase == COMBAT_PHASE_ACTIVE) {
         int dmg = combat.enemy.attack;
@@ -529,15 +552,30 @@ void renderCombat(void) {
     const int IMG_X  = MR_X + (MR_W - IMG_SZ) / 2;
     const int IMG_Y  = LP_Y  + (LP_H - IMG_SZ) / 2;
 
+    /* ── Encounter-type colours ────────────────────────────────────── */
+    uint32_t bgMain, bgPanel, bdPanel;
+    switch (combat.encounterType) {
+        case ENCOUNTER_SOCIAL:
+            bgMain = rgb(3,  4,  14); bgPanel = rgb(6,  8,  22); bdPanel = rgb(35, 45, 120); break;
+        case ENCOUNTER_INVESTIGATION:
+            bgMain = rgb(10, 9,  2);  bgPanel = rgb(16, 14, 3);  bdPanel = rgb(100,88, 18);  break;
+        case ENCOUNTER_HUNT:
+            bgMain = rgb(3,  3,  3);  bgPanel = rgb(7,  7,  7);  bdPanel = rgb(38, 38, 38);  break;
+        case ENCOUNTER_ENVIRONMENTAL:
+            bgMain = rgb(3,  10, 3);  bgPanel = rgb(5,  15, 5);  bdPanel = rgb(28, 90, 28);  break;
+        default: /* ENCOUNTER_COMBAT */
+            bgMain = rgb(10, 4,  4);  bgPanel = rgb(14, 8,  8);  bdPanel = rgb(90, 40, 40);  break;
+    }
+
     /* ── Background ─────────────────────────────────────────────── */
-    fillRect(0, 0, gfxWidth, gfxHeight, rgb(10, 8, 20));
+    fillRect(0, 0, gfxWidth, gfxHeight, bgMain);
 
     /* ── Left panel ─────────────────────────────────────────────── */
-    fillRect(LP_X, LP_Y, LP_W, LP_H, rgb(14, 8, 8));
-    fillRect(LP_X,              LP_Y,              LP_W, 1,      rgb(90, 40, 40));
-    fillRect(LP_X,              LP_Y + LP_H - 1,   LP_W, 1,      rgb(90, 40, 40));
-    fillRect(LP_X,              LP_Y,              1,    LP_H,   rgb(90, 40, 40));
-    fillRect(LP_X + LP_W - 1,  LP_Y,              1,    LP_H,   rgb(90, 40, 40));
+    fillRect(LP_X, LP_Y, LP_W, LP_H, bgPanel);
+    fillRect(LP_X,              LP_Y,              LP_W, 1,      bdPanel);
+    fillRect(LP_X,              LP_Y + LP_H - 1,   LP_W, 1,      bdPanel);
+    fillRect(LP_X,              LP_Y,              1,    LP_H,   bdPanel);
+    fillRect(LP_X + LP_W - 1,  LP_Y,              1,    LP_H,   bdPanel);
 
     /* ── Monster image ──────────────────────────────────────────── */
     if (combat.enemyImg.data) {

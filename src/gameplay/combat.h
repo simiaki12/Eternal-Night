@@ -74,6 +74,7 @@ typedef struct {
 extern CombatState combat;
 
 void startCombat(const EnemyDef *def);
+void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods);
 void handleCombatInput(int key);
 void renderCombat(void);
 void returnToTown(void);
