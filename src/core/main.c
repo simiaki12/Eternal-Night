@@ -26,6 +26,7 @@
 #include "shop.h"
 #include "actions.h"
 #include "ambient.h"
+#include "log_messages.h"
 
 /* State machine */
 GameState state     = STATE_MAIN_MENU;
@@ -330,6 +331,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     PakData npcData       = pakRead("assets/data/npcs.dat");
     PakData actionData    = pakRead("assets/data/actions.dat");
     PakData ambientData   = pakRead("assets/data/ambient.dat");
+    PakData logMsgData    = pakRead("assets/data/log_messages.dat");
 
     loadItems(itemData);        /* optional — falls back to builtins if not in pak */
     loadEnemies(enemyData);     /* optional — falls back to builtins if not in pak */
@@ -337,8 +339,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadQuests(questData);      /* optional — no quests if absent */
     loadLootTables(lootData);   /* optional — no item drops if absent */
     loadNpcs(npcData);          /* optional — no NPCs if absent */
-    loadActions(actionData);    /* optional — falls back to builtins if not in pak */
-    loadAmbient(ambientData);   /* optional — no ambient text if absent */
+    loadActions(actionData);      /* optional — falls back to builtins if not in pak */
+    loadAmbient(ambientData);     /* optional — no ambient text if absent */
+    loadLogMessages(logMsgData);  /* optional — no reactive messages if absent */
     free(itemData.data);
     free(enemyData.data);
     free(dialogData.data);
@@ -347,6 +350,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     free(npcData.data);
     free(actionData.data);
     free(ambientData.data);
+    free(logMsgData.data);
 
     const int screenW = 640;
     const int screenH = 480;

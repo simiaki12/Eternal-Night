@@ -6,6 +6,7 @@
 #include "combat.h"
 #include "actions.h"
 #include "domains.h"
+#include "log_messages.h"
 #include "game.h"
 #include "player.h"
 #include "items.h"
@@ -21,15 +22,15 @@ CombatState combat;
 static PakData actionImgs[ACTION_MAX];
 
 static void logPush(const char *msg) {
-    if (combat.logCount == 8) {
-        for (int i = 0; i < 7; i++)
-            memcpy(combat.log[i], combat.log[i + 1], sizeof(combat.log[0]));
-        combat.logCount = 7;
+    if (combat.logCount < 128) {
+        strncpy(combat.log[combat.logCount], msg, sizeof(combat.log[0]) - 1);
+        combat.log[combat.logCount][sizeof(combat.log[0]) - 1] = '\0';
+        combat.logCount++;
     }
-    strncpy(combat.log[combat.logCount], msg, sizeof(combat.log[0]) - 1);
-    combat.log[combat.logCount][sizeof(combat.log[0]) - 1] = '\0';
-    combat.logCount++;
+    combat.logScroll = 0;
 }
+
+void combatLog(const char *msg) { logPush(msg); }
 
 static int checkContext(const ActionDef *def) {
     const Enemy *tgt = &combat.enemies[combat.targetIndex];
@@ -193,12 +194,14 @@ void startCombat(const EnemyDef *def) {
     combat.encounterType   = ENCOUNTER_COMBAT;
     combat.modifiers       = 0;
     combat.logCount        = 0;
+    combat.logScroll       = 0;
     memset(combat.gainedDomainXp, 0, sizeof(combat.gainedDomainXp));
     {
         char opening[28];
         snprintf(opening, 28, "%.12s bars your path.", combat.enemies[0].name);
         logPush(opening);
     }
+    fireLogMessages(LOGTRIG_COMBAT_START, 0xFF, 0);
     generateActions();
     state = STATE_COMBAT;
 }
@@ -229,6 +232,7 @@ void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods) {
         default:                      opener = NULL;                         break;
     }
     if (opener) logPush(opener);
+    fireLogMessages(LOGTRIG_COMBAT_START, 0xFF, 0);
     generateActions();
 }
 
@@ -243,6 +247,7 @@ static void killEnemy(int slot) {
     rollLoot(e->lootTableId, combat.droppedItems, &combat.droppedCount);
     questOnEnemyKilled(combat.enemyDefIds[slot]);
     char vm[28]; snprintf(vm, 28, "%.20s falls.", e->name); logPush(vm);
+    fireLogMessages(LOGTRIG_ENEMY_KILLED, 0xFF, slot);
 }
 
 /* Advance targetIndex to the next alive enemy (wrapping). */
@@ -254,6 +259,10 @@ static void advanceTarget(void) {
 }
 
 static void performPlayerAction(void) {
+    /* A log effect from the previous turn may have killed the current target */
+    if (combat.enemies[combat.targetIndex].maxHp == 0)
+        advanceTarget();
+
     Action *a   = &combat.actions[combat.selectedIndex];
     Enemy  *tgt = &combat.enemies[combat.targetIndex];
     combat.skipEnemyAttack = 0;
@@ -389,11 +398,22 @@ static void performPlayerAction(void) {
             tgt->hp -= getAttack() * 2 + a->power;
             break;
 
-        case ACTION_BLOOD_HOWL:
+        case ACTION_BLOOD_HOWL: {
             /* AoE — hits all alive enemies */
-            for (int i = 0; i < combat.enemyCount; i++)
-                if (combat.enemies[i].hp > 0) combat.enemies[i].hp -= a->power;
+            int totalDealt = 0;
+            for (int i = 0; i < combat.enemyCount; i++) {
+                if (combat.enemies[i].hp > 0) {
+                    int d = a->power < combat.enemies[i].hp ? a->power : combat.enemies[i].hp;
+                    combat.enemies[i].hp -= a->power;
+                    totalDealt += d;
+                }
+            }
+            char aoeMsg[28];
+            snprintf(aoeMsg, sizeof(aoeMsg), "Blood Howl: %d dmg.", totalDealt);
+            logPush(aoeMsg);
+            ehpBefore = tgt->hp; /* neutralise generic log below */
             break;
+        }
 
         case ACTION_BLOOD_SURGE: {
             int cost = a->power / 2;
@@ -474,6 +494,8 @@ static void performPlayerAction(void) {
         logPush(lm);
     }
 
+    fireLogMessages(LOGTRIG_ACTION, (uint8_t)a->type, combat.targetIndex);
+
     /* Domain XP for the action used */
     {
         uint8_t dom = actionGetDomain((uint8_t)a->type);
@@ -495,13 +517,9 @@ static void performPlayerAction(void) {
         int allDead = 1;
         for (int i = 0; i < combat.enemyCount; i++) {
             if (combat.enemies[i].hp <= 0 && combat.enemies[i].maxHp > 0) {
-                combat.enemies[i].hp = 0; /* clamp */
-                /* Only kill once — gate on maxHp still positive */
-                /* We repurpose maxHp=0 as "already processed" marker */
-                if (combat.enemies[i].maxHp > 0) {
-                    killEnemy(i);
-                    combat.enemies[i].maxHp = 0;
-                }
+                combat.enemies[i].hp = 0;
+                killEnemy(i);
+                combat.enemies[i].maxHp = 0; /* marks slot as processed */
             }
             if (combat.enemies[i].maxHp > 0) allDead = 0;
         }
@@ -539,6 +557,15 @@ static void performPlayerAction(void) {
         return;
     }
 
+    if (combat.phase == COMBAT_PHASE_ACTIVE) {
+        int phpAfter = (int)player.hp;
+        if (phpAfter < phpBefore)
+            fireLogMessages(LOGTRIG_PLAYER_HURT, 0xFF, -1);
+        if (phpAfter < getMaxHp() / 3)
+            fireLogMessages(LOGTRIG_PLAYER_LOW_HP, 0xFF, -1);
+        fireLogMessages(LOGTRIG_TURN_END, 0xFF, -1);
+    }
+
     combat.isFirstTurn = 0;
     generateActions();
 }
@@ -555,12 +582,18 @@ void handleCombatInput(int key) {
     }
     switch (key) {
         case VK_LEFT:
-        case VK_UP:
             combat.selectedIndex = (combat.selectedIndex + combat.actionCount - 1) % combat.actionCount;
             break;
         case VK_RIGHT:
-        case VK_DOWN:
             combat.selectedIndex = (combat.selectedIndex + 1) % combat.actionCount;
+            break;
+        case VK_UP: {
+            int maxScroll = combat.logCount > 8 ? combat.logCount - 8 : 0;
+            if (combat.logScroll < maxScroll) combat.logScroll++;
+            break;
+        }
+        case VK_DOWN:
+            if (combat.logScroll > 0) combat.logScroll--;
             break;
         case VK_TAB:
             advanceTarget();
@@ -749,14 +782,24 @@ void renderCombat(void) {
     /* ── Encounter log ──────────────────────────────────────────── */
     if (combat.logCount > 0) {
         fillRect(LP_X + 8, y + 4, LP_W - 16, 1, rgb(45, 30, 30));  y += 12;
-        for (int i = 0; i < combat.logCount; i++) {
-            int age = combat.logCount - 1 - i;  /* 0 = newest */
+
+        int end   = combat.logCount - combat.logScroll;
+        if (end < 0) end = 0;
+        int start = end - 8;
+        if (start < 0) start = 0;
+
+        if (start > 0) {
+            char more[20];
+            snprintf(more, sizeof(more), "^ %d more", start);
+            drawText(bx, y, more, rgb(45, 42, 60), 1);  y += 12;
+        }
+        for (int i = start; i < end; i++) {
+            int age = combat.logCount - 1 - i;
             uint32_t lc = age == 0 ? rgb(180, 170, 210)
                         : age == 1 ? rgb(130, 120, 155)
                         : age <= 3 ? rgb(85,  78,  108)
                         :            rgb(52,  48,  70);
-            drawText(bx, y, combat.log[i], lc, 1);
-            y += 12;
+            drawText(bx, y, combat.log[i], lc, 1);  y += 12;
         }
     }
 

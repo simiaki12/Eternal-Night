@@ -72,8 +72,9 @@ typedef struct {
     uint8_t     worldEnemyY[COMBAT_MAX_ENEMIES];
     EncounterType encounterType;
     uint32_t    modifiers;     /* ENCOUNTER_MOD_* bitmask */
-    char        log[8][28];   /* encounter log — newest at highest index */
+    char        log[128][28]; /* encounter log — newest at highest index */
     int         logCount;
+    int         logScroll;   /* entries from bottom; 0 = newest visible */
 } CombatState;
 
 extern CombatState combat;
@@ -84,3 +85,4 @@ void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods);
 void handleCombatInput(int key);
 void renderCombat(void);
 void returnToTown(void);
+void combatLog(const char *msg); /* public log push — for use from log_messages.c */
