@@ -61,6 +61,7 @@ typedef struct {
 typedef struct {
     uint16_t xp;
     uint8_t  level;
+    uint8_t  perk_points;
     uint32_t unlocked_nodes;  /* bitmask, bit i = node i unlocked */
 } PlayerDomainState;
 

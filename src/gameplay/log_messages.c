@@ -1,5 +1,5 @@
 #include "log_messages.h"
-#include "combat.h"
+#include "encounter.h"
 #include "player.h"
 #include "items.h"
 #include "world_enemies.h"
@@ -27,14 +27,14 @@ static int resolveTargets(LogFxTarget targetType, int slotHint, int *slots, int 
     (void)slotHint;
     switch (targetType) {
         case LOGFX_TARGET_FOCUSED:
-            if (combat.enemies[combat.targetIndex].maxHp > 0)
-                slots[count++] = combat.targetIndex;
+            if (encounter.enemies[encounter.targetIndex].maxHp > 0)
+                slots[count++] = encounter.targetIndex;
             break;
         case LOGFX_TARGET_WEAKEST: {
             int best = -1, bestHp = 0x7FFF;
-            for (int i = 0; i < combat.enemyCount; i++) {
-                if (combat.enemies[i].maxHp > 0 && combat.enemies[i].hp < bestHp) {
-                    bestHp = combat.enemies[i].hp;
+            for (int i = 0; i < encounter.enemyCount; i++) {
+                if (encounter.enemies[i].maxHp > 0 && encounter.enemies[i].hp < bestHp) {
+                    bestHp = encounter.enemies[i].hp;
                     best   = i;
                 }
             }
@@ -43,9 +43,9 @@ static int resolveTargets(LogFxTarget targetType, int slotHint, int *slots, int 
         }
         case LOGFX_TARGET_BIGGEST: {
             int best = -1, bestSz = -1;
-            for (int i = 0; i < combat.enemyCount; i++) {
-                if (combat.enemies[i].maxHp > 0 && (int)combat.enemies[i].size > bestSz) {
-                    bestSz = combat.enemies[i].size;
+            for (int i = 0; i < encounter.enemyCount; i++) {
+                if (encounter.enemies[i].maxHp > 0 && (int)encounter.enemies[i].size > bestSz) {
+                    bestSz = encounter.enemies[i].size;
                     best   = i;
                 }
             }
@@ -53,15 +53,15 @@ static int resolveTargets(LogFxTarget targetType, int slotHint, int *slots, int 
             break;
         }
         case LOGFX_TARGET_RANDOM: {
-            int alive[COMBAT_MAX_ENEMIES], n = 0;
-            for (int i = 0; i < combat.enemyCount; i++)
-                if (combat.enemies[i].maxHp > 0) alive[n++] = i;
+            int alive[ENCOUNTER_MAX_ENEMIES], n = 0;
+            for (int i = 0; i < encounter.enemyCount; i++)
+                if (encounter.enemies[i].maxHp > 0) alive[n++] = i;
             if (n > 0) slots[count++] = alive[rand() % n];
             break;
         }
         case LOGFX_TARGET_ALL:
-            for (int i = 0; i < combat.enemyCount && count < maxSlots; i++)
-                if (combat.enemies[i].maxHp > 0) slots[count++] = i;
+            for (int i = 0; i < encounter.enemyCount && count < maxSlots; i++)
+                if (encounter.enemies[i].maxHp > 0) slots[count++] = i;
             break;
     }
     return count;
@@ -70,40 +70,40 @@ static int resolveTargets(LogFxTarget targetType, int slotHint, int *slots, int 
 static void applyEffect(const LogMessage *m, int slotHint) {
     if (m->effectType == LOGFX_NONE) return;
 
-    int slots[COMBAT_MAX_ENEMIES];
+    int slots[ENCOUNTER_MAX_ENEMIES];
     int nTargets = resolveTargets((LogFxTarget)m->effectTarget, slotHint,
-                                  slots, COMBAT_MAX_ENEMIES);
+                                  slots, ENCOUNTER_MAX_ENEMIES);
 
     switch ((LogFxType)m->effectType) {
         case LOGFX_ADD_MOD:
-            combat.modifiers |= m->effectValue;
+            encounter.modifiers |= m->effectValue;
             break;
         case LOGFX_REMOVE_MOD:
-            combat.modifiers &= ~(uint32_t)m->effectValue;
+            encounter.modifiers &= ~(uint32_t)m->effectValue;
             break;
         case LOGFX_ENEMY_FLEE:
             for (int i = 0; i < nTargets; i++) {
                 int s = slots[i];
-                if (combat.enemies[s].maxHp > 0) {
+                if (encounter.enemies[s].maxHp > 0) {
                     char vm[28];
-                    snprintf(vm, sizeof(vm), "%.16s flees!", combat.enemies[s].name);
-                    combatLog(vm);
-                    combat.enemies[s].maxHp = 0;
-                    combat.enemies[s].hp    = 0;
+                    snprintf(vm, sizeof(vm), "%.16s flees!", encounter.enemies[s].name);
+                    encounterLog(vm);
+                    encounter.enemies[s].maxHp = 0;
+                    encounter.enemies[s].hp    = 0;
                 }
             }
             break;
         case LOGFX_ENEMY_STUN:
             for (int i = 0; i < nTargets; i++)
-                if (combat.enemies[slots[i]].maxHp > 0)
-                    combat.skipEnemyAttack = 1;
+                if (encounter.enemies[slots[i]].maxHp > 0)
+                    encounter.skipEnemyAttack = 1;
             break;
         case LOGFX_ENEMY_ATK_DOWN:
             for (int i = 0; i < nTargets; i++) {
                 int s = slots[i];
-                if (combat.enemies[s].maxHp > 0)
-                    combat.enemies[s].attack = combat.enemies[s].attack > m->effectValue
-                        ? combat.enemies[s].attack - m->effectValue : 1;
+                if (encounter.enemies[s].maxHp > 0)
+                    encounter.enemies[s].attack = encounter.enemies[s].attack > m->effectValue
+                        ? encounter.enemies[s].attack - m->effectValue : 1;
             }
             break;
         case LOGFX_HEAL_PLAYER: {
@@ -130,20 +130,20 @@ void fireLogMessages(LogTrigger trigger, uint8_t actionId, int slotHint) {
         if (m->actionId != 0xFF && m->actionId != actionId) continue;
         if (m->enemyDefId != 0xFF) {
             int ok = 0;
-            for (int ei = 0; ei < combat.enemyCount; ei++)
-                if (combat.enemies[ei].maxHp > 0 && combat.enemyDefIds[ei] == m->enemyDefId)
+            for (int ei = 0; ei < encounter.enemyCount; ei++)
+                if (encounter.enemies[ei].maxHp > 0 && encounter.enemyDefIds[ei] == m->enemyDefId)
                     { ok = 1; break; }
             if (!ok) continue;
         }
         if (m->encounterType != 0xFF &&
-            m->encounterType != (uint8_t)combat.encounterType) continue;
+            m->encounterType != (uint8_t)encounter.encounterType) continue;
         if (m->modRequired &&
-            (combat.modifiers & m->modRequired) != m->modRequired) continue;
+            (encounter.modifiers & m->modRequired) != m->modRequired) continue;
 
         if ((EnemyCond)m->enemyCond != ENEMYCOND_NONE) {
             int ok = 0;
-            for (int ei = 0; ei < combat.enemyCount && !ok; ei++) {
-                const Enemy *e = &combat.enemies[ei];
+            for (int ei = 0; ei < encounter.enemyCount && !ok; ei++) {
+                const Enemy *e = &encounter.enemies[ei];
                 if (e->maxHp == 0) continue;
                 switch ((EnemyCond)m->enemyCond) {
                     case ENEMYCOND_SIZE_GTE:
@@ -160,8 +160,8 @@ void fireLogMessages(LogTrigger trigger, uint8_t actionId, int slotHint) {
                         break;
                     case ENEMYCOND_COUNT_GTE: {
                         int alive = 0;
-                        for (int j = 0; j < combat.enemyCount; j++)
-                            if (combat.enemies[j].maxHp > 0) alive++;
+                        for (int j = 0; j < encounter.enemyCount; j++)
+                            if (encounter.enemies[j].maxHp > 0) alive++;
                         if (alive >= m->enemyCondVal) ok = 1;
                         break;
                     }
@@ -173,7 +173,7 @@ void fireLogMessages(LogTrigger trigger, uint8_t actionId, int slotHint) {
 
         if (m->chance < 100 && (rand() % 100) >= m->chance) continue;
 
-        combatLog(m->text);
+        encounterLog(m->text);
         applyEffect(m, slotHint);
     }
 }

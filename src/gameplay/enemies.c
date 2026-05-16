@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <windows.h>
 #include "enemies.h"
-#include "combat.h"
+#include "encounter.h"
 #include "world_enemies.h"
 
 EnemyDef  enemyDefs[ENEMY_DEF_MAX];
@@ -64,26 +64,26 @@ int loadEnemies(PakData data) {
 static const int s_ndx[8] = { -1, 0, 1, -1, 1, -1, 0,  1 };
 static const int s_ndy[8] = { -1,-1,-1,  0, 0,  1, 1,  1 };
 
-void startCombatFromPool(uint8_t poolId, int triggerX, int triggerY) {
+void encounterStartFromPool(uint8_t poolId, int triggerX, int triggerY) {
     int idx = (int)poolId - 1;
     if (idx < 0 || idx >= enemyPoolCount || enemyPools[idx].count == 0) {
-        if (enemyDefCount > 0) startCombat(&enemyDefs[0]);
+        if (enemyDefCount > 0) encounterStartCombat(&enemyDefs[0]);
         else return;
-        combat.fromWorldEnemy[0] = 1;
-        combat.worldEnemyX[0]    = (uint8_t)triggerX;
-        combat.worldEnemyY[0]    = (uint8_t)triggerY;
+        encounter.fromWorldEnemy[0] = 1;
+        encounter.worldEnemyX[0]    = (uint8_t)triggerX;
+        encounter.worldEnemyY[0]    = (uint8_t)triggerY;
         return;
     }
     EnemyPool *pool = &enemyPools[idx];
     uint8_t defId = pool->enemyIds[rand() % pool->count];
     if (defId >= (uint8_t)enemyDefCount) defId = 0;
-    startCombat(&enemyDefs[defId]);
-    combat.fromWorldEnemy[0] = 1;
-    combat.worldEnemyX[0]    = (uint8_t)triggerX;
-    combat.worldEnemyY[0]    = (uint8_t)triggerY;
+    encounterStartCombat(&enemyDefs[defId]);
+    encounter.fromWorldEnemy[0] = 1;
+    encounter.worldEnemyX[0]    = (uint8_t)triggerX;
+    encounter.worldEnemyY[0]    = (uint8_t)triggerY;
 
-    /* Pull neighboring world enemies (up to COMBAT_MAX_ENEMIES total) */
-    for (int d = 0; d < 8 && combat.enemyCount < COMBAT_MAX_ENEMIES; d++) {
+    /* Pull neighboring world enemies (up to ENCOUNTER_MAX_ENEMIES total) */
+    for (int d = 0; d < 8 && encounter.enemyCount < ENCOUNTER_MAX_ENEMIES; d++) {
         int nx = triggerX + s_ndx[d];
         int ny = triggerY + s_ndy[d];
         const WorldEnemy *nwe = worldEnemyAt(nx, ny);
@@ -93,6 +93,6 @@ void startCombatFromPool(uint8_t poolId, int triggerX, int triggerY) {
         EnemyPool *np  = &enemyPools[nidx];
         uint8_t nDefId = np->enemyIds[rand() % np->count];
         if (nDefId >= (uint8_t)enemyDefCount) continue;
-        combatAddEnemy(&enemyDefs[nDefId], (uint8_t)nx, (uint8_t)ny);
+        encounterAddEnemy(&enemyDefs[nDefId], (uint8_t)nx, (uint8_t)ny);
     }
 }

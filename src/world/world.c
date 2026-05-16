@@ -6,7 +6,7 @@
 #include "game.h"
 #include "gfx.h"
 #include "enemies.h"
-#include "combat.h"
+#include "encounter.h"
 #include "town.h"
 #include "player.h"
 #include "quests.h"
@@ -224,7 +224,7 @@ void updateWorld(void) {
     }
     int poolId = worldEnemiesUpdate((uint32_t)GetTickCount());
     if (poolId >= 0)
-        startCombatFromPool((uint8_t)poolId, worldPlayerX, worldPlayerY);
+        encounterStartFromPool((uint8_t)poolId, worldPlayerX, worldPlayerY);
 }
 
 static void triggerMapEvent(const MapEvent *ev) {
@@ -315,7 +315,7 @@ void handleWorldInput(int key) {
         const WorldEnemy *we = worldEnemyAt(newX, newY);
         if (we) {
             questOnZoneEntered(we->pool_id);
-            startCombatFromPool(we->pool_id, newX, newY);
+            encounterStartFromPool(we->pool_id, newX, newY);
         } else {
             const MapEvent *ev = findEvent(newX, newY);
             if (ev && ev->type != MAP_EV_ENEMY) questOnZoneEntered(ev->id);

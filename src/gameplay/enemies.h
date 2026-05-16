@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "pak.h"
 
-/* Enemy capability flags — same bits as ENEMY_* in combat.h */
+/* Enemy capability flags — same bits as ENEMY_* in encounter.h */
 #define EDEF_HAS_WEAPON  (1<<0)
 #define EDEF_EXECUTABLE  (1<<1)
 #define EDEF_BLOCKABLE   (1<<2)
@@ -51,4 +51,4 @@ extern EnemyPool enemyPools[ENEMY_POOL_MAX];
 extern int       enemyPoolCount;
 
 int  loadEnemies(PakData data);
-void startCombatFromPool(uint8_t poolId, int triggerX, int triggerY);
+void encounterStartFromPool(uint8_t poolId, int triggerX, int triggerY);

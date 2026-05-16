@@ -36,36 +36,23 @@ typedef enum {
     ACTION_HIDE     = 8,
     ACTION_EXECUTE  = 9,
     /* Domain: Combat */
-    ACTION_INTIMIDATE = 10,
-    ACTION_COUNTER    = 11,
-    ACTION_WAR_CRY    = 12,
-    ACTION_THREATEN   = 13,
-    ACTION_AMBUSH     = 14,
+    ACTION_GUARDED_STANCE = 10,
+    ACTION_SHIELD_BREAK   = 11,
+    ACTION_RIPOSTE        = 12,
     /* Domain: Trickery */
-    ACTION_VANISH     = 15,
-    ACTION_POISON     = 16,
-    ACTION_SET_TRAP   = 17,
-    ACTION_DECEIVE    = 18,
-    ACTION_PICKPOCKET = 19,
-    ACTION_INSPECT    = 20,
-    ACTION_TRACK      = 21,
+    ACTION_POCKET_SAND    = 13,
+    ACTION_FAKE_WEAKNESS  = 14,
     /* Domain: Blood */
-    ACTION_BLOOD_DRAIN = 22,
-    ACTION_BITE        = 23,
-    ACTION_BLOOD_HOWL  = 24,
-    ACTION_BLOOD_SURGE = 25,
-    ACTION_BLOOD_SCENT = 26,
+    ACTION_CRIMSON_RUSH   = 15,
+    ACTION_BLOOD_MIST     = 16,
+    ACTION_HEMORRHAGE     = 17,
+    ACTION_FEAST_FEAR     = 18,
+    ACTION_BAT_SWARM      = 19,
     /* Domain: Charm */
-    ACTION_DOMINATE      = 27,
-    ACTION_MESMERIZE     = 28,
-    ACTION_BRIBE         = 29,
-    ACTION_SILVER_TONGUE = 30,
-    ACTION_INTERROGATE   = 31,
-    /* Environmental */
-    ACTION_FEED     = 32,
-    ACTION_BLEND_IN = 33,
-    ACTION_RALLY    = 34,
-    ACTION_COUNT    = 35
+    ACTION_NOBLE_PRESENCE = 20,
+    ACTION_PROVE_SKILL    = 21,
+    ACTION_DUELIST_MARK   = 22,
+    ACTION_COUNT          = 23
 } ActionId;
 
 /* 64 bytes — pak-friendly, no pointers */

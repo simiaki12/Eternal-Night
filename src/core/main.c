@@ -11,7 +11,7 @@
 #include "gfx.h"
 #include "game.h"
 #include "enemies.h"
-#include "combat.h"
+#include "encounter.h"
 #include "town.h"
 #include "world.h"
 #include "domains.h"
@@ -426,7 +426,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             /* P is a global hotkey — opens domain tree from world */
             } else if (g_pendingKey == 'P' && (state == STATE_WORLD || state == STATE_DOMAINS)) {
                 state = (state == STATE_DOMAINS) ? STATE_WORLD : STATE_DOMAINS;
-            /* J toggles the quest log from any non-combat state */
+            /* J toggles the quest log from any non-encounter state */
             } else if (g_pendingKey == 'J' && state != STATE_COMBAT) {
                 if (state == STATE_QUEST_LOG) {
                     state = questLogSt.returnState;
@@ -435,7 +435,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     questLogSt.sel = 0;
                     state = STATE_QUEST_LOG;
                 }
-            /* C toggles the character sheet from any non-combat state */
+            /* C toggles the character sheet from any non-encounter state */
             } else if (g_pendingKey == 'C' && state != STATE_COMBAT && state != STATE_MAIN_MENU && state != STATE_LOADING) {
                 if (state == STATE_CHAR_SHEET)
                     state = g_charSheetReturn;
@@ -447,11 +447,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     ENCOUNTER_COMBAT, ENCOUNTER_SOCIAL, ENCOUNTER_INVESTIGATION,
                     ENCOUNTER_ENVIRONMENTAL, ENCOUNTER_HUNT
                 };
-                startEncounter(encTypes[g_pendingKey - '1'], &enemyDefs[0], 0);
+                encounterStart(encTypes[g_pendingKey - '1'], &enemyDefs[0], 0);
             } else {
                 switch (state) {
                     case STATE_WORLD:   handleWorldInput(g_pendingKey);   break;
-                    case STATE_COMBAT:  handleCombatInput(g_pendingKey);  break;
+                    case STATE_COMBAT:  handleEncounterInput(g_pendingKey);  break;
                     case STATE_MAIN_MENU: handleMainMenuInput(g_pendingKey); break;
                     case STATE_INVENTORY: handleInventoryInput(g_pendingKey); break;
                     case STATE_DOMAINS: handleDomainsInput(g_pendingKey); break;
@@ -502,7 +502,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     renderActionPanel("Your Actions", pool, cnt, g_worldActSel);
                 }
                 break;
-            case STATE_COMBAT:  renderCombat();  break;
+            case STATE_COMBAT:  renderEncounter();  break;
             case STATE_LOADING:   renderLoading();   break;
             case STATE_MAIN_MENU: renderMainMenu(); break;
             case STATE_INVENTORY: renderInventory(); break;

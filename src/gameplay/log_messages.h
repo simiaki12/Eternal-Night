@@ -7,7 +7,7 @@
 typedef enum {
     LOGTRIG_ACTION        = 0, /* after the player's action resolves  */
     LOGTRIG_ENEMY_KILLED  = 1, /* when any enemy drops to 0 HP        */
-    LOGTRIG_COMBAT_START  = 2, /* on startCombat / startEncounter     */
+    LOGTRIG_COMBAT_START  = 2, /* on encounterStartCombat / encounterStart     */
     LOGTRIG_TURN_END      = 3, /* after all counter-attacks resolve   */
     LOGTRIG_PLAYER_HURT   = 4, /* when player takes damage this turn  */
     LOGTRIG_PLAYER_LOW_HP = 5, /* when player HP falls below 33%      */

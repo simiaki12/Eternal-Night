@@ -28,7 +28,7 @@ typedef enum {
 #define ENEMY_BLOCKABLE   (1<<2)
 #define ENEMY_STUNNABLE   (1<<3)
 
-/* Live combat instance — separate from EnemyDef (the template in enemies.h) */
+/* Live encounter instance — separate from EnemyDef (the template in enemies.h) */
 typedef struct {
     char    name[16];
     int     hp;
@@ -47,42 +47,42 @@ typedef struct {
 
 typedef struct { ActionId type; uint8_t power; } Action;
 
-typedef enum { COMBAT_PHASE_ACTIVE, COMBAT_PHASE_VICTORY } CombatPhase;
+typedef enum { ENCOUNTER_PHASE_ACTIVE, ENCOUNTER_PHASE_VICTORY } EncounterPhase;
 
-#define COMBAT_MAX_ENEMIES 3
+#define ENCOUNTER_MAX_ENEMIES 3
 
 typedef struct {
-    Enemy       enemies[COMBAT_MAX_ENEMIES];
+    Enemy       enemies[ENCOUNTER_MAX_ENEMIES];
     int         enemyCount;
     int         targetIndex;
-    uint8_t     enemyDefIds[COMBAT_MAX_ENEMIES];
+    uint8_t     enemyDefIds[ENCOUNTER_MAX_ENEMIES];
     Action      actions[4];
     int         actionCount;
     int         selectedIndex;
     int         isFirstTurn;
     int         skipEnemyAttack;
-    CombatPhase phase;
+    EncounterPhase phase;
     int         gainedGold;
     uint8_t     gainedDomainXp[14]; /* indexed by DOMAIN_* — XP earned this fight */
     uint8_t     droppedItems[4];
     int         droppedCount;
-    PakData     enemyImgs[COMBAT_MAX_ENEMIES];
-    uint8_t     fromWorldEnemy[COMBAT_MAX_ENEMIES];
-    uint8_t     worldEnemyX[COMBAT_MAX_ENEMIES];
-    uint8_t     worldEnemyY[COMBAT_MAX_ENEMIES];
+    PakData     enemyImgs[ENCOUNTER_MAX_ENEMIES];
+    uint8_t     fromWorldEnemy[ENCOUNTER_MAX_ENEMIES];
+    uint8_t     worldEnemyX[ENCOUNTER_MAX_ENEMIES];
+    uint8_t     worldEnemyY[ENCOUNTER_MAX_ENEMIES];
     EncounterType encounterType;
     uint32_t    modifiers;     /* ENCOUNTER_MOD_* bitmask */
     char        log[128][28]; /* encounter log — newest at highest index */
     int         logCount;
     int         logScroll;   /* entries from bottom; 0 = newest visible */
-} CombatState;
+} EncounterState;
 
-extern CombatState combat;
+extern EncounterState encounter;
 
-void startCombat(const EnemyDef *def);
-void combatAddEnemy(const EnemyDef *def, uint8_t wx, uint8_t wy);
-void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods);
-void handleCombatInput(int key);
-void renderCombat(void);
+void encounterStartCombat(const EnemyDef *def);
+void encounterAddEnemy(const EnemyDef *def, uint8_t wx, uint8_t wy);
+void encounterStart(EncounterType type, const EnemyDef *def, uint32_t mods);
+void handleEncounterInput(int key);
+void renderEncounter(void);
 void returnToTown(void);
-void combatLog(const char *msg); /* public log push — for use from log_messages.c */
+void encounterLog(const char *msg); /* public log push — for use from log_messages.c */

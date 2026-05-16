@@ -19,6 +19,8 @@ void playerInit(void) {
     player.agility      =  3;
     player.hp           = player.maxHp;
     player.focusedDomain = DOMAIN_NONE;
+    for (int i = 0; i < DOMAIN_COUNT; i++)
+        player.domains[i].perk_points = 10;
 }
 
 void enterDeath(void) {

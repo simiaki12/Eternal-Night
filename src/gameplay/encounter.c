@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "combat.h"
+#include "encounter.h"
 #include "actions.h"
 #include "domains.h"
 #include "log_messages.h"
@@ -15,32 +15,32 @@
 #include "loot.h"
 #include "world_enemies.h"
 
-CombatState combat;
+EncounterState encounter;
 
 
 /* Lazily-loaded sprites for action cards — indexed by action id, loaded on first render */
 static PakData actionImgs[ACTION_MAX];
 
 static void logPush(const char *msg) {
-    if (combat.logCount < 128) {
-        strncpy(combat.log[combat.logCount], msg, sizeof(combat.log[0]) - 1);
-        combat.log[combat.logCount][sizeof(combat.log[0]) - 1] = '\0';
-        combat.logCount++;
+    if (encounter.logCount < 128) {
+        strncpy(encounter.log[encounter.logCount], msg, sizeof(encounter.log[0]) - 1);
+        encounter.log[encounter.logCount][sizeof(encounter.log[0]) - 1] = '\0';
+        encounter.logCount++;
     }
-    combat.logScroll = 0;
+    encounter.logScroll = 0;
 }
 
-void combatLog(const char *msg) { logPush(msg); }
+void encounterLog(const char *msg) { logPush(msg); }
 
 static int checkContext(const ActionDef *def) {
-    const Enemy *tgt = &combat.enemies[combat.targetIndex];
+    const Enemy *tgt = &encounter.enemies[encounter.targetIndex];
     uint8_t ctx = def->contextFlags;
-    if ((ctx & ACT_CTX_FIRST_TURN)   && !combat.isFirstTurn)               return 0;
+    if ((ctx & ACT_CTX_FIRST_TURN)   && !encounter.isFirstTurn)               return 0;
     if ((ctx & ACT_CTX_ENEMY_WEAPON) && !(tgt->flags & ENEMY_HAS_WEAPON))  return 0;
     if ((ctx & ACT_CTX_CAN_STUN)     && !(tgt->flags & ENEMY_STUNNABLE))   return 0;
     if ((ctx & ACT_CTX_PLAYER_HURT)  && (int)player.hp >= getMaxHp() / 2)  return 0;
-    if ((ctx & ACT_CTX_REQUIRES_DARK) && !(combat.modifiers & ENCOUNTER_MOD_DARK))       return 0;
-    if ((ctx & ACT_CTX_BLOCKED_HOLY)  && (combat.modifiers & ENCOUNTER_MOD_HOLY_GROUND)) return 0;
+    if ((ctx & ACT_CTX_REQUIRES_DARK) && !(encounter.modifiers & ENCOUNTER_MOD_DARK))       return 0;
+    if ((ctx & ACT_CTX_BLOCKED_HOLY)  && (encounter.modifiers & ENCOUNTER_MOD_HOLY_GROUND)) return 0;
     if (ctx & ACT_CTX_EXECUTABLE) {
         if (!(tgt->flags & ENEMY_EXECUTABLE))  return 0;
         if (tgt->hp > tgt->maxHp / 3)          return 0;
@@ -49,7 +49,7 @@ static int checkContext(const ActionDef *def) {
 }
 
 static int computeWeight(const ActionDef *def) {
-    const Enemy *tgt = &combat.enemies[combat.targetIndex];
+    const Enemy *tgt = &encounter.enemies[encounter.targetIndex];
     int w = def->baseWeight;
     switch (def->id) {
         case ACTION_STRONG:
@@ -71,18 +71,18 @@ static int computeWeight(const ActionDef *def) {
     }
 
     /* Encounter modifier adjustments */
-    if (combat.modifiers & ENCOUNTER_MOD_DARK) {
+    if (encounter.modifiers & ENCOUNTER_MOD_DARK) {
         if (def->id == ACTION_BACKSTAB) w += 15;
         if (def->id == ACTION_HIDE)     w += 10;
     }
-    if (combat.modifiers & ENCOUNTER_MOD_HOLY_GROUND) {
+    if (encounter.modifiers & ENCOUNTER_MOD_HOLY_GROUND) {
         if (def->id == ACTION_HEAL)     w -= 20;
     }
-    if (combat.modifiers & ENCOUNTER_MOD_CROWDED) {
+    if (encounter.modifiers & ENCOUNTER_MOD_CROWDED) {
         if (def->id == ACTION_CALM)     w += 15;
         if (def->id == ACTION_HIDE)     w += 10;
     }
-    if (combat.modifiers & ENCOUNTER_MOD_BURNING) {
+    if (encounter.modifiers & ENCOUNTER_MOD_BURNING) {
         if (def->id == ACTION_STRONG)   w += 10;
         if (def->id == ACTION_DEFEND)   w -= 10;
     }
@@ -102,7 +102,7 @@ static int computeWeight(const ActionDef *def) {
 
 static void generateActions(void) {
     uint8_t pool[ACTION_MAX];
-    int poolSize = buildActionPool(pool, (uint8_t)combat.encounterType);
+    int poolSize = buildActionPool(pool, (uint8_t)encounter.encounterType);
 
     typedef struct { uint8_t id; int weight; } Candidate;
     Candidate candidates[ACTION_MAX];
@@ -117,7 +117,7 @@ static void generateActions(void) {
         candCount++;
     }
 
-    combat.actionCount = 0;
+    encounter.actionCount = 0;
     int picks = candCount < 4 ? candCount : 4;
     for (int pick = 0; pick < picks; pick++) {
         int total = 0;
@@ -128,29 +128,29 @@ static void generateActions(void) {
             acc += candidates[i].weight;
             if (r < acc) {
                 const ActionDef *chosen = getActionDef(candidates[i].id);
-                combat.actions[combat.actionCount++] = (Action){ (ActionId)chosen->id, chosen->power };
+                encounter.actions[encounter.actionCount++] = (Action){ (ActionId)chosen->id, chosen->power };
                 candidates[i] = candidates[--candCount];
                 break;
             }
         }
     }
-    combat.selectedIndex = 0;
+    encounter.selectedIndex = 0;
 }
 
 static void loadEnemyImg(int slot, const char *imgName) {
-    if (combat.enemyImgs[slot].data) {
-        free(combat.enemyImgs[slot].data);
-        combat.enemyImgs[slot].data = NULL;
+    if (encounter.enemyImgs[slot].data) {
+        free(encounter.enemyImgs[slot].data);
+        encounter.enemyImgs[slot].data = NULL;
     }
     if (imgName[0]) {
         char path[32];
         snprintf(path, sizeof(path), "assets/sprites/%s.bin", imgName);
-        combat.enemyImgs[slot] = pakRead(path);
+        encounter.enemyImgs[slot] = pakRead(path);
     }
 }
 
 static void fillEnemySlot(int slot, const EnemyDef *def) {
-    Enemy *e = &combat.enemies[slot];
+    Enemy *e = &encounter.enemies[slot];
     memcpy(e->name, def->name, 16);
     e->hp           = def->hp;
     e->maxHp        = def->hp;
@@ -165,40 +165,40 @@ static void fillEnemySlot(int slot, const EnemyDef *def) {
     e->goldDrop     = def->goldDrop;
     e->lootTableId  = def->lootTableId;
     int idx = (int)(def - enemyDefs);
-    combat.enemyDefIds[slot]    = (idx >= 0 && idx < enemyDefCount) ? (uint8_t)idx : 0xFF;
-    combat.fromWorldEnemy[slot] = 0;
-    combat.worldEnemyX[slot]    = 0;
-    combat.worldEnemyY[slot]    = 0;
+    encounter.enemyDefIds[slot]    = (idx >= 0 && idx < enemyDefCount) ? (uint8_t)idx : 0xFF;
+    encounter.fromWorldEnemy[slot] = 0;
+    encounter.worldEnemyX[slot]    = 0;
+    encounter.worldEnemyY[slot]    = 0;
     loadEnemyImg(slot, def->imgName);
 }
 
-void startCombat(const EnemyDef *def) {
+void encounterStartCombat(const EnemyDef *def) {
     /* Free all enemy images and clear stale slot data */
-    for (int i = 0; i < COMBAT_MAX_ENEMIES; i++) {
-        if (combat.enemyImgs[i].data) { free(combat.enemyImgs[i].data); combat.enemyImgs[i].data = NULL; }
-        combat.enemies[i].hp           = 0;
-        combat.enemies[i].maxHp        = 0;
-        combat.fromWorldEnemy[i]       = 0;
-        combat.worldEnemyX[i]          = 0;
-        combat.worldEnemyY[i]          = 0;
+    for (int i = 0; i < ENCOUNTER_MAX_ENEMIES; i++) {
+        if (encounter.enemyImgs[i].data) { free(encounter.enemyImgs[i].data); encounter.enemyImgs[i].data = NULL; }
+        encounter.enemies[i].hp           = 0;
+        encounter.enemies[i].maxHp        = 0;
+        encounter.fromWorldEnemy[i]       = 0;
+        encounter.worldEnemyX[i]          = 0;
+        encounter.worldEnemyY[i]          = 0;
     }
 
     fillEnemySlot(0, def);
-    combat.enemyCount      = 1;
-    combat.targetIndex     = 0;
-    combat.isFirstTurn     = 1;
-    combat.skipEnemyAttack = 0;
-    combat.phase           = COMBAT_PHASE_ACTIVE;
-    combat.gainedGold      = 0;
-    combat.droppedCount    = 0;
-    combat.encounterType   = ENCOUNTER_COMBAT;
-    combat.modifiers       = 0;
-    combat.logCount        = 0;
-    combat.logScroll       = 0;
-    memset(combat.gainedDomainXp, 0, sizeof(combat.gainedDomainXp));
+    encounter.enemyCount      = 1;
+    encounter.targetIndex     = 0;
+    encounter.isFirstTurn     = 1;
+    encounter.skipEnemyAttack = 0;
+    encounter.phase           = ENCOUNTER_PHASE_ACTIVE;
+    encounter.gainedGold      = 0;
+    encounter.droppedCount    = 0;
+    encounter.encounterType   = ENCOUNTER_COMBAT;
+    encounter.modifiers       = 0;
+    encounter.logCount        = 0;
+    encounter.logScroll       = 0;
+    memset(encounter.gainedDomainXp, 0, sizeof(encounter.gainedDomainXp));
     {
         char opening[28];
-        snprintf(opening, 28, "%.12s bars your path.", combat.enemies[0].name);
+        snprintf(opening, 28, "%.12s bars your path.", encounter.enemies[0].name);
         logPush(opening);
     }
     fireLogMessages(LOGTRIG_COMBAT_START, 0xFF, 0);
@@ -206,23 +206,23 @@ void startCombat(const EnemyDef *def) {
     state = STATE_COMBAT;
 }
 
-void combatAddEnemy(const EnemyDef *def, uint8_t wx, uint8_t wy) {
-    if (combat.enemyCount >= COMBAT_MAX_ENEMIES) return;
-    int slot = combat.enemyCount++;
+void encounterAddEnemy(const EnemyDef *def, uint8_t wx, uint8_t wy) {
+    if (encounter.enemyCount >= ENCOUNTER_MAX_ENEMIES) return;
+    int slot = encounter.enemyCount++;
     fillEnemySlot(slot, def);
-    combat.fromWorldEnemy[slot] = 1;
-    combat.worldEnemyX[slot]    = wx;
-    combat.worldEnemyY[slot]    = wy;
+    encounter.fromWorldEnemy[slot] = 1;
+    encounter.worldEnemyX[slot]    = wx;
+    encounter.worldEnemyY[slot]    = wy;
     char msg[28];
     snprintf(msg, 28, "%.12s joins the fight!", def->name);
     logPush(msg);
 }
 
-void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods) {
-    startCombat(def);
-    combat.encounterType = type;
-    combat.modifiers     = mods;
-    combat.logCount      = 0;
+void encounterStart(EncounterType type, const EnemyDef *def, uint32_t mods) {
+    encounterStartCombat(def);
+    encounter.encounterType = type;
+    encounter.modifiers     = mods;
+    encounter.logCount      = 0;
     const char *opener;
     switch (type) {
         case ENCOUNTER_SOCIAL:        opener = "A tense exchange begins.";  break;
@@ -238,34 +238,34 @@ void startEncounter(EncounterType type, const EnemyDef *def, uint32_t mods) {
 
 /* Kill one enemy: roll loot/gold, fire quest hook, log the fall. */
 static void killEnemy(int slot) {
-    Enemy *e = &combat.enemies[slot];
+    Enemy *e = &encounter.enemies[slot];
     if (e->goldDrop > 0) {
         int g = rand() % e->goldDrop + 1;
         player.gold       += (uint16_t)g;
-        combat.gainedGold += g;
+        encounter.gainedGold += g;
     }
-    rollLoot(e->lootTableId, combat.droppedItems, &combat.droppedCount);
-    questOnEnemyKilled(combat.enemyDefIds[slot]);
+    rollLoot(e->lootTableId, encounter.droppedItems, &encounter.droppedCount);
+    questOnEnemyKilled(encounter.enemyDefIds[slot]);
     char vm[28]; snprintf(vm, 28, "%.20s falls.", e->name); logPush(vm);
     fireLogMessages(LOGTRIG_ENEMY_KILLED, 0xFF, slot);
 }
 
 /* Advance targetIndex to the next alive enemy (wrapping). */
 static void advanceTarget(void) {
-    for (int i = 1; i <= combat.enemyCount; i++) {
-        int next = (combat.targetIndex + i) % combat.enemyCount;
-        if (combat.enemies[next].hp > 0) { combat.targetIndex = next; return; }
+    for (int i = 1; i <= encounter.enemyCount; i++) {
+        int next = (encounter.targetIndex + i) % encounter.enemyCount;
+        if (encounter.enemies[next].hp > 0) { encounter.targetIndex = next; return; }
     }
 }
 
 static void performPlayerAction(void) {
     /* A log effect from the previous turn may have killed the current target */
-    if (combat.enemies[combat.targetIndex].maxHp == 0)
+    if (encounter.enemies[encounter.targetIndex].maxHp == 0)
         advanceTarget();
 
-    Action *a   = &combat.actions[combat.selectedIndex];
-    Enemy  *tgt = &combat.enemies[combat.targetIndex];
-    combat.skipEnemyAttack = 0;
+    Action *a   = &encounter.actions[encounter.selectedIndex];
+    Enemy  *tgt = &encounter.enemies[encounter.targetIndex];
+    encounter.skipEnemyAttack = 0;
     int ehpBefore = tgt->hp;
     int phpBefore = (int)player.hp;
 
@@ -295,11 +295,11 @@ static void performPlayerAction(void) {
 
         case ACTION_BACKSTAB:
             tgt->hp -= getAttack() + a->power;
-            combat.skipEnemyAttack = 1;
+            encounter.skipEnemyAttack = 1;
             break;
 
         case ACTION_STUN:
-            combat.skipEnemyAttack = 1;
+            encounter.skipEnemyAttack = 1;
             tgt->flags &= ~ENEMY_STUNNABLE;
             break;
 
@@ -309,7 +309,7 @@ static void performPlayerAction(void) {
             break;
 
         case ACTION_HIDE:
-            combat.skipEnemyAttack = (player.agility > tgt->perception);
+            encounter.skipEnemyAttack = (player.agility > tgt->perception);
             break;
 
         case ACTION_EXECUTE:
@@ -317,162 +317,106 @@ static void performPlayerAction(void) {
             break;
 
         /* ── Domain: Combat ─────────────────────────────────────── */
-        case ACTION_INTIMIDATE:
-            tgt->attack = tgt->attack > 1 ? tgt->attack / 2 : 1;
-            combat.skipEnemyAttack = 1;
+        case ACTION_GUARDED_STANCE:
+            /* Small preemptive hit; incoming damage is halved (see enemy attack phase) */
+            tgt->hp -= a->power;
             break;
 
-        case ACTION_COUNTER:
-            tgt->hp -= getAttack() * 2;
-            combat.skipEnemyAttack = 1;
+        case ACTION_SHIELD_BREAK:
+            /* Crush defenses open, deal bonus damage */
+            tgt->defense = 0;
+            tgt->hp -= a->power;
             break;
 
-        case ACTION_WAR_CRY:
-            combat.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_THREATEN:
-            if (combat.encounterType == ENCOUNTER_SOCIAL) {
-                combat.phase = COMBAT_PHASE_VICTORY;
-                combat.skipEnemyAttack = 1;
-            } else {
-                tgt->attack = tgt->attack > 1 ? tgt->attack / 2 : 1;
-            }
-            break;
-
-        case ACTION_AMBUSH:
+        case ACTION_RIPOSTE:
+            /* Swift counter-strike; skip enemy retaliation */
             tgt->hp -= getAttack() + a->power;
-            combat.skipEnemyAttack = 1;
+            encounter.skipEnemyAttack = 1;
             break;
 
         /* ── Domain: Trickery ───────────────────────────────────── */
-        case ACTION_VANISH:
-            combat.skipEnemyAttack = 1;
-            tgt->perception = tgt->perception > 1 ? tgt->perception - 1 : 0;
+        case ACTION_POCKET_SAND:
+            /* Blind: strip perception, skip counter */
+            tgt->perception = 0;
+            encounter.skipEnemyAttack = 1;
             break;
 
-        case ACTION_POISON:
-            tgt->hp     -= getAttack();
-            tgt->attack  = tgt->attack > 1 ? tgt->attack - 1 : 1;
-            break;
-
-        case ACTION_SET_TRAP:
-            tgt->hp -= a->power;
-            combat.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_DECEIVE:
-            combat.phase = COMBAT_PHASE_VICTORY;
-            combat.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_PICKPOCKET: {
-            int stolen = tgt->goldDrop / 2 + 1;
-            player.gold        += (uint16_t)stolen;
-            combat.gainedGold  += stolen;
-            combat.skipEnemyAttack = 1;
-            break;
-        }
-
-        case ACTION_INSPECT:
-            tgt->defense = tgt->defense > 1 ? tgt->defense / 2 : 0;
-            combat.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_TRACK:
+        case ACTION_FAKE_WEAKNESS:
+            /* Bait the enemy into overextending, then punish */
             tgt->hp -= getAttack() + a->power;
-            combat.skipEnemyAttack = 1;
+            encounter.skipEnemyAttack = 1;
             break;
 
         /* ── Domain: Blood ──────────────────────────────────────── */
-        case ACTION_BLOOD_DRAIN: {
-            int dmg = getAttack() + a->power;
-            tgt->hp -= dmg;
-            int newHp = (int)player.hp + dmg / 2;
-            int cap   = getMaxHp();
-            player.hp = (uint16_t)(newHp > cap ? cap : newHp);
+        case ACTION_CRIMSON_RUSH:
+            /* Wounded fury: strike twice (simulated as double hit) */
+            tgt->hp -= getAttack() + a->power;
+            encounter.skipEnemyAttack = 1;
+            break;
+
+        case ACTION_BLOOD_MIST: {
+            /* Dissolve into fog: skip all counters, blind every enemy */
+            encounter.skipEnemyAttack = 1;
+            for (int i = 0; i < encounter.enemyCount; i++)
+                if (encounter.enemies[i].perception > 1) encounter.enemies[i].perception--;
             break;
         }
 
-        case ACTION_BITE:
-            tgt->hp -= getAttack() * 2 + a->power;
+        case ACTION_HEMORRHAGE:
+            /* Exploit fresh wounds on a weakened target */
+            tgt->hp -= getAttack() + a->power;
             break;
 
-        case ACTION_BLOOD_HOWL: {
-            /* AoE — hits all alive enemies */
+        case ACTION_FEAST_FEAR: {
+            /* Drain a terrified (stunnable) enemy; restore HP */
+            int dmg = getAttack() + a->power;
+            tgt->hp -= dmg;
+            int newHp = (int)player.hp + a->power;
+            int cap   = getMaxHp();
+            player.hp = (uint16_t)(newHp > cap ? cap : newHp);
+            tgt->flags &= ~ENEMY_STUNNABLE;
+            encounter.skipEnemyAttack = 1;
+            break;
+        }
+
+        case ACTION_BAT_SWARM: {
+            /* AoE darkness: chip all enemies, disrupt counters */
             int totalDealt = 0;
-            for (int i = 0; i < combat.enemyCount; i++) {
-                if (combat.enemies[i].hp > 0) {
-                    int d = a->power < combat.enemies[i].hp ? a->power : combat.enemies[i].hp;
-                    combat.enemies[i].hp -= a->power;
+            for (int i = 0; i < encounter.enemyCount; i++) {
+                if (encounter.enemies[i].hp > 0 && encounter.enemies[i].maxHp > 0) {
+                    int d = a->power < encounter.enemies[i].hp ? a->power : encounter.enemies[i].hp;
+                    encounter.enemies[i].hp -= a->power;
                     totalDealt += d;
                 }
             }
             char aoeMsg[28];
-            snprintf(aoeMsg, sizeof(aoeMsg), "Blood Howl: %d dmg.", totalDealt);
+            snprintf(aoeMsg, sizeof(aoeMsg), "Bat Swarm: %d dmg.", totalDealt);
             logPush(aoeMsg);
-            ehpBefore = tgt->hp; /* neutralise generic log below */
-            break;
-        }
-
-        case ACTION_BLOOD_SURGE: {
-            int cost = a->power / 2;
-            player.hp = ((int)player.hp > cost) ? (uint16_t)(player.hp - cost) : 1;
-            tgt->hp -= getAttack() * 2 + a->power;
-            combat.skipEnemyAttack = 1;
-            break;
-        }
-
-        case ACTION_BLOOD_SCENT: {
-            int bonus = (tgt->hp < tgt->maxHp / 2) ? a->power * 2 : a->power;
-            tgt->hp -= getAttack() + bonus;
+            ehpBefore = tgt->hp;
+            encounter.skipEnemyAttack = 1;
             break;
         }
 
         /* ── Domain: Charm ──────────────────────────────────────── */
-        case ACTION_DOMINATE:
-            combat.phase = COMBAT_PHASE_VICTORY;
-            combat.skipEnemyAttack = 1;
+        case ACTION_NOBLE_PRESENCE:
+            /* First-turn aura: halve every enemy's attack, skip counters */
+            encounter.skipEnemyAttack = 1;
+            for (int i = 0; i < encounter.enemyCount; i++)
+                encounter.enemies[i].attack = encounter.enemies[i].attack > 1
+                    ? encounter.enemies[i].attack / 2 : 1;
             break;
 
-        case ACTION_MESMERIZE:
-            combat.skipEnemyAttack = 1;
-            tgt->flags &= ~ENEMY_STUNNABLE;
+        case ACTION_PROVE_SKILL:
+            /* Humiliate an armed foe: deal power damage, halve their attack */
+            tgt->hp -= a->power;
+            tgt->attack = tgt->attack > 1 ? tgt->attack / 2 : 1;
+            encounter.skipEnemyAttack = 1;
             break;
 
-        case ACTION_BRIBE: {
-            const int BRIBE_COST = 15;
-            if (player.gold >= BRIBE_COST) {
-                player.gold -= BRIBE_COST;
-                combat.phase = COMBAT_PHASE_VICTORY;
-            } else {
-                combat.skipEnemyAttack = 1;
-            }
-            break;
-        }
-
-        case ACTION_SILVER_TONGUE:
-            combat.phase = COMBAT_PHASE_VICTORY;
-            combat.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_INTERROGATE:
-            tgt->defense = tgt->defense > 1 ? tgt->defense / 2 : 0;
-            combat.skipEnemyAttack = 1;
-            break;
-
-        /* ── Environmental ──────────────────────────────────────── */
-        case ACTION_FEED:
-        case ACTION_RALLY: {
-            int newHp = (int)player.hp + a->power;
-            int cap   = getMaxHp();
-            player.hp = (uint16_t)(newHp > cap ? cap : newHp);
-            break;
-        }
-
-        case ACTION_BLEND_IN:
-            combat.skipEnemyAttack = 1;
-            tgt->perception = tgt->perception > 2 ? tgt->perception - 2 : 0;
+        case ACTION_DUELIST_MARK:
+            /* Challenge: open with a strong blow and strip all defense */
+            tgt->hp -= getAttack() + a->power;
+            tgt->defense = 0;
             break;
 
         default:
@@ -494,39 +438,39 @@ static void performPlayerAction(void) {
         logPush(lm);
     }
 
-    fireLogMessages(LOGTRIG_ACTION, (uint8_t)a->type, combat.targetIndex);
+    fireLogMessages(LOGTRIG_ACTION, (uint8_t)a->type, encounter.targetIndex);
 
     /* Domain XP for the action used */
     {
         uint8_t dom = actionGetDomain((uint8_t)a->type);
         if (dom != 0xFF) {
             domainAwardXp(dom, 1);
-            if (combat.gainedDomainXp[dom] < 255)
-                combat.gainedDomainXp[dom]++;
+            if (encounter.gainedDomainXp[dom] < 255)
+                encounter.gainedDomainXp[dom]++;
         }
     }
 
-    /* Non-combat encounters: any action resolves the scene */
-    if (combat.encounterType != ENCOUNTER_COMBAT && combat.phase == COMBAT_PHASE_ACTIVE) {
-        combat.phase = COMBAT_PHASE_VICTORY;
-        combat.skipEnemyAttack = 1;
+    /* Non-encounter encounters: any action resolves the scene */
+    if (encounter.encounterType != ENCOUNTER_COMBAT && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+        encounter.phase = ENCOUNTER_PHASE_VICTORY;
+        encounter.skipEnemyAttack = 1;
     }
 
     /* Kill any enemies that reached 0 HP; check for full victory */
-    if (combat.phase == COMBAT_PHASE_ACTIVE) {
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
         int allDead = 1;
-        for (int i = 0; i < combat.enemyCount; i++) {
-            if (combat.enemies[i].hp <= 0 && combat.enemies[i].maxHp > 0) {
-                combat.enemies[i].hp = 0;
+        for (int i = 0; i < encounter.enemyCount; i++) {
+            if (encounter.enemies[i].hp <= 0 && encounter.enemies[i].maxHp > 0) {
+                encounter.enemies[i].hp = 0;
                 killEnemy(i);
-                combat.enemies[i].maxHp = 0; /* marks slot as processed */
+                encounter.enemies[i].maxHp = 0; /* marks slot as processed */
             }
-            if (combat.enemies[i].maxHp > 0) allDead = 0;
+            if (encounter.enemies[i].maxHp > 0) allDead = 0;
         }
         if (allDead) {
-            combat.phase = COMBAT_PHASE_VICTORY;
-            combat.skipEnemyAttack = 1;
-        } else if (combat.enemies[combat.targetIndex].maxHp == 0) {
+            encounter.phase = ENCOUNTER_PHASE_VICTORY;
+            encounter.skipEnemyAttack = 1;
+        } else if (encounter.enemies[encounter.targetIndex].maxHp == 0) {
             advanceTarget();
         }
     }
@@ -538,14 +482,14 @@ static void performPlayerAction(void) {
     }
 
     /* Each surviving enemy counter-attacks */
-    if (!combat.skipEnemyAttack && combat.phase == COMBAT_PHASE_ACTIVE) {
-        for (int i = 0; i < combat.enemyCount; i++) {
-            if (combat.enemies[i].maxHp == 0) continue; /* dead */
-            int dmg = combat.enemies[i].attack;
-            if (a->type == ACTION_DEFEND) dmg = dmg / 2 + 1;
+    if (!encounter.skipEnemyAttack && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+        for (int i = 0; i < encounter.enemyCount; i++) {
+            if (encounter.enemies[i].maxHp == 0) continue; /* dead */
+            int dmg = encounter.enemies[i].attack;
+            if (a->type == ACTION_DEFEND || a->type == ACTION_GUARDED_STANCE) dmg = dmg / 2 + 1;
             player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
             char cm[28];
-            snprintf(cm, 28, "%.10s: %d dmg.", combat.enemies[i].name, dmg);
+            snprintf(cm, 28, "%.10s: %d dmg.", encounter.enemies[i].name, dmg);
             logPush(cm);
             if (player.hp == 0) break;
         }
@@ -557,7 +501,7 @@ static void performPlayerAction(void) {
         return;
     }
 
-    if (combat.phase == COMBAT_PHASE_ACTIVE) {
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
         int phpAfter = (int)player.hp;
         if (phpAfter < phpBefore)
             fireLogMessages(LOGTRIG_PLAYER_HURT, 0xFF, -1);
@@ -566,34 +510,34 @@ static void performPlayerAction(void) {
         fireLogMessages(LOGTRIG_TURN_END, 0xFF, -1);
     }
 
-    combat.isFirstTurn = 0;
+    encounter.isFirstTurn = 0;
     generateActions();
 }
 
-void handleCombatInput(int key) {
-    if (combat.phase == COMBAT_PHASE_VICTORY) {
+void handleEncounterInput(int key) {
+    if (encounter.phase == ENCOUNTER_PHASE_VICTORY) {
         if (key == VK_RETURN || key == VK_ESCAPE) {
-            for (int i = 0; i < combat.enemyCount; i++)
-                if (combat.fromWorldEnemy[i])
-                    worldEnemyRemoveAt(combat.worldEnemyX[i], combat.worldEnemyY[i]);
+            for (int i = 0; i < encounter.enemyCount; i++)
+                if (encounter.fromWorldEnemy[i])
+                    worldEnemyRemoveAt(encounter.worldEnemyX[i], encounter.worldEnemyY[i]);
             state = STATE_WORLD;
         }
         return;
     }
     switch (key) {
         case VK_LEFT:
-            combat.selectedIndex = (combat.selectedIndex + combat.actionCount - 1) % combat.actionCount;
+            encounter.selectedIndex = (encounter.selectedIndex + encounter.actionCount - 1) % encounter.actionCount;
             break;
         case VK_RIGHT:
-            combat.selectedIndex = (combat.selectedIndex + 1) % combat.actionCount;
+            encounter.selectedIndex = (encounter.selectedIndex + 1) % encounter.actionCount;
             break;
         case VK_UP: {
-            int maxScroll = combat.logCount > 8 ? combat.logCount - 8 : 0;
-            if (combat.logScroll < maxScroll) combat.logScroll++;
+            int maxScroll = encounter.logCount > 8 ? encounter.logCount - 8 : 0;
+            if (encounter.logScroll < maxScroll) encounter.logScroll++;
             break;
         }
         case VK_DOWN:
-            if (combat.logScroll > 0) combat.logScroll--;
+            if (encounter.logScroll > 0) encounter.logScroll--;
             break;
         case VK_TAB:
             advanceTarget();
@@ -643,7 +587,7 @@ static void drawCard(int cx, int cy, int cw, int ch,
     fillRect(cx + cw - 4, cy + ch - 4, 2, 2, bgCol);
 }
 
-void renderCombat(void) {
+void renderEncounter(void) {
     /* ── Layout ─────────────────────────────────────────────────── */
     const int CARD_W   = 140;
     const int CARD_H   = 108;
@@ -662,7 +606,7 @@ void renderCombat(void) {
 
     /* ── Encounter-type colours ────────────────────────────────────── */
     uint32_t bgMain, bgPanel, bdPanel;
-    switch (combat.encounterType) {
+    switch (encounter.encounterType) {
         case ENCOUNTER_SOCIAL:
             bgMain = rgb(3,  4,  14); bgPanel = rgb(6,  8,  22); bdPanel = rgb(35, 45, 120); break;
         case ENCOUNTER_INVESTIGATION:
@@ -687,7 +631,7 @@ void renderCombat(void) {
 
     /* ── Monster image (targeted enemy) ────────────────────────── */
     {
-        const PakData *img = &combat.enemyImgs[combat.targetIndex];
+        const PakData *img = &encounter.enemyImgs[encounter.targetIndex];
         if (img->data) {
             int iw    = img->data[0];
             int ih    = img->data[1];
@@ -705,23 +649,23 @@ void renderCombat(void) {
     int y = LP_Y + 12;
 
     /* ── Victory screen ─────────────────────────────────────────── */
-    if (combat.phase == COMBAT_PHASE_VICTORY) {
+    if (encounter.phase == ENCOUNTER_PHASE_VICTORY) {
         drawText(bx, y, "VICTORY!", rgb(255, 220, 50), 2);  y += 28;
 
         for (int i = 0; i < 4; i++) {
-            if (combat.gainedDomainXp[i] == 0) continue;
+            if (encounter.gainedDomainXp[i] == 0) continue;
             snprintf(buf, sizeof(buf), "+%d %s xp",
-                     combat.gainedDomainXp[i], domainName(i));
+                     encounter.gainedDomainXp[i], domainName(i));
             drawText(bx, y, buf, rgb(140, 200, 255), 2);    y += 20;
         }
 
-        if (combat.gainedGold > 0) {
+        if (encounter.gainedGold > 0) {
             snprintf(buf, sizeof(buf), "+%d Solmark%s",
-                     combat.gainedGold, combat.gainedGold == 1 ? "" : "s");
+                     encounter.gainedGold, encounter.gainedGold == 1 ? "" : "s");
             drawText(bx, y, buf, rgb(255, 215, 0), 2);      y += 20;
         }
-        for (int i = 0; i < combat.droppedCount; i++) {
-            snprintf(buf, sizeof(buf), "Found: %s", itemName(combat.droppedItems[i]));
+        for (int i = 0; i < encounter.droppedCount; i++) {
+            snprintf(buf, sizeof(buf), "Found: %s", itemName(encounter.droppedItems[i]));
             drawText(bx, y, buf, rgb(140, 255, 200), 1);    y += 14;
         }
         drawText(bx, LP_Y + LP_H - 20, "Enter to continue", rgb(100, 90, 80), 1);
@@ -730,9 +674,9 @@ void renderCombat(void) {
 
     /* ── Enemy section (all enemies) ───────────────────────────── */
     drawText(bx, y, "ENEMIES", rgb(100, 50, 50), 1);  y += 12;
-    for (int ei = 0; ei < combat.enemyCount; ei++) {
-        const Enemy *e  = &combat.enemies[ei];
-        int          sel = (ei == combat.targetIndex);
+    for (int ei = 0; ei < encounter.enemyCount; ei++) {
+        const Enemy *e  = &encounter.enemies[ei];
+        int          sel = (ei == encounter.targetIndex);
         int          dead = (e->maxHp == 0);
         uint32_t     nameCol = dead   ? rgb(60, 50, 50)
                              : sel    ? rgb(255, 210, 80)
@@ -780,10 +724,10 @@ void renderCombat(void) {
     drawText(bx + 90, y, buf, rgb(90, 140, 210), 1);  y += 16;
 
     /* ── Encounter log ──────────────────────────────────────────── */
-    if (combat.logCount > 0) {
+    if (encounter.logCount > 0) {
         fillRect(LP_X + 8, y + 4, LP_W - 16, 1, rgb(45, 30, 30));  y += 12;
 
-        int end   = combat.logCount - combat.logScroll;
+        int end   = encounter.logCount - encounter.logScroll;
         if (end < 0) end = 0;
         int start = end - 8;
         if (start < 0) start = 0;
@@ -794,26 +738,26 @@ void renderCombat(void) {
             drawText(bx, y, more, rgb(45, 42, 60), 1);  y += 12;
         }
         for (int i = start; i < end; i++) {
-            int age = combat.logCount - 1 - i;
+            int age = encounter.logCount - 1 - i;
             uint32_t lc = age == 0 ? rgb(180, 170, 210)
                         : age == 1 ? rgb(130, 120, 155)
                         : age <= 3 ? rgb(85,  78,  108)
                         :            rgb(52,  48,  70);
-            drawText(bx, y, combat.log[i], lc, 1);  y += 12;
+            drawText(bx, y, encounter.log[i], lc, 1);  y += 12;
         }
     }
 
     /* ── Action cards ───────────────────────────────────────────── */
-    for (int i = 0; i < combat.actionCount; i++) {
+    for (int i = 0; i < encounter.actionCount; i++) {
         int cx  = CARD_X0 + i * (CARD_W + CARD_GAP);
-        int sel = (i == combat.selectedIndex);
+        int sel = (i == encounter.selectedIndex);
 
         uint32_t bgCol = sel ? rgb(30, 24, 54)  : rgb(14, 12, 28);
         uint32_t bdCol = sel ? rgb(220, 200, 50) : rgb(55, 50, 85);
 
         drawCard(cx, CARD_Y, CARD_W, CARD_H, bgCol, bdCol);
 
-        uint8_t          aid  = (uint8_t)combat.actions[i].type;
+        uint8_t          aid  = (uint8_t)encounter.actions[i].type;
         const ActionDef *adef = getActionDef(aid);
         if (!adef) continue;
 
@@ -851,7 +795,7 @@ void renderCombat(void) {
             fillRect(cx + CARD_W/2 - 2, CARD_Y + CARD_H - 8, 4, 4, rgb(220, 200, 50));
     }
 
-    if (combat.enemyCount > 1) {
+    if (encounter.enemyCount > 1) {
         drawText(CARD_X0, CARD_Y + CARD_H + 4,
                  "TAB: switch target", rgb(55, 55, 80), 1);
     }
