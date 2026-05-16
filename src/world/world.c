@@ -468,6 +468,11 @@ void renderWorld(void) {
         }
 
         /* --- Sub-pass 2: tall tiles, drawn after all entities at this sum level --- */
+        /* Screen-pixel radii for the circular visibility windows. */
+#define PLR_RAD_INNER 48
+#define PLR_RAD_OUTER 96
+#define ENM_RAD_INNER 24
+#define ENM_RAD_OUTER 56
         for (int di = 0; di < nDeferred; di++) {
             int tx = deferred[di].tx;
             int ty = deferred[di].ty;
@@ -478,26 +483,41 @@ void renderWorld(void) {
             if (!td->data) continue;
             int tileH  = (int)((const uint8_t *)td->data)[1];
             int draw_y = cy + TILE_H - tileH * 2 + (tileH >= TILE_H/2 ? 2 : 0);
-            uint8_t alpha = 255;
-            /* >= because tall tiles now render after player even at same sum level */
-            if (sum >= playerSum) {
-                if (abs(cx - plrScreenX) < TILE_W / 2 + 16 && draw_y < plrScreenY + 16)
-                    alpha = 100;
-            }
-            if (g_enemyWallTransparency && alpha == 255) {
+
+            /* Find the first enemy occluded by this tile (for secondary circle). */
+            int ecx = -1, ecy = 0;
+            if (g_enemyWallTransparency) {
                 for (int ei = 0; ei < worldEnemyCount; ei++) {
                     const WorldEnemy *we = &worldEnemies[ei];
                     if (sum < (int)(we->x + we->y)) continue;
                     int ex = (we->x - we->y) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
                     int ey = (we->x + we->y) * (TILE_H / 2) - rCamY + gfxHeight / 2;
                     if (abs(cx - ex) < TILE_W / 2 + 16 && draw_y < ey + 16) {
-                        alpha = 100;
+                        ecx = ex; ecy = ey;
                         break;
                     }
                 }
             }
-            drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, 0, alpha);
+
+            /* >= because tall tiles now render after player even at same sum level */
+            if (sum >= playerSum) {
+                /* Player circle (primary) + optional enemy circle (secondary). */
+                drawBinRadial(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, 0,
+                              plrScreenX, plrScreenY, PLR_RAD_INNER, PLR_RAD_OUTER,
+                              ecx, ecy, ENM_RAD_INNER, ENM_RAD_OUTER);
+            } else if (ecx >= 0) {
+                /* Only an enemy is behind this tile — enemy circle only. */
+                drawBinRadial(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, 0,
+                              ecx, ecy, ENM_RAD_INNER, ENM_RAD_OUTER,
+                              -1, 0, 0, 0);
+            } else {
+                drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, 0, 255);
+            }
         }
+#undef PLR_RAD_INNER
+#undef PLR_RAD_OUTER
+#undef ENM_RAD_INNER
+#undef ENM_RAD_OUTER
     }
 
     /* --- Interaction prompt above player --- */

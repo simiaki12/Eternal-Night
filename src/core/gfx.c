@@ -365,19 +365,23 @@ static int tile_in_bounds(int x, int y, int w, int h) {
     return 0;
 }
 
-void drawBin(int x, int y, const uint8_t *data, int scale, int rotate, uint8_t alpha) {
-    if (!data) return;
-    int w       = data[0];
-    int h       = data[1];
-    int8_t cc   = (int8_t)data[2];
+/* Shared decode buffer — filled by binDecode, consumed by draw* functions. */
+static uint32_t g_pixbuf[256 * 256];
+
+/* Decode a .bin image into g_pixbuf (0xFFFFFFFF = transparent).
+ * Returns 1 on success; fills *out_w, *out_h, *out_tile_mode. */
+static int binDecode(const uint8_t *data, int *out_w, int *out_h, int *out_tile_mode) {
+    if (!data) return 0;
+    int w     = data[0];
+    int h     = data[1];
+    int8_t cc = (int8_t)data[2];
     int n_colors, tile_mode = 0;
     uint32_t pal[127];
-
     const uint8_t *src = data + 3;
 
     if (cc < 0) {
         int id = (int)(-cc) - 1;
-        if (id < 0 || id >= N_BUILTIN_PAL) return;
+        if (id < 0 || id >= N_BUILTIN_PAL) return 0;
         n_colors = g_builtin_pal_size[id];
         for (int ci = 0; ci < n_colors; ci++)
             pal[ci] = rgb(g_builtin_pal[id][ci][0],
@@ -396,10 +400,6 @@ void drawBin(int x, int y, const uint8_t *data, int scale, int rotate, uint8_t a
 
     int bpp  = bin_bits_needed(n_colors + 1);
     int mask = (1 << bpp) - 1;
-
-    /* Decode all pixels into a flat colour buffer; 0xFFFFFFFF = transparent.
-     * Needed so rotation can randomly access any source pixel. */
-    static uint32_t pixbuf[256 * 256];
     int bit_pos = 0;
     for (int row = 0; row < h; row++) {
         for (int col = 0; col < w; col++) {
@@ -415,9 +415,17 @@ void drawBin(int x, int y, const uint8_t *data, int scale, int rotate, uint8_t a
                 }
                 val &= mask;
             }
-            pixbuf[row * w + col] = (val == n_colors) ? 0xFFFFFFFFu : pal[val];
+            g_pixbuf[row * w + col] = (val == n_colors) ? 0xFFFFFFFFu : pal[val];
         }
     }
+
+    *out_w = w; *out_h = h; *out_tile_mode = tile_mode;
+    return 1;
+}
+
+void drawBin(int x, int y, const uint8_t *data, int scale, int rotate, uint8_t alpha) {
+    int w, h, tile_mode;
+    if (!binDecode(data, &w, &h, &tile_mode)) return;
 
     for (int row = 0; row < h; row++) {
         for (int col = 0; col < w; col++) {
@@ -433,15 +441,106 @@ void drawBin(int x, int y, const uint8_t *data, int scale, int rotate, uint8_t a
             if (sr < 0) sr = 0;
             if (sr >= h) sr = h - 1;
             if (rotate && !tile_in_bounds(col, row, w, h)) continue;
-            uint32_t color = pixbuf[sr * w + sc];
+            uint32_t color = g_pixbuf[sr * w + sc];
             if (color == 0xFFFFFFFFu && rotate) {
                 for (int fsr = sr - 1; fsr >= 0 && color == 0xFFFFFFFFu; fsr--)
-                    color = pixbuf[fsr * w + sc];
+                    color = g_pixbuf[fsr * w + sc];
             }
             if (color == 0xFFFFFFFFu) continue;
 
             int px = x + col * scale;
             int py = y + row * scale;
+            int x1 = px < 0 ? 0 : px;
+            int y1 = py < 0 ? 0 : py;
+            int x2 = px + scale > gfxWidth  ? gfxWidth  : px + scale;
+            int y2 = py + scale > gfxHeight ? gfxHeight : py + scale;
+            if (alpha == 255) {
+                for (int sy = y1; sy < y2; sy++)
+                    for (int sx = x1; sx < x2; sx++)
+                        g_pixels[sy * gfxWidth + sx] = color;
+            } else {
+                uint8_t ia = 255 - alpha;
+                uint8_t cr = (color >> 16) & 0xFF;
+                uint8_t cg = (color >>  8) & 0xFF;
+                uint8_t cb =  color        & 0xFF;
+                for (int sy = y1; sy < y2; sy++)
+                    for (int sx = x1; sx < x2; sx++) {
+                        uint32_t bg = g_pixels[sy * gfxWidth + sx];
+                        uint8_t r = (cr * alpha + ((bg >> 16) & 0xFF) * ia) >> 8;
+                        uint8_t g = (cg * alpha + ((bg >>  8) & 0xFF) * ia) >> 8;
+                        uint8_t b = (cb * alpha + ( bg        & 0xFF) * ia) >> 8;
+                        g_pixels[sy * gfxWidth + sx] = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+                    }
+            }
+        }
+    }
+}
+
+/* Minimum tile opacity inside a radial window (~10%). Tiles never vanish completely. */
+#define BIN_RADIAL_MIN_ALPHA 100
+
+/* Alpha for one radial source at pixel centre (pcx, pcy). Quadratic ease-in. */
+static inline uint8_t radialAlpha(int px, int py, int pcx, int pcy,
+                                   float ri, float span, float ro_sq) {
+    float dx = (float)(px - pcx);
+    float dy = (float)(py - pcy);
+    float d2 = dx*dx + dy*dy;
+    if (d2 <= ri * ri) return BIN_RADIAL_MIN_ALPHA;
+    if (d2 >= ro_sq)   return 255;
+    float t = (sqrtf(d2) - ri) / span;
+    t = t * t;
+    return (uint8_t)(BIN_RADIAL_MIN_ALPHA + t * (255 - BIN_RADIAL_MIN_ALPHA));
+}
+
+/* Draw a .bin tile with per-pixel alpha based on screen-space distance from (pcx, pcy).
+ * Within r_inner: BIN_RADIAL_MIN_ALPHA. Beyond r_outer: fully opaque.
+ * Pass pcx2 >= 0 for a second radial source (e.g. an enemy); the more transparent
+ * value wins per pixel so both circles are visible simultaneously. */
+void drawBinRadial(int x, int y, const uint8_t *data, int scale, int rotate,
+                   int pcx,  int pcy,  int r_inner,  int r_outer,
+                   int pcx2, int pcy2, int r_inner2, int r_outer2) {
+    int w, h, tile_mode;
+    if (!binDecode(data, &w, &h, &tile_mode)) return;
+
+    float span1  = (float)(r_outer  - r_inner);  if (span1  < 1.0f) span1  = 1.0f;
+    float span2  = (float)(r_outer2 - r_inner2); if (span2  < 1.0f) span2  = 1.0f;
+    float ri1    = (float)r_inner;
+    float ro1_sq = (float)(r_outer  * r_outer);
+    float ri2    = (float)r_inner2;
+    float ro2_sq = (float)(r_outer2 * r_outer2);
+
+    for (int row = 0; row < h; row++) {
+        for (int col = 0; col < w; col++) {
+            int sc, sr;
+            switch (rotate & 3) {
+                default:
+                case 0: sc = col;           sr = row;           break;
+                case 1: sc = 2 * row;       sr = (w-1-col) / 2; break;
+                case 2: sc = w-1-col;       sr = h-1-row;       break;
+                case 3: sc = (w-1)-2*row;   sr = col / 2;       break;
+            }
+            if (sc < 0 || sc >= w) continue;
+            if (sr < 0) sr = 0;
+            if (sr >= h) sr = h - 1;
+            if (rotate && !tile_in_bounds(col, row, w, h)) continue;
+            uint32_t color = g_pixbuf[sr * w + sc];
+            if (color == 0xFFFFFFFFu && rotate) {
+                for (int fsr = sr - 1; fsr >= 0 && color == 0xFFFFFFFFu; fsr--)
+                    color = g_pixbuf[fsr * w + sc];
+            }
+            if (color == 0xFFFFFFFFu) continue;
+
+            int px = x + col * scale;
+            int py = y + row * scale;
+            int pcx_px = px + scale / 2;
+            int pcy_px = py + scale / 2;
+
+            uint8_t alpha = radialAlpha(pcx_px, pcy_px, pcx, pcy, ri1, span1, ro1_sq);
+            if (pcx2 >= 0) {
+                uint8_t a2 = radialAlpha(pcx_px, pcy_px, pcx2, pcy2, ri2, span2, ro2_sq);
+                if (a2 < alpha) alpha = a2;
+            }
+
             int x1 = px < 0 ? 0 : px;
             int y1 = py < 0 ? 0 : py;
             int x2 = px + scale > gfxWidth  ? gfxWidth  : px + scale;
