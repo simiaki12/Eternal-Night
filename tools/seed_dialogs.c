@@ -90,7 +90,7 @@ int main(void) {
     /* Node 1: leads to social encounter (se_idx=0) or a direct dismissal */
     wStr(f, "Their leader, Crag, camps at the old mill. Drive him off, or convince him to leave.");
     wByte(f, 3);
-    wOptSE(f, DOM_CHARM, 2, CLOSE, 0, "I'll talk him down. (Negotiate)");
+    wOptSE(f, NO_DOM, 0, CLOSE, 0, "I'll talk him down. (Negotiate)");
     wOpt(f, NO_DOM, 0, CLOSE, "I'll deal with him directly.");
     wOpt(f, NO_DOM, 0, CLOSE, "I'll think about it.");
 

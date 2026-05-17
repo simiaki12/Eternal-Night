@@ -9,16 +9,17 @@ ActionDef actionDefs[ACTION_MAX];
 int       actionDefCount = 0;
 
 static const ActionDef builtinDefs[] = {
-    { ACTION_ATTACK,   0,                    70,  0,  "Slash",         "a1",  "A quick, reliable strike.",        DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
-    { ACTION_STRONG,   0,                    35,  4,  "Strong Attack",  "a2",  "Heavy blow dealing bonus damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
-    { ACTION_HEAL,     ACT_CTX_PLAYER_HURT,  55, 10,  "Regenerate",    "a3",  "Draw on vitality to restore HP.",  DOMAIN_BLOOD,    ACT_CAT_COMBAT,                    {0} },
-    { ACTION_DEFEND,   0,                    28,  0,  "Parry",         "a4",  "Brace and halve incoming damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
-    { ACTION_DISARM,   ACT_CTX_ENEMY_WEAPON, 48,  0,  "Disarm",        "a5",  "Strip the weapon from the enemy.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                    {0} },
-    { ACTION_BACKSTAB, ACT_CTX_FIRST_TURN,   60,  6,  "Moonstep",      "a6",  "Strike first. Skip the counter.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                    {0} },
-    { ACTION_STUN,     ACT_CTX_CAN_STUN,     42,  0,  "Stun",          "a7",  "Stun the enemy, skip their turn.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
-    { ACTION_CALM,     0,                    22,  0,  "Persuade",      "a8",  "Persuade the enemy, lower aggro.", DOMAIN_CHARM,    ACT_CAT_COMBAT|ACT_CAT_SOCIAL,     {0} },
-    { ACTION_HIDE,     0,                    20,  0,  "Blindspot",     "a9",  "Find cover. Avoid the counter.",   DOMAIN_TRICKERY, ACT_CAT_COMBAT,                    {0} },
-    { ACTION_EXECUTE,  ACT_CTX_EXECUTABLE,   78, 15,  "Death star",    "a10", "Lethal blow on a weakened enemy.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                    {0} },
+    /*                                                                                                              flags */
+    { ACTION_ATTACK,   0,                    70,  0,  "Slash",         "a1",  "A quick, reliable strike.",        DOMAIN_COMBAT,   ACT_CAT_COMBAT,                ACT_FLAG_STARTER, 0 },
+    { ACTION_STRONG,   0,                    35,  4,  "Strong Attack",  "a2",  "Heavy blow dealing bonus damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0 },
+    { ACTION_HEAL,     ACT_CTX_PLAYER_HURT,  55, 10,  "Regenerate",    "a3",  "Draw on vitality to restore HP.",  DOMAIN_BLOOD,    ACT_CAT_COMBAT,                0,                0 },
+    { ACTION_DEFEND,   0,                    28,  0,  "Parry",         "a4",  "Brace and halve incoming damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0 },
+    { ACTION_DISARM,   ACT_CTX_ENEMY_WEAPON, 48,  0,  "Disarm",        "a5",  "Strip the weapon from the enemy.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0 },
+    { ACTION_BACKSTAB, ACT_CTX_FIRST_TURN,   60,  6,  "Moonstep",      "a6",  "Strike first. Skip the counter.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0 },
+    { ACTION_STUN,     ACT_CTX_CAN_STUN,     42,  0,  "Stun",          "a7",  "Stun the enemy, skip their turn.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0 },
+    { ACTION_CALM,     0,                    22,  0,  "Persuade",      "a8",  "Persuade the enemy, lower aggro.", DOMAIN_CHARM,    ACT_CAT_COMBAT|ACT_CAT_SOCIAL, ACT_FLAG_STARTER, 0 },
+    { ACTION_HIDE,     0,                    20,  0,  "Blindspot",     "a9",  "Find cover. Avoid the counter.",   DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0 },
+    { ACTION_EXECUTE,  ACT_CTX_EXECUTABLE,   78, 15,  "Death star",    "a10", "Lethal blow on a weakened enemy.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0 },
 };
 #define BUILTIN_COUNT (int)(sizeof(builtinDefs)/sizeof(builtinDefs[0]))
 
@@ -61,7 +62,14 @@ int buildActionPool(uint8_t out[ACTION_MAX], uint8_t encounterCat) {
         if (!dup) out[count++] = (id); \
     } while (0)
 
-    ADD(ACTION_ATTACK);
+    /* Starter actions — flagged ACT_FLAG_STARTER in the action def.
+       Uses loaded defs when present, builtins as fallback. */
+    {
+        const ActionDef *base = actionDefCount > 0 ? actionDefs : builtinDefs;
+        int baseCount         = actionDefCount > 0 ? actionDefCount : BUILTIN_COUNT;
+        for (int i = 0; i < baseCount; i++)
+            if (base[i].actionFlags & ACT_FLAG_STARTER) ADD(base[i].id);
+    }
 
     /* Equipment-granted actions */
     for (int s = 0; s < EQUIP_SLOTS; s++) {

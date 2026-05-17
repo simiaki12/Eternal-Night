@@ -13,6 +13,9 @@
 #define ACT_CTX_REQUIRES_DARK (1<<5) /* only offered when ENCOUNTER_MOD_DARK is active */
 #define ACT_CTX_BLOCKED_HOLY  (1<<6) /* suppressed on ENCOUNTER_MOD_HOLY_GROUND */
 
+/* Action flags — stored in ActionDef.actionFlags */
+#define ACT_FLAG_STARTER (1<<0)  /* in base pool without any unlock; data-controlled */
+
 /* Encounter category bitmask — stored in ActionDef.encounterCat.
    An action may belong to multiple categories (bitwise OR them together).
    ACT_CAT_ANY bypasses the filter and is used by non-combat UI panels. */
@@ -64,9 +67,10 @@ typedef struct {
     char     name[16];
     char     imgName[8];
     char     desc[32];
-    uint8_t  domain;      /* DOMAIN_* constant; 0xFF = unaffiliated */
+    uint8_t  domain;       /* DOMAIN_* constant; 0xFF = unaffiliated */
     uint8_t  encounterCat; /* ACT_CAT_* bitmask; 0 = universal (always included) */
-    uint8_t  _pad[2];
+    uint8_t  actionFlags;  /* ACT_FLAG_* */
+    uint8_t  _pad;
 } ActionDef;
 
 typedef char _check_actiondef_size[(sizeof(ActionDef) == 64) ? 1 : -1];

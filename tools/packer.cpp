@@ -48,8 +48,10 @@ int main() {
     specs.push_back({ "assets/data/quests.dat",       false });
     specs.push_back({ "assets/data/loottables.dat",   false });
     specs.push_back({ "assets/data/npcs.dat",         false });
-    specs.push_back({ "assets/data/actions.dat",      false });
-    specs.push_back({ "assets/data/ambient.dat",      false });
+    specs.push_back({ "assets/data/actions.dat",            false });
+    specs.push_back({ "assets/data/ambient.dat",            false });
+    specs.push_back({ "assets/data/log_messages.dat",       false });
+    specs.push_back({ "assets/data/social_encounters.dat",  false });
 
     /* Resolve which files are present */
     std::vector<std::string> files;

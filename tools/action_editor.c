@@ -33,6 +33,8 @@
 #define DOMAIN_CHARM    3
 #define DOMAIN_NONE     0xFF
 
+#define ACT_FLAG_STARTER (1<<0)
+
 #define ACTION_MAX 64
 
 typedef struct {
@@ -45,7 +47,8 @@ typedef struct {
     char     desc[32];
     uint8_t  domain;
     uint8_t  encounterCat;
-    uint8_t  _pad[2];
+    uint8_t  actionFlags;
+    uint8_t  _pad;
 } ActionDef;
 
 typedef char _check_size[(sizeof(ActionDef) == 64) ? 1 : -1];
@@ -109,6 +112,7 @@ typedef enum {
     F_POWER,
     F_DOMAIN,
     F_ENCOUNTER_CAT,
+    F_STARTER,
     F_CTX_FIRST_TURN,
     F_CTX_ENEMY_WEAPON,
     F_CTX_EXECUTABLE,
@@ -128,6 +132,7 @@ static const char *fieldNames[] = {
     "Power",
     "Domain (0=Combat 1=Trickery 2=Blood 3=Charm FF=none)",
     "Encounter cat (bit: 1=combat 2=social 4=invest 8=hunt 10=env)",
+    "Starter (available without any domain unlock)",
     "Ctx: first turn only",
     "Ctx: enemy has weapon",
     "Ctx: enemy executable",
@@ -170,6 +175,8 @@ static void renderEdit(ActionDef *a, int sel, const char *status) {
                 mvprintw(row, 2, "%-42s  %s", fieldNames[i], cats);
                 break;
             }
+            case F_STARTER:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->actionFlags & ACT_FLAG_STARTER) ? "[X]" : "[ ]"); break;
             case F_CTX_FIRST_TURN:
                 mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_FIRST_TURN)   ? "[X]" : "[ ]"); break;
             case F_CTX_ENEMY_WEAPON:
@@ -227,6 +234,7 @@ static void screenEdit(int idx) {
                     case F_DOMAIN:          if (a->domain       < 254) a->domain++;
                                             else a->domain = DOMAIN_NONE;                 break;
                     case F_ENCOUNTER_CAT:   if (a->encounterCat < 255) a->encounterCat++; break;
+                    case F_STARTER:           a->actionFlags  ^= ACT_FLAG_STARTER;         break;
                     case F_CTX_FIRST_TURN:    a->contextFlags ^= ACT_CTX_FIRST_TURN;      break;
                     case F_CTX_ENEMY_WEAPON:  a->contextFlags ^= ACT_CTX_ENEMY_WEAPON;    break;
                     case F_CTX_EXECUTABLE:    a->contextFlags ^= ACT_CTX_EXECUTABLE;      break;
@@ -247,6 +255,7 @@ static void screenEdit(int idx) {
                     case F_DOMAIN:          if (a->domain     > 0 && a->domain != DOMAIN_NONE) a->domain--;
                                             else a->domain = DOMAIN_NONE;             break;
                     case F_ENCOUNTER_CAT:   if (a->encounterCat > 0) a->encounterCat--; break;
+                    case F_STARTER:           a->actionFlags  ^= ACT_FLAG_STARTER;       break;
                     case F_CTX_FIRST_TURN:    a->contextFlags ^= ACT_CTX_FIRST_TURN;    break;
                     case F_CTX_ENEMY_WEAPON:  a->contextFlags ^= ACT_CTX_ENEMY_WEAPON;  break;
                     case F_CTX_EXECUTABLE:    a->contextFlags ^= ACT_CTX_EXECUTABLE;    break;

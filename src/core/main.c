@@ -323,7 +323,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     if (!pakOpen("data.pak")) return 1;
 
     playerInit();
-    socialNewGame();
 
     PakData itemData    = pakRead("assets/data/items.dat");
     PakData enemyData   = pakRead("assets/data/enemies.dat");
@@ -346,6 +345,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadAmbient(ambientData);           /* optional — no ambient text if absent */
     loadLogMessages(logMsgData);        /* optional — no reactive messages if absent */
     loadSocialEncounters(seData);       /* optional — no social encounters if absent */
+    socialNewGame();            /* must run after loadNpcs + loadSocialEncounters */
     free(itemData.data);
     free(enemyData.data);
     free(dialogData.data);

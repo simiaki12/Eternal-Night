@@ -88,7 +88,7 @@ Domain domains[DOMAIN_COUNT] = {
        row 3:               [+1 Charisma]              ← prereq 4+5
        row 4:               [Duelist's Mark]            ← prereq 7            */
     { DOMAIN_CHARM, DOMAIN_TYPE_BASE, 0xFF, 0xFF, {
-        N( 0, DOMAIN_CHARM, 0xFF,0xFF, 0, 0,1, NODE_REWARD_ACTION, ACTION_CALM,           "Persuade"),
+        N( 0, DOMAIN_CHARM, 0xFF,0xFF, 0, 0,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_CHARISMA,1),     "+1 Charisma"),
         N( 1, DOMAIN_CHARM, 0,   0xFF, 1, 1,0, NODE_REWARD_ACTION, ACTION_NOBLE_PRESENCE, "Noble Presence"),
         N( 2, DOMAIN_CHARM, 0,   0xFF, 1, 1,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_CHARISMA,1),     "+1 Charisma"),
         N( 3, DOMAIN_CHARM, 0,   0xFF, 1, 1,2, NODE_REWARD_ACTION, ACTION_PROVE_SKILL,    "Prove Skill"),

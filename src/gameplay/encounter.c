@@ -584,10 +584,12 @@ void handleEncounterInput(int key) {
     }
     switch (key) {
         case VK_LEFT:
-            encounter.selectedIndex = (encounter.selectedIndex + encounter.actionCount - 1) % encounter.actionCount;
+            if (encounter.actionCount > 0)
+                encounter.selectedIndex = (encounter.selectedIndex + encounter.actionCount - 1) % encounter.actionCount;
             break;
         case VK_RIGHT:
-            encounter.selectedIndex = (encounter.selectedIndex + 1) % encounter.actionCount;
+            if (encounter.actionCount > 0)
+                encounter.selectedIndex = (encounter.selectedIndex + 1) % encounter.actionCount;
             break;
         case VK_UP: {
             int maxScroll = encounter.logCount > 8 ? encounter.logCount - 8 : 0;
