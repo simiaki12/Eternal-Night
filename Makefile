@@ -19,6 +19,7 @@ NPC_EDITOR  = build/npc_editor
 ACT_EDITOR  = build/action_editor
 AMB_EDITOR  = build/ambient_editor
 LOGMSG_EDITOR = build/logmessage_editor
+SE_EDITOR   = build/social_encounter_editor
 IMG_CONV    = build/img_conv
 BW_CONV     = build/bw_conv
 RLE         = build/rle
@@ -177,6 +178,15 @@ seed_npcs:
 	$(CC_HOST) -std=c11 -Os tools/seed_npcs.c -o build/seed_npcs
 	./build/seed_npcs
 
+seed_social_encounters:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os tools/seed_social_encounters.c -o build/seed_social_encounters
+	./build/seed_social_encounters
+
+social_encounter_editor:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/social_encounter_editor.c -o $(SE_EDITOR) -lncurses
+
 seed_actions:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os tools/seed_actions.c -o build/seed_actions
@@ -190,7 +200,7 @@ music_editor_gui:
 	mkdir -p build
 	$(CC) -std=c11 -Os tools/music_editor_gui.c -o build/music_editor_gui.exe -lgdi32 -lwinmm -lcomdlg32 -mwindows
 
-tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor ambient_editor logmessage_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui
+tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor ambient_editor logmessage_editor social_encounter_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui
 
 clean:
 	rm -rf build data.pak

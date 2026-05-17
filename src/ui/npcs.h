@@ -4,16 +4,26 @@
 
 #define NPC_DEF_MAX 32
 
-/* 32 bytes — stored in npcs.dat */
+/* 40 bytes — stored in npcs.dat */
 typedef struct {
-    char    name[16];   /* display name shown as speaker in dialog */
-    char    imgName[3]; /* 2-char base name of .bin sprite, e.g. "vi" → assets/vi.bin */
-    uint8_t treeId;     /* index into dialogTrees[]; 0xFF = no dialog */
-    uint8_t x;          /* tile position on the map */
+    char    name[16];       /* display name shown as speaker in dialog */
+    char    imgName[3];     /* 2-char base name of .bin sprite, e.g. "vi" → assets/vi.bin */
+    uint8_t treeId;         /* index into dialogTrees[]; 0xFF = no dialog */
+    uint8_t x;              /* tile position on the map */
     uint8_t y;
-    char    mapId[8];   /* short identifier matched against currentMapName (e.g. "map1") */
-    uint8_t _pad[2];
-} NpcDef;               /* 32 bytes */
+    char    mapId[8];       /* short identifier matched against currentMapName (e.g. "map1") */
+    /* Social encounter profile */
+    uint8_t resistance;     /* how hard to shift disposition per action (0=pushover) */
+    uint8_t patience;       /* turns before escalation/exit; 0 = no limit */
+    uint8_t social_power;   /* counter-move impact; 0 = passive NPC */
+    uint8_t move_mask;      /* NPC_MOVE_* bitmask of available counter-actions */
+    uint8_t tags;           /* NPC_TAG_* bitmask of trait tags */
+    uint8_t base_standing;  /* starting standing value for a new game */
+    uint8_t npc_flags;      /* reserved */
+    uint8_t _pad[3];
+} NpcDef;                   /* 40 bytes */
+
+typedef char _check_npcdef_size[(sizeof(NpcDef) == 40) ? 1 : -1];
 
 /* File format (npcs.dat):
  *   [1]      npc count

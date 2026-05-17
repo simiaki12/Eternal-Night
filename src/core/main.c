@@ -13,6 +13,7 @@
 #include "enemies.h"
 #include "encounter.h"
 #include "town.h"
+#include "dialog.h"
 #include "world.h"
 #include "domains.h"
 #include "quests.h"
@@ -322,6 +323,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     if (!pakOpen("data.pak")) return 1;
 
     playerInit();
+    socialNewGame();
 
     PakData itemData    = pakRead("assets/data/items.dat");
     PakData enemyData   = pakRead("assets/data/enemies.dat");
@@ -332,6 +334,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     PakData actionData    = pakRead("assets/data/actions.dat");
     PakData ambientData   = pakRead("assets/data/ambient.dat");
     PakData logMsgData    = pakRead("assets/data/log_messages.dat");
+    PakData seData        = pakRead("assets/data/social_encounters.dat");
 
     loadItems(itemData);        /* optional — falls back to builtins if not in pak */
     loadEnemies(enemyData);     /* optional — falls back to builtins if not in pak */
@@ -340,8 +343,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadLootTables(lootData);   /* optional — no item drops if absent */
     loadNpcs(npcData);          /* optional — no NPCs if absent */
     loadActions(actionData);      /* optional — falls back to builtins if not in pak */
-    loadAmbient(ambientData);     /* optional — no ambient text if absent */
-    loadLogMessages(logMsgData);  /* optional — no reactive messages if absent */
+    loadAmbient(ambientData);           /* optional — no ambient text if absent */
+    loadLogMessages(logMsgData);        /* optional — no reactive messages if absent */
+    loadSocialEncounters(seData);       /* optional — no social encounters if absent */
     free(itemData.data);
     free(enemyData.data);
     free(dialogData.data);
@@ -351,6 +355,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     free(actionData.data);
     free(ambientData.data);
     free(logMsgData.data);
+    free(seData.data);
 
     const int screenW = 640;
     const int screenH = 480;

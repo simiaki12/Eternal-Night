@@ -1,6 +1,8 @@
 #pragma once
 #include <stdint.h>
 #include "domains.h"
+#include "encounter.h"
+#include "npcs.h"
 
 #define EQUIP_SLOTS 8
 
@@ -27,6 +29,9 @@ typedef struct {
     /* Domain progression — replaces level/xp/skillPoints/skills/playstyle */
     PlayerDomainState domains[DOMAIN_COUNT];
     uint8_t           focusedDomain; /* DOMAIN_* or DOMAIN_NONE if no domain is in focus */
+    /* Social encounter state */
+    NpcSaveState             npcStates[NPC_DEF_MAX];
+    SocialEncounterSaveState seStates[SE_DEF_MAX];
 } PlayerData;
 
 extern PlayerData player;

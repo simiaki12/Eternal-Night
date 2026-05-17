@@ -6,7 +6,7 @@
 #include "game.h"
 #include "gfx.h"
 #include "pak.h"
-#include "town.h"
+#include "dialog.h"
 #include "world.h"
 #include <stdio.h>
 #include "quests.h"

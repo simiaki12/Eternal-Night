@@ -12,8 +12,18 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* Mirror of src/npcs.h */
+/* Mirror of src/npcs.h and social.h */
 #define NPC_DEF_MAX 32
+
+#define NPC_TAG_FEARFUL   (1<<0)
+#define NPC_TAG_NOBLE     (1<<1)
+#define NPC_TAG_CRIMINAL  (1<<2)
+#define NPC_TAG_CONNECTED (1<<3)
+#define NPC_TAG_FEARLESS  (1<<4)
+
+#define NPC_MOVE_DISMISS  (1<<0)
+#define NPC_MOVE_THREATEN (1<<1)
+#define NPC_MOVE_LEAVE    (1<<2)
 
 typedef struct {
     char    name[16];
@@ -22,10 +32,17 @@ typedef struct {
     uint8_t x;
     uint8_t y;
     char    mapId[8];
-    uint8_t _pad[2];
+    uint8_t resistance;
+    uint8_t patience;
+    uint8_t social_power;
+    uint8_t move_mask;
+    uint8_t tags;
+    uint8_t base_standing;
+    uint8_t npc_flags;
+    uint8_t _pad[3];
 } NpcDef;
 
-typedef char check_size[(sizeof(NpcDef) == 32) ? 1 : -1];
+typedef char check_size[(sizeof(NpcDef) == 40) ? 1 : -1];
 
 static NpcDef npcs[NPC_DEF_MAX];
 static int    npcCount = 0;
@@ -83,11 +100,19 @@ typedef enum {
     F_X,
     F_Y,
     F_MAPID,
+    F_RESISTANCE,
+    F_PATIENCE,
+    F_SOCIAL_POWER,
+    F_MOVE_MASK,
+    F_TAGS,
+    F_BASE_STANDING,
     F_COUNT
 } Field;
 
 static const char *fieldNames[] = {
-    "Name", "Image (2 chars)", "Dialog Tree ID", "X (tile)", "Y (tile)", "Map ID (7 chars)"
+    "Name", "Image (2 chars)", "Dialog Tree ID", "X (tile)", "Y (tile)", "Map ID (7 chars)",
+    "Resistance (0-255)", "Patience (0=none)", "Social Power (0=passive)",
+    "Move Mask (bits)", "Tags (bits)", "Base Standing (0-255)"
 };
 
 static void renderEdit(NpcDef *n, int sel, const char *status) {
@@ -100,17 +125,33 @@ static void renderEdit(NpcDef *n, int sel, const char *status) {
         if (i == sel) attron(A_REVERSE);
         int row = i + 4;
         switch (i) {
-            case F_NAME:  mvprintw(row, 2, "%-20s  %s",  fieldNames[i], n->name);   break;
-            case F_IMG:   mvprintw(row, 2, "%-20s  %s",  fieldNames[i], n->imgName); break;
-            case F_MAPID: mvprintw(row, 2, "%-20s  %s",  fieldNames[i], n->mapId);  break;
+            case F_NAME:  mvprintw(row, 2, "%-22s  %s",  fieldNames[i], n->name);   break;
+            case F_IMG:   mvprintw(row, 2, "%-22s  %s",  fieldNames[i], n->imgName); break;
+            case F_MAPID: mvprintw(row, 2, "%-22s  %s",  fieldNames[i], n->mapId);  break;
             case F_TREE:
                 if (n->treeId == 0xFF)
-                    mvprintw(row, 2, "%-20s  none", fieldNames[i]);
+                    mvprintw(row, 2, "%-22s  none", fieldNames[i]);
                 else
-                    mvprintw(row, 2, "%-20s  %d", fieldNames[i], n->treeId);
+                    mvprintw(row, 2, "%-22s  %d", fieldNames[i], n->treeId);
                 break;
-            case F_X:  mvprintw(row, 2, "%-20s  %d", fieldNames[i], n->x); break;
-            case F_Y:  mvprintw(row, 2, "%-20s  %d", fieldNames[i], n->y); break;
+            case F_X:            mvprintw(row, 2, "%-22s  %d",   fieldNames[i], n->x);             break;
+            case F_Y:            mvprintw(row, 2, "%-22s  %d",   fieldNames[i], n->y);             break;
+            case F_RESISTANCE:   mvprintw(row, 2, "%-22s  %d",   fieldNames[i], n->resistance);    break;
+            case F_PATIENCE:     mvprintw(row, 2, "%-22s  %d%s", fieldNames[i], n->patience,
+                                     n->patience == 0 ? " (no limit)" : "");                       break;
+            case F_SOCIAL_POWER: mvprintw(row, 2, "%-22s  %d%s", fieldNames[i], n->social_power,
+                                     n->social_power == 0 ? " (passive)" : "");                    break;
+            case F_MOVE_MASK:    mvprintw(row, 2, "%-22s  0x%02X  [%s%s%s]", fieldNames[i], n->move_mask,
+                                     n->move_mask & NPC_MOVE_DISMISS  ? "DISMISS "  : "",
+                                     n->move_mask & NPC_MOVE_THREATEN ? "THREATEN " : "",
+                                     n->move_mask & NPC_MOVE_LEAVE    ? "LEAVE"     : "");         break;
+            case F_TAGS:         mvprintw(row, 2, "%-22s  0x%02X  [%s%s%s%s%s]", fieldNames[i], n->tags,
+                                     n->tags & NPC_TAG_FEARFUL   ? "FEARFUL "   : "",
+                                     n->tags & NPC_TAG_NOBLE      ? "NOBLE "     : "",
+                                     n->tags & NPC_TAG_CRIMINAL   ? "CRIMINAL "  : "",
+                                     n->tags & NPC_TAG_CONNECTED  ? "CONNECTED " : "",
+                                     n->tags & NPC_TAG_FEARLESS   ? "FEARLESS"   : "");            break;
+            case F_BASE_STANDING:mvprintw(row, 2, "%-22s  %d",   fieldNames[i], n->base_standing); break;
         }
         if (i == sel) attroff(A_REVERSE);
     }
@@ -136,16 +177,22 @@ static void screenEdit(int idx) {
             case 's': case 'S': save(); status = "Saved."; break;
 
             case '\n': case KEY_ENTER:
-                if (sel == F_NAME)  { if (editString(sel + 4, 24, n->name,   16)) dirty = 1; }
-                if (sel == F_IMG)   { if (editString(sel + 4, 24, n->imgName, 3)) dirty = 1; }
-                if (sel == F_MAPID) { if (editString(sel + 4, 24, n->mapId,   8)) dirty = 1; }
+                if (sel == F_NAME)  { if (editString(sel + 4, 26, n->name,   16)) dirty = 1; }
+                if (sel == F_IMG)   { if (editString(sel + 4, 26, n->imgName, 3)) dirty = 1; }
+                if (sel == F_MAPID) { if (editString(sel + 4, 26, n->mapId,   8)) dirty = 1; }
                 break;
 
             case '+': case '=':
                 dirty = 1;
                 switch (sel) {
-                    case F_X: if (n->x < 255) n->x++; break;
-                    case F_Y: if (n->y < 255) n->y++; break;
+                    case F_X:            if (n->x < 255)             n->x++;             break;
+                    case F_Y:            if (n->y < 255)             n->y++;             break;
+                    case F_RESISTANCE:   if (n->resistance < 255)    n->resistance++;    break;
+                    case F_PATIENCE:     if (n->patience < 255)      n->patience++;      break;
+                    case F_SOCIAL_POWER: if (n->social_power < 255)  n->social_power++;  break;
+                    case F_MOVE_MASK:    n->move_mask = (n->move_mask + 1) & 0x07;       break;
+                    case F_TAGS:         n->tags      = (n->tags      + 1) & 0x1F;       break;
+                    case F_BASE_STANDING:if (n->base_standing < 255) n->base_standing++; break;
                     case F_TREE:
                         n->treeId = (n->treeId == 0xFF) ? 0
                                   : (n->treeId < 254)   ? n->treeId + 1
@@ -158,8 +205,14 @@ static void screenEdit(int idx) {
             case '-':
                 dirty = 1;
                 switch (sel) {
-                    case F_X: if (n->x > 0) n->x--; break;
-                    case F_Y: if (n->y > 0) n->y--; break;
+                    case F_X:            if (n->x > 0)               n->x--;             break;
+                    case F_Y:            if (n->y > 0)               n->y--;             break;
+                    case F_RESISTANCE:   if (n->resistance > 0)      n->resistance--;    break;
+                    case F_PATIENCE:     if (n->patience > 0)        n->patience--;      break;
+                    case F_SOCIAL_POWER: if (n->social_power > 0)    n->social_power--;  break;
+                    case F_MOVE_MASK:    n->move_mask = (n->move_mask - 1) & 0x07;       break;
+                    case F_TAGS:         n->tags      = (n->tags      - 1) & 0x1F;       break;
+                    case F_BASE_STANDING:if (n->base_standing > 0)   n->base_standing--; break;
                     case F_TREE:
                         n->treeId = (n->treeId == 0)    ? 0xFF
                                   : (n->treeId == 0xFF) ? 254

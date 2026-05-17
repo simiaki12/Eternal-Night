@@ -18,29 +18,38 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* ---- mirror of src/town.h (kept in sync manually) ---- */
+/* ---- mirror of src/world/dialog.h (kept in sync manually) ---- */
 #define DIALOG_MAX_OPTIONS  4
 #define DIALOG_MAX_NODES   16
 #define DIALOG_MAX_TREES   64
 
-/* Skill constants — keep in sync with src/skills.h */
-#define SKILL_BLADES     0
-#define SKILL_SNEAK      1
-#define SKILL_MAGIC      2
-#define SKILL_DIPLOMACY  3
-#define SKILL_SURVIVAL   4
-#define SKILL_ARCHERY    5
-#define SKILL_COUNT      6
-#define NO_SKILL        0xFF
+/* Domain constants — keep in sync with src/gameplay/domains.h */
+#define DOMAIN_COMBAT    0
+#define DOMAIN_TRICKERY  1
+#define DOMAIN_BLOOD     2
+#define DOMAIN_CHARM     3
+#define DOMAIN_COUNT    14
+#define NO_DOMAIN       0xFF
 
-static const char *skillNames[] = {
-    "Blades", "Sneak", "Magic", "Diplomacy", "Survival", "Archery"
+/* Dialog effect types — keep in sync with src/world/dialog.h */
+#define DLGFX_NONE             0
+#define DLGFX_SOCIAL_ENCOUNTER 1
+
+static const char *domainNames[] = {
+    "Combat", "Trickery", "Blood", "Charm",
+    "Fusion A", "Fusion B", "Fusion C", "Fusion D", "Fusion E", "Fusion F",
+    "Story A",  "Story B",  "Story C",  "Story D"
 };
 
+static const char *effectNames[] = { "None", "Social Encounter" };
+#define DLGFX_COUNT 2
+
 typedef struct {
-    uint8_t requiredSkill;
+    uint8_t requiredDomain;
     uint8_t requiredLevel;
     int8_t  nextNode;
+    uint8_t effect_type;
+    uint8_t effect_arg;
     char    text[41];
 } DialogOption;
 
@@ -55,7 +64,7 @@ typedef struct {
     uint8_t    nodeCount;
     DialogNode nodes[DIALOG_MAX_NODES];
 } DialogTree;
-/* ------------------------------------------------------ */
+/* -------------------------------------------------------------- */
 
 static const char *outfile = "assets/data/dialog.dat";
 
@@ -126,10 +135,12 @@ static void load(void) {
 
             for (int k = 0; k < (int)oc; k++) {
                 DialogOption *o = &n->options[k];
-                if (!rdByte(buf, size, &pos, &o->requiredSkill)) goto done;
-                if (!rdByte(buf, size, &pos, &o->requiredLevel)) goto done;
-                if (!rdByte(buf, size, &pos, (uint8_t *)&o->nextNode)) goto done;
-                if (!rdStr(buf, size, &pos, o->text, 41)) goto done;
+                if (!rdByte(buf, size, &pos, &o->requiredDomain))       goto done;
+                if (!rdByte(buf, size, &pos, &o->requiredLevel))         goto done;
+                if (!rdByte(buf, size, &pos, (uint8_t *)&o->nextNode))   goto done;
+                if (!rdByte(buf, size, &pos, &o->effect_type))           goto done;
+                if (!rdByte(buf, size, &pos, &o->effect_arg))            goto done;
+                if (!rdStr(buf, size, &pos, o->text, 41))                goto done;
             }
         }
         treeCount++;
@@ -163,9 +174,11 @@ static void save(void) {
             for (int k = 0; k < (int)nd->optionCount; k++) {
                 DialogOption *o = &nd->options[k];
                 uint8_t textLen = (uint8_t)strlen(o->text);
-                fwrite(&o->requiredSkill,  1, 1,       f);
+                fwrite(&o->requiredDomain, 1, 1,       f);
                 fwrite(&o->requiredLevel,  1, 1,       f);
                 fwrite(&o->nextNode,       1, 1,       f);
+                fwrite(&o->effect_type,    1, 1,       f);
+                fwrite(&o->effect_arg,     1, 1,       f);
                 fwrite(&textLen,           1, 1,       f);
                 fwrite(o->text,            1, textLen, f);
             }
@@ -206,24 +219,24 @@ static void editStr(int row, int col, char *buf, int maxLen) {
     curs_set(0);
 }
 
-/* ---- skill cycle helper ---- */
+/* ---- domain cycle helper ---- */
 
-static const char *skillLabel(uint8_t sk) {
-    if (sk == NO_SKILL) return "None";
-    if (sk < SKILL_COUNT) return skillNames[sk];
+static const char *domainLabel(uint8_t d) {
+    if (d == NO_DOMAIN) return "None";
+    if (d < DOMAIN_COUNT) return domainNames[d];
     return "???";
 }
 
-static uint8_t skillNext(uint8_t sk) {
-    if (sk == NO_SKILL) return 0;
-    if (sk + 1 >= SKILL_COUNT) return NO_SKILL;
-    return sk + 1;
+static uint8_t domainNext(uint8_t d) {
+    if (d == NO_DOMAIN) return 0;
+    if (d + 1 >= DOMAIN_COUNT) return NO_DOMAIN;
+    return d + 1;
 }
 
-static uint8_t skillPrev(uint8_t sk) {
-    if (sk == NO_SKILL) return (uint8_t)(SKILL_COUNT - 1);
-    if (sk == 0) return NO_SKILL;
-    return sk - 1;
+static uint8_t domainPrev(uint8_t d) {
+    if (d == NO_DOMAIN) return (uint8_t)(DOMAIN_COUNT - 1);
+    if (d == 0) return NO_DOMAIN;
+    return d - 1;
 }
 
 /* ---- screens ---- */
@@ -373,13 +386,22 @@ static void drawNode(void) {
         int row = npcRow + 2 + i;
         if (i == selOpt) attron(A_REVERSE);
         DialogOption *o = &n->options[i];
-        char skillBuf[32];
-        if (o->requiredSkill == NO_SKILL)
-            snprintf(skillBuf, sizeof(skillBuf), "none");
+        char domBuf[24];
+        if (o->requiredDomain == NO_DOMAIN)
+            snprintf(domBuf, sizeof(domBuf), "none");
         else
-            snprintf(skillBuf, sizeof(skillBuf), "%s>=%d", skillLabel(o->requiredSkill), o->requiredLevel);
-        mvprintw(row, 2, "[%d] next:%-3d  req:%-16s  \"%s\"",
-            i, (int)o->nextNode, skillBuf, o->text);
+            snprintf(domBuf, sizeof(domBuf), "%s>=%d",
+                o->requiredDomain < DOMAIN_COUNT ? domainNames[o->requiredDomain] : "???",
+                o->requiredLevel);
+        char fxBuf[24];
+        if (o->effect_type == DLGFX_NONE)
+            snprintf(fxBuf, sizeof(fxBuf), "-");
+        else
+            snprintf(fxBuf, sizeof(fxBuf), "%s(%d)",
+                o->effect_type < DLGFX_COUNT ? effectNames[o->effect_type] : "???",
+                o->effect_arg);
+        mvprintw(row, 2, "[%d] next:%-3d  req:%-14s  fx:%-16s  \"%s\"",
+            i, (int)o->nextNode, domBuf, fxBuf, o->text);
         if (i == selOpt) attroff(A_REVERSE);
     }
     if (n->optionCount == 0)
@@ -412,7 +434,7 @@ static void handleNode(int ch) {
         case 'a': case 'A':
             if (n->optionCount < DIALOG_MAX_OPTIONS) {
                 memset(&n->options[n->optionCount], 0, sizeof(DialogOption));
-                n->options[n->optionCount].requiredSkill = NO_SKILL;
+                n->options[n->optionCount].requiredDomain = NO_DOMAIN;
                 n->options[n->optionCount].nextNode = -1;
                 strncpy(n->options[n->optionCount].text, "...", 40);
                 selOpt = n->optionCount++;
@@ -437,8 +459,9 @@ static void handleNode(int ch) {
 
 /* ------ SCR_OPTION ------ */
 
-/* Fields: 0=text, 1=skill, 2=level, 3=nextNode */
+/* Fields: 0=text, 1=domain, 2=level, 3=nextNode, 4=effect_type, 5=effect_arg */
 static int selField = 0;
+#define OPT_FIELD_COUNT 6
 
 static void drawOption(void) {
     clear();
@@ -448,21 +471,27 @@ static void drawOption(void) {
 
     mvprintw(0, 0, "OPTION %d  node:%d  tree:%s  [%s]",
         selOpt, selNode, t->speakerName, dirty ? "unsaved" : "saved");
-    mvprintw(1, 0, "Up/Down=field  E=edit text  +/-=change value  Bksp/Q=back  S=save");
+    mvprintw(1, 0, "Up/Down=field  E=edit text  +/-=change  Bksp/Q=back  S=save");
 
-    const char *labels[] = { "Player text", "Req. skill", "Req. level", "Next node" };
-    for (int i = 0; i < 4; i++) {
+    const char *labels[] = {
+        "Player text", "Req. domain", "Req. level", "Next node",
+        "Effect", "Effect arg"
+    };
+    for (int i = 0; i < OPT_FIELD_COUNT; i++) {
         if (i == selField) attron(A_REVERSE);
         switch (i) {
-            case 0: mvprintw(3 + i, 2, "%-12s: %s",  labels[i], o->text); break;
-            case 1: mvprintw(3 + i, 2, "%-12s: %s",  labels[i], skillLabel(o->requiredSkill)); break;
-            case 2: mvprintw(3 + i, 2, "%-12s: %d",  labels[i], o->requiredLevel); break;
-            case 3: mvprintw(3 + i, 2, "%-12s: %d",  labels[i], (int)o->nextNode); break;
+            case 0: mvprintw(3 + i, 2, "%-14s: %s",  labels[i], o->text); break;
+            case 1: mvprintw(3 + i, 2, "%-14s: %s",  labels[i], domainLabel(o->requiredDomain)); break;
+            case 2: mvprintw(3 + i, 2, "%-14s: %d",  labels[i], o->requiredLevel); break;
+            case 3: mvprintw(3 + i, 2, "%-14s: %d",  labels[i], (int)o->nextNode); break;
+            case 4: mvprintw(3 + i, 2, "%-14s: %s",  labels[i],
+                        o->effect_type < DLGFX_COUNT ? effectNames[o->effect_type] : "???"); break;
+            case 5: mvprintw(3 + i, 2, "%-14s: %d",  labels[i], o->effect_arg); break;
         }
         if (i == selField) attroff(A_REVERSE);
     }
-    /* Hint */
-    mvprintw(8, 0, "nextNode: index into this tree's nodes array, -1 = close dialog");
+    mvprintw(10, 0, "nextNode: node index in this tree, -1 = close dialog");
+    mvprintw(11, 0, "effect applied after navigation; overrides state if it starts an encounter");
 }
 
 static void handleOption(int ch) {
@@ -470,27 +499,33 @@ static void handleOption(int ch) {
 
     switch (ch) {
         case KEY_UP:   if (selField > 0) selField--; break;
-        case KEY_DOWN: if (selField < 3) selField++; break;
+        case KEY_DOWN: if (selField < OPT_FIELD_COUNT - 1) selField++; break;
         case 'e': case 'E':
             if (selField == 0) {
-                editStr(3, 16, o->text, 41);
+                editStr(3, 18, o->text, 41);
                 dirty = 1;
             }
             break;
         case '+': case '=':
             dirty = 1;
             switch (selField) {
-                case 1: o->requiredSkill = skillNext(o->requiredSkill); break;
-                case 2: if (o->requiredLevel < 10) o->requiredLevel++; break;
+                case 1: o->requiredDomain = domainNext(o->requiredDomain); break;
+                case 2: if (o->requiredLevel < 20) o->requiredLevel++; break;
                 case 3: if (o->nextNode < DIALOG_MAX_NODES - 1) o->nextNode++; break;
+                case 4: o->effect_type = (o->effect_type + 1) % DLGFX_COUNT; break;
+                case 5: if (o->effect_arg < 255) o->effect_arg++; break;
+                default: dirty = 0; break;
             }
             break;
         case '-':
             dirty = 1;
             switch (selField) {
-                case 1: o->requiredSkill = skillPrev(o->requiredSkill); break;
+                case 1: o->requiredDomain = domainPrev(o->requiredDomain); break;
                 case 2: if (o->requiredLevel > 0) o->requiredLevel--; break;
                 case 3: if (o->nextNode > -1) o->nextNode--; break;
+                case 4: o->effect_type = (o->effect_type + DLGFX_COUNT - 1) % DLGFX_COUNT; break;
+                case 5: if (o->effect_arg > 0) o->effect_arg--; break;
+                default: dirty = 0; break;
             }
             break;
         case KEY_BACKSPACE: case 127: case 'q': case 'Q':

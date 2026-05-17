@@ -9,7 +9,7 @@
 #include "world.h"
 
 #define SAVE_MAGIC   0x53415645u  /* "SAVE" */
-#define SAVE_VERSION 6  /* bumped: PlayerData gained focusedDomain; ActionDef gained domain+encounterCat */
+#define SAVE_VERSION 7  /* bumped: PlayerData gained npcStates + seStates; NpcDef grew to 40 bytes */
 
 /* Layout (fixed, do not reorder):
  *   4  magic

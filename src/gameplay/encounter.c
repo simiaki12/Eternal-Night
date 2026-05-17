@@ -14,8 +14,66 @@
 #include "quests.h"
 #include "loot.h"
 #include "world_enemies.h"
+#include "npcs.h"
 
 EncounterState encounter;
+
+/* -----------------------------------------------------------------------
+ * Social encounter implementation
+ * ----------------------------------------------------------------------- */
+
+SocialEncounterDef seDefs[SE_DEF_MAX];
+int                seDefCount = 0;
+
+int loadSocialEncounters(PakData data) {
+    if (!data.data || data.size < 1) return 0;
+    const uint8_t *d = (const uint8_t *)data.data;
+    uint8_t count = d[0];
+    if (count > SE_DEF_MAX) count = SE_DEF_MAX;
+    uint32_t expected = 1 + (uint32_t)count * sizeof(SocialEncounterDef);
+    if (data.size < expected) return 0;
+    memcpy(seDefs, d + 1, (size_t)count * sizeof(SocialEncounterDef));
+    seDefCount = count;
+    return seDefCount;
+}
+
+void socialNewGame(void) {
+    for (int i = 0; i < NPC_DEF_MAX; i++)
+        player.npcStates[i].standing = (i < npcDefCount) ? npcDefs[i].base_standing : 50;
+    for (int i = 0; i < SE_DEF_MAX; i++)
+        player.seStates[i].state = SE_STATE_NEVER_MET;
+}
+
+int socialFindActive(uint8_t npc_id) {
+    for (int i = 0; i < seDefCount; i++) {
+        if (seDefs[i].npc_id != npc_id)                 continue;
+        if (seDefs[i].flags & SE_FLAG_HIDDEN)            continue;
+        if (player.seStates[i].state == SE_STATE_LOCKED) continue;
+        return i;
+    }
+    return -1;
+}
+
+void socialEncounterStart(int se_idx) {
+    if (se_idx < 0 || se_idx >= seDefCount) return;
+    const SocialEncounterDef *se = &seDefs[se_idx];
+    if (se->npc_id >= (uint8_t)npcDefCount) return;
+    const NpcDef *npc = &npcDefs[se->npc_id];
+
+    EnemyDef tmp;
+    memset(&tmp, 0, sizeof(tmp));
+    strncpy(tmp.name, npc->name, sizeof(tmp.name) - 1);
+    tmp.hp           = npc->base_standing;
+    tmp.defense      = npc->resistance;
+    tmp.attack       = npc->social_power;
+    tmp.intelligence = npc->patience;
+    tmp.lootTableId  = 0xFF;
+    tmp.imgName[0]   = npc->imgName[0];
+    tmp.imgName[1]   = npc->imgName[1];
+
+    encounterStart(ENCOUNTER_SOCIAL, &tmp, 0);
+    player.seStates[se_idx].state = SE_STATE_PARTIAL;
+}
 
 
 /* Lazily-loaded sprites for action cards — indexed by action id, loaded on first render */
