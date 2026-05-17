@@ -107,6 +107,13 @@ typedef struct { ActionId type; uint8_t power; } Action;
 
 typedef enum { ENCOUNTER_PHASE_ACTIVE, ENCOUNTER_PHASE_VICTORY } EncounterPhase;
 
+typedef enum {
+    SOCIAL_OUTCOME_NONE   = 0,
+    SOCIAL_OUTCOME_WIN    = 1, /* disposition reached high threshold */
+    SOCIAL_OUTCOME_DEMAND = 2, /* player forced an end with Demand   */
+    SOCIAL_OUTCOME_LOSS   = 3, /* NPC walked away                    */
+} SocialOutcome;
+
 #define ENCOUNTER_MAX_ENEMIES 3
 
 typedef struct {
@@ -133,6 +140,9 @@ typedef struct {
     char        log[128][28]; /* encounter log — newest at highest index */
     int         logCount;
     int         logScroll;   /* entries from bottom; 0 = newest visible */
+    int         socialNpcId;     /* npc_id during ENCOUNTER_SOCIAL; -1 otherwise */
+    SocialOutcome socialOutcome; /* how the social encounter ended             */
+    int         socialEndDisp;   /* final disposition when it ended            */
 } EncounterState;
 
 extern EncounterState encounter;
@@ -148,4 +158,4 @@ void encounterLog(const char *msg); /* public log push — for use from log_mess
 int  loadSocialEncounters(PakData data);
 void socialNewGame(void);              /* copy base standings into PlayerData; reset encounter states */
 int  socialFindActive(uint8_t npc_id); /* first non-locked, non-hidden SE for this NPC; -1 if none */
-void socialEncounterStart(int se_idx); /* begin a social encounter; transitions to STATE_COMBAT */
+void socialEncounterStart(int se_idx); /* begin a social encounter; transitions to STATE_ENCOUNTER */

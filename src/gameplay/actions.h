@@ -55,7 +55,8 @@ typedef enum {
     ACTION_NOBLE_PRESENCE = 20,
     ACTION_PROVE_SKILL    = 21,
     ACTION_DUELIST_MARK   = 22,
-    ACTION_COUNT          = 23
+    ACTION_DEMAND         = 35,
+    ACTION_COUNT          = 24
 } ActionId;
 
 /* 64 bytes — pak-friendly, no pointers */

@@ -20,6 +20,7 @@ static const ActionDef builtinDefs[] = {
     { ACTION_CALM,     0,                    22,  0,  "Persuade",      "a8",  "Persuade the enemy, lower aggro.", DOMAIN_CHARM,    ACT_CAT_COMBAT|ACT_CAT_SOCIAL, ACT_FLAG_STARTER, 0 },
     { ACTION_HIDE,     0,                    20,  0,  "Blindspot",     "a9",  "Find cover. Avoid the counter.",   DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0 },
     { ACTION_EXECUTE,  ACT_CTX_EXECUTABLE,   78, 15,  "Death star",    "a10", "Lethal blow on a weakened enemy.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0 },
+    { ACTION_DEMAND,   0,                     0,  0,  "Demand",        "",    "Force the issue. End it now.",     DOMAIN_NONE,     ACT_CAT_SOCIAL,                0,                0 },
 };
 #define BUILTIN_COUNT (int)(sizeof(builtinDefs)/sizeof(builtinDefs[0]))
 

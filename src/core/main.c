@@ -407,7 +407,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                 g_worldActPanel = 0;
             /* Escape opens pause from the main gameplay states */
             } else if (g_pendingKey == VK_ESCAPE &&
-                       (state == STATE_WORLD || state == STATE_COMBAT || state == STATE_TOWN)) {
+                       (state == STATE_WORLD || state == STATE_ENCOUNTER || state == STATE_TOWN)) {
                 enterPauseMenu(state);
             /* Pause menu gets both key and char for the save-name form */
             } else if (state == STATE_PAUSE_MENU) {
@@ -432,7 +432,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             } else if (g_pendingKey == 'P' && (state == STATE_WORLD || state == STATE_DOMAINS)) {
                 state = (state == STATE_DOMAINS) ? STATE_WORLD : STATE_DOMAINS;
             /* J toggles the quest log from any non-encounter state */
-            } else if (g_pendingKey == 'J' && state != STATE_COMBAT) {
+            } else if (g_pendingKey == 'J' && state != STATE_ENCOUNTER) {
                 if (state == STATE_QUEST_LOG) {
                     state = questLogSt.returnState;
                 } else {
@@ -441,7 +441,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     state = STATE_QUEST_LOG;
                 }
             /* C toggles the character sheet from any non-encounter state */
-            } else if (g_pendingKey == 'C' && state != STATE_COMBAT && state != STATE_MAIN_MENU && state != STATE_LOADING) {
+            } else if (g_pendingKey == 'C' && state != STATE_ENCOUNTER && state != STATE_MAIN_MENU && state != STATE_LOADING) {
                 if (state == STATE_CHAR_SHEET)
                     state = g_charSheetReturn;
                 else
@@ -456,7 +456,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             } else {
                 switch (state) {
                     case STATE_WORLD:   handleWorldInput(g_pendingKey);   break;
-                    case STATE_COMBAT:  handleEncounterInput(g_pendingKey);  break;
+                    case STATE_ENCOUNTER:  handleEncounterInput(g_pendingKey);  break;
                     case STATE_MAIN_MENU: handleMainMenuInput(g_pendingKey); break;
                     case STATE_INVENTORY: handleInventoryInput(g_pendingKey); break;
                     case STATE_DOMAINS: handleDomainsInput(g_pendingKey); break;
@@ -485,7 +485,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                 case STATE_WORLD:     audioPlayMusic("assets/music/hopes_and_dreams_eternal_night_ost.mus"); break;
                 case STATE_TOWN:      audioPlayMusic("assets/music/eternal_town.mus"); break;
                 case STATE_DUNGEON:   audioPlayMusic("assets/music/eternal_cave.mus"); break;
-                case STATE_COMBAT:    audioPlayMusic("assets/music/shining_star_eternal_night_ost.mus"); break;
+                case STATE_ENCOUNTER:    audioPlayMusic("assets/music/shining_star_eternal_night_ost.mus"); break;
                 case STATE_DEATH:     audioPlayMusic("assets/music/over.mus"); break;
                 default:              audioStop();                          break;
             }
@@ -507,7 +507,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     renderActionPanel("Your Actions", pool, cnt, g_worldActSel);
                 }
                 break;
-            case STATE_COMBAT:  renderEncounter();  break;
+            case STATE_ENCOUNTER:  renderEncounter();  break;
             case STATE_LOADING:   renderLoading();   break;
             case STATE_MAIN_MENU: renderMainMenu(); break;
             case STATE_INVENTORY: renderInventory(); break;

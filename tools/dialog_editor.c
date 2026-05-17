@@ -253,7 +253,7 @@ static void drawTrees(void) {
     clear();
     mvprintw(0, 0, "DIALOG EDITOR  [%s]  trees: %d/%d",
         dirty ? "unsaved" : "saved", treeCount, DIALOG_MAX_TREES);
-    mvprintw(1, 0, "Enter=open  A=add  D=delete  S=save  Q=quit");
+    mvprintw(1, 0, "Enter=open  A=add  D=delete  E=rename  S=save  Q=quit");
 
     for (int i = 0; i < treeCount; i++) {
         if (i == selTree) attron(A_REVERSE);
@@ -307,7 +307,7 @@ static void drawNodes(void) {
     DialogTree *t = &trees[selTree];
     mvprintw(0, 0, "TREE: %s  [%s]  nodes: %d/%d",
         t->speakerName, dirty ? "unsaved" : "saved", t->nodeCount, DIALOG_MAX_NODES);
-    mvprintw(1, 0, "Enter=open  A=add  D=delete  E=edit text  Bksp/Q=back");
+    mvprintw(1, 0, "Enter=open  A=add  D=delete  E=edit text  R=rename speaker  Bksp/Q=back");
 
     for (int i = 0; i < t->nodeCount; i++) {
         if (i == selNode) attron(A_REVERSE);
@@ -356,6 +356,12 @@ static void handleNodes(int ch) {
                 dirty = 1;
             }
             break;
+        case 'r': case 'R': {
+            mvprintw(0, 0, "TREE: %-32s", "");
+            editStr(0, 6, trees[selTree].speakerName, 32);
+            dirty = 1;
+            break;
+        }
         case KEY_BACKSPACE: case 127: case 'q': case 'Q':
             screen = SCR_TREES;
             break;

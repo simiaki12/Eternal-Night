@@ -72,7 +72,10 @@ void socialEncounterStart(int se_idx) {
     tmp.imgName[1]   = npc->imgName[1];
 
     encounterStart(ENCOUNTER_SOCIAL, &tmp, 0);
-    player.seStates[se_idx].state = SE_STATE_PARTIAL;
+    encounter.socialNpcId          = (int)se->npc_id;
+    encounter.enemies[0].maxHp     = 100;
+    encounter.enemies[0].hp        = (int)npc->base_standing;
+    player.seStates[se_idx].state  = SE_STATE_PARTIAL;
 }
 
 
@@ -159,6 +162,12 @@ static int computeWeight(const ActionDef *def) {
 
 
 static void generateActions(void) {
+    encounter.actionCount = 0;
+
+    /* Social encounters always have Demand as the first card */
+    if (encounter.encounterType == ENCOUNTER_SOCIAL)
+        encounter.actions[encounter.actionCount++] = (Action){ ACTION_DEMAND, 0 };
+
     uint8_t pool[ACTION_MAX];
     int poolSize = buildActionPool(pool, (uint8_t)encounter.encounterType);
 
@@ -167,6 +176,7 @@ static void generateActions(void) {
     int candCount = 0;
 
     for (int i = 0; i < poolSize; i++) {
+        if (pool[i] == (uint8_t)ACTION_DEMAND) continue; /* already injected */
         const ActionDef *def = getActionDef(pool[i]);
         if (!def) continue;
         if (!checkContext(def)) continue;
@@ -175,8 +185,8 @@ static void generateActions(void) {
         candCount++;
     }
 
-    encounter.actionCount = 0;
-    int picks = candCount < 4 ? candCount : 4;
+    int slots = 4 - encounter.actionCount;
+    int picks = candCount < slots ? candCount : slots;
     for (int pick = 0; pick < picks; pick++) {
         int total = 0;
         for (int i = 0; i < candCount; i++) total += candidates[i].weight;
@@ -253,6 +263,9 @@ void encounterStartCombat(const EnemyDef *def) {
     encounter.modifiers       = 0;
     encounter.logCount        = 0;
     encounter.logScroll       = 0;
+    encounter.socialNpcId     = -1;
+    encounter.socialOutcome   = SOCIAL_OUTCOME_NONE;
+    encounter.socialEndDisp   = 0;
     memset(encounter.gainedDomainXp, 0, sizeof(encounter.gainedDomainXp));
     {
         char opening[28];
@@ -261,7 +274,7 @@ void encounterStartCombat(const EnemyDef *def) {
     }
     fireLogMessages(LOGTRIG_COMBAT_START, 0xFF, 0);
     generateActions();
-    state = STATE_COMBAT;
+    state = STATE_ENCOUNTER;
 }
 
 void encounterAddEnemy(const EnemyDef *def, uint8_t wx, uint8_t wy) {
@@ -477,22 +490,47 @@ static void performPlayerAction(void) {
             tgt->defense = 0;
             break;
 
+        case ACTION_DEMAND:
+            /* Force the issue: skip any counter, end the exchange immediately */
+            encounter.skipEnemyAttack  = 1;
+            encounter.phase            = ENCOUNTER_PHASE_VICTORY;
+            encounter.socialOutcome    = SOCIAL_OUTCOME_DEMAND;
+            encounter.socialEndDisp    = encounter.enemies[0].hp;
+            break;
+
         default:
             break;
     }
 
-    /* Log action result (use target HP delta for single-target; for AoE log separately) */
+    /* Social: category actions raise disposition */
+    if (encounter.encounterType == ENCOUNTER_SOCIAL && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+        const ActionDef *sadef = getActionDef((uint8_t)a->type);
+        if (sadef && (sadef->encounterCat & ACT_CAT_SOCIAL) && a->type != ACTION_DEMAND) {
+            int boost = 10 + sadef->power;
+            tgt->hp  += boost;
+            if (tgt->hp > tgt->maxHp) tgt->hp = tgt->maxHp;
+        }
+    }
+
+    /* Log action result */
     {
-        int dealt  = ehpBefore - tgt->hp;
-        int healed = (int)player.hp - phpBefore;
         const ActionDef *adef = getActionDef((uint8_t)a->type);
         const char *nm = adef ? adef->name : "?";
         char lm[28];
-        if      (dealt > 0 && healed > 0) snprintf(lm, 28, "%.10s: %d dmg+%d HP.", nm, dealt, healed);
-        else if (dealt > 0)               snprintf(lm, 28, "%.12s: %d dmg.", nm, dealt);
-        else if (healed > 0)              snprintf(lm, 28, "%.14s: +%d HP.", nm, healed);
-        else if (healed < 0)              snprintf(lm, 28, "%.8s: -%d HP.", nm, -healed);
-        else                              snprintf(lm, 28, "%.26s.", nm);
+        if (encounter.encounterType == ENCOUNTER_SOCIAL) {
+            int dispDelta = tgt->hp - ehpBefore;
+            if      (dispDelta > 0) snprintf(lm, 28, "%.12s: +%d disp.", nm, dispDelta);
+            else if (dispDelta < 0) snprintf(lm, 28, "%.11s: %d disp.", nm, dispDelta);
+            else                    snprintf(lm, 28, "%.26s.", nm);
+        } else {
+            int dealt  = ehpBefore - tgt->hp;
+            int healed = (int)player.hp - phpBefore;
+            if      (dealt > 0 && healed > 0) snprintf(lm, 28, "%.10s: %d dmg+%d HP.", nm, dealt, healed);
+            else if (dealt > 0)               snprintf(lm, 28, "%.12s: %d dmg.", nm, dealt);
+            else if (healed > 0)              snprintf(lm, 28, "%.14s: +%d HP.", nm, healed);
+            else if (healed < 0)              snprintf(lm, 28, "%.8s: -%d HP.", nm, -healed);
+            else                              snprintf(lm, 28, "%.26s.", nm);
+        }
         logPush(lm);
     }
 
@@ -508,14 +546,27 @@ static void performPlayerAction(void) {
         }
     }
 
-    /* Non-encounter encounters: any action resolves the scene */
-    if (encounter.encounterType != ENCOUNTER_COMBAT && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+    /* Social: win threshold — NPC becomes willing */
+    if (encounter.encounterType == ENCOUNTER_SOCIAL && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+        if (encounter.enemies[0].hp >= 80) {
+            logPush("They come around.");
+            encounter.phase          = ENCOUNTER_PHASE_VICTORY;
+            encounter.skipEnemyAttack = 1;
+            encounter.socialOutcome  = SOCIAL_OUTCOME_WIN;
+            encounter.socialEndDisp  = encounter.enemies[0].hp;
+        }
+    }
+
+    /* Non-social, non-combat encounters resolve on any action */
+    if (encounter.encounterType != ENCOUNTER_COMBAT &&
+        encounter.encounterType != ENCOUNTER_SOCIAL &&
+        encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
         encounter.phase = ENCOUNTER_PHASE_VICTORY;
         encounter.skipEnemyAttack = 1;
     }
 
-    /* Kill any enemies that reached 0 HP; check for full victory */
-    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+    /* Kill any enemies that reached 0 HP; check for full victory (combat only) */
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE && encounter.encounterType != ENCOUNTER_SOCIAL) {
         int allDead = 1;
         for (int i = 0; i < encounter.enemyCount; i++) {
             if (encounter.enemies[i].hp <= 0 && encounter.enemies[i].maxHp > 0) {
@@ -539,17 +590,37 @@ static void performPlayerAction(void) {
         return;
     }
 
-    /* Each surviving enemy counter-attacks */
+    /* Each surviving enemy counter-attacks (or pushes back in social) */
     if (!encounter.skipEnemyAttack && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
         for (int i = 0; i < encounter.enemyCount; i++) {
-            if (encounter.enemies[i].maxHp == 0) continue; /* dead */
-            int dmg = encounter.enemies[i].attack;
-            if (a->type == ACTION_DEFEND || a->type == ACTION_GUARDED_STANCE) dmg = dmg / 2 + 1;
-            player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
-            char cm[28];
-            snprintf(cm, 28, "%.10s: %d dmg.", encounter.enemies[i].name, dmg);
-            logPush(cm);
-            if (player.hp == 0) break;
+            if (encounter.enemies[i].maxHp == 0) continue;
+            if (encounter.encounterType == ENCOUNTER_SOCIAL) {
+                int pushback = encounter.enemies[i].attack > 0 ? encounter.enemies[i].attack : 5;
+                encounter.enemies[i].hp -= pushback;
+                if (encounter.enemies[i].hp < 0) encounter.enemies[i].hp = 0;
+                char cm[28];
+                snprintf(cm, 28, "%.10s: -%d disp.", encounter.enemies[i].name, pushback);
+                logPush(cm);
+            } else {
+                int dmg = encounter.enemies[i].attack;
+                if (a->type == ACTION_DEFEND || a->type == ACTION_GUARDED_STANCE) dmg = dmg / 2 + 1;
+                player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
+                char cm[28];
+                snprintf(cm, 28, "%.10s: %d dmg.", encounter.enemies[i].name, dmg);
+                logPush(cm);
+                if (player.hp == 0) break;
+            }
+        }
+    }
+
+    /* Social: loss threshold — NPC ends the conversation */
+    if (encounter.encounterType == ENCOUNTER_SOCIAL && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+        if (encounter.enemies[0].hp <= 0) {
+            encounter.enemies[0].hp  = 0;
+            logPush("They end the conversation.");
+            encounter.phase         = ENCOUNTER_PHASE_VICTORY;
+            encounter.socialOutcome = SOCIAL_OUTCOME_LOSS;
+            encounter.socialEndDisp = 0;
         }
     }
 
@@ -710,54 +781,98 @@ void renderEncounter(void) {
 
     /* ── Victory screen ─────────────────────────────────────────── */
     if (encounter.phase == ENCOUNTER_PHASE_VICTORY) {
-        drawText(bx, y, "VICTORY!", rgb(255, 220, 50), 2);  y += 28;
+        if (encounter.encounterType == ENCOUNTER_SOCIAL) {
+            /* Social outcome header */
+            static const char    *labels[] = { "Exchange over.",  "Agreement reached.", "Demand made.",         "They walked away." };
+            static const uint32_t cols[]   = { 0xFFFFFFFF,        0xFF50DC50,           0xFFDCB432,             0xFFB43232           };
+            int oi = (encounter.socialOutcome >= 1 && encounter.socialOutcome <= 3) ? encounter.socialOutcome : 0;
+            drawText(bx, y, labels[oi], cols[oi], 2);  y += 28;
 
-        for (int i = 0; i < 4; i++) {
-            if (encounter.gainedDomainXp[i] == 0) continue;
-            snprintf(buf, sizeof(buf), "+%d %s xp",
-                     encounter.gainedDomainXp[i], domainName(i));
-            drawText(bx, y, buf, rgb(140, 200, 255), 2);    y += 20;
+            /* Disposition bar */
+            int disp  = encounter.socialEndDisp;
+            int dfill = disp * barW / 100;
+            uint32_t dispCol = disp > 66 ? rgb(50, 190, 80) : disp > 33 ? rgb(190, 170, 40) : rgb(190, 55, 55);
+            fillRect(bx, y, barW, 8, rgb(12, 12, 35));
+            if (dfill > 0) fillRect(bx, y, dfill, 8, dispCol);
+            y += 10;
+            snprintf(buf, sizeof(buf), "Final disposition: %d / 100", disp);
+            drawText(bx, y, buf, rgb(100, 120, 200), 1);  y += 18;
+
+            /* Domain XP */
+            fillRect(LP_X + 8, y + 2, LP_W - 16, 1, rgb(30, 35, 80));  y += 10;
+            for (int i = 0; i < 4; i++) {
+                if (encounter.gainedDomainXp[i] == 0) continue;
+                snprintf(buf, sizeof(buf), "+%d %s xp", encounter.gainedDomainXp[i], domainName(i));
+                drawText(bx, y, buf, rgb(140, 200, 255), 1);  y += 14;
+            }
+
+        } else {
+            /* Combat / other victory */
+            drawText(bx, y, "VICTORY!", rgb(255, 220, 50), 2);  y += 28;
+
+            for (int i = 0; i < 4; i++) {
+                if (encounter.gainedDomainXp[i] == 0) continue;
+                snprintf(buf, sizeof(buf), "+%d %s xp", encounter.gainedDomainXp[i], domainName(i));
+                drawText(bx, y, buf, rgb(140, 200, 255), 2);  y += 20;
+            }
+            if (encounter.gainedGold > 0) {
+                snprintf(buf, sizeof(buf), "+%d Solmark%s",
+                         encounter.gainedGold, encounter.gainedGold == 1 ? "" : "s");
+                drawText(bx, y, buf, rgb(255, 215, 0), 2);  y += 20;
+            }
+            for (int i = 0; i < encounter.droppedCount; i++) {
+                snprintf(buf, sizeof(buf), "Found: %s", itemName(encounter.droppedItems[i]));
+                drawText(bx, y, buf, rgb(140, 255, 200), 1);  y += 14;
+            }
         }
 
-        if (encounter.gainedGold > 0) {
-            snprintf(buf, sizeof(buf), "+%d Solmark%s",
-                     encounter.gainedGold, encounter.gainedGold == 1 ? "" : "s");
-            drawText(bx, y, buf, rgb(255, 215, 0), 2);      y += 20;
-        }
-        for (int i = 0; i < encounter.droppedCount; i++) {
-            snprintf(buf, sizeof(buf), "Found: %s", itemName(encounter.droppedItems[i]));
-            drawText(bx, y, buf, rgb(140, 255, 200), 1);    y += 14;
-        }
         drawText(bx, LP_Y + LP_H - 20, "Enter to continue", rgb(100, 90, 80), 1);
         return;
     }
 
-    /* ── Enemy section (all enemies) ───────────────────────────── */
-    drawText(bx, y, "ENEMIES", rgb(100, 50, 50), 1);  y += 12;
-    for (int ei = 0; ei < encounter.enemyCount; ei++) {
-        const Enemy *e  = &encounter.enemies[ei];
-        int          sel = (ei == encounter.targetIndex);
-        int          dead = (e->maxHp == 0);
-        uint32_t     nameCol = dead   ? rgb(60, 50, 50)
-                             : sel    ? rgb(255, 210, 80)
-                             :          rgb(200, 90, 90);
-        /* target indicator + name */
-        char nbuf[20];
-        nbuf[0] = sel ? '>' : ' '; nbuf[1] = ' ';
-        int nl = 0; while (e->name[nl] && nl < 16) nl++;
-        for (int c = 0; c < nl && c < 17; c++) nbuf[2 + c] = e->name[c];
-        nbuf[2 + (nl < 17 ? nl : 17)] = '\0';
-        drawText(bx, y, nbuf, nameCol, 1);  y += 11;
-        /* HP bar */
-        if (!dead && e->maxHp > 0) {
-            int fill = e->hp * barW / e->maxHp;
-            if (fill < 0) fill = 0;
-            fillRect(bx, y, barW, 6, rgb(40, 12, 12));
-            if (fill > 0) fillRect(bx, y, fill, 6, sel ? rgb(220, 160, 40) : rgb(180, 50, 50));
-        } else {
-            fillRect(bx, y, barW, 6, rgb(28, 18, 18));
-        }
+    /* ── Enemy / Disposition section ───────────────────────────── */
+    if (encounter.encounterType == ENCOUNTER_SOCIAL) {
+        drawText(bx, y, "DISPOSITION", rgb(80, 110, 200), 1);  y += 12;
+
+        const Enemy *e = &encounter.enemies[0];
+        int disp       = e->hp;
+        drawText(bx, y, e->name, rgb(140, 165, 230), 1);  y += 11;
+
+        int      dfill   = disp * barW / 100;
+        uint32_t dispCol = disp > 66 ? rgb(50, 190, 80)
+                         : disp > 33 ? rgb(190, 170, 40)
+                         :             rgb(190, 55,  55);
+        fillRect(bx, y, barW, 8, rgb(12, 12, 35));
+        if (dfill > 0) fillRect(bx, y, dfill, 8, dispCol);
         y += 10;
+        snprintf(buf, sizeof(buf), "%d / 100", disp);
+        drawText(bx, y, buf, rgb(90, 110, 175), 1);  y += 14;
+
+    } else {
+        drawText(bx, y, "ENEMIES", rgb(100, 50, 50), 1);  y += 12;
+        for (int ei = 0; ei < encounter.enemyCount; ei++) {
+            const Enemy *e  = &encounter.enemies[ei];
+            int          sel  = (ei == encounter.targetIndex);
+            int          dead = (e->maxHp == 0);
+            uint32_t     nameCol = dead ? rgb(60, 50, 50)
+                                 : sel  ? rgb(255, 210, 80)
+                                 :        rgb(200, 90, 90);
+            char nbuf[20];
+            nbuf[0] = sel ? '>' : ' '; nbuf[1] = ' ';
+            int nl = 0; while (e->name[nl] && nl < 16) nl++;
+            for (int c = 0; c < nl && c < 17; c++) nbuf[2 + c] = e->name[c];
+            nbuf[2 + (nl < 17 ? nl : 17)] = '\0';
+            drawText(bx, y, nbuf, nameCol, 1);  y += 11;
+            if (!dead && e->maxHp > 0) {
+                int fill = e->hp * barW / e->maxHp;
+                if (fill < 0) fill = 0;
+                fillRect(bx, y, barW, 6, rgb(40, 12, 12));
+                if (fill > 0) fillRect(bx, y, fill, 6, sel ? rgb(220, 160, 40) : rgb(180, 50, 50));
+            } else {
+                fillRect(bx, y, barW, 6, rgb(28, 18, 18));
+            }
+            y += 10;
+        }
     }
 
     /* ── Divider ────────────────────────────────────────────────── */

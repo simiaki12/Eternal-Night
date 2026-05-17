@@ -87,6 +87,8 @@ static const ActionDef defaults[] = {
     { 32, ACT_CTX_REQUIRES_DARK,60,15, "Feed",         "a33", "Feed on the dark to restore HP.",  DOMAIN_BLOOD,    ACT_CAT_ENVIRONMENTAL,         0, 0 },
     { 33, 0,                   35,  0, "Blend In",     "a34", "Melt into shadow, skip hit.",      DOMAIN_TRICKERY, ACT_CAT_ENVIRONMENTAL,         0, 0 },
     { 34, 0,                   40, 12, "Rally",        "a35", "Gather resolve, restore HP.",      DOMAIN_COMBAT,   ACT_CAT_ENVIRONMENTAL,         0, 0 },
+    /* Special: always injected into social encounters */
+    { 35, 0,                    0,  0, "Demand",       "",    "Force the issue. End it now.",     DOMAIN_NONE,     ACT_CAT_SOCIAL,                0, 0 },
 };
 
 int main(void) {

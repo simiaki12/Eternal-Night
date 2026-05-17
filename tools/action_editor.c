@@ -61,6 +61,15 @@ static const char *outfile   = "assets/data/actions.dat";
 
 /* ---- file I/O ---- */
 
+static void sortById(void) {
+    for (int i = 1; i < actionCount; i++) {
+        ActionDef tmp = actions[i];
+        int j = i - 1;
+        while (j >= 0 && actions[j].id > tmp.id) { actions[j+1] = actions[j]; j--; }
+        actions[j+1] = tmp;
+    }
+}
+
 static void load(void) {
     FILE *f = fopen(outfile, "rb");
     if (!f) { actionCount = 0; return; }
@@ -69,6 +78,7 @@ static void load(void) {
     if (n > ACTION_MAX) n = ACTION_MAX;
     actionCount = (int)fread(actions, sizeof(ActionDef), n, f);
     fclose(f);
+    sortById();
 }
 
 static void save(void) {
