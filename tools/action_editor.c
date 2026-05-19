@@ -428,13 +428,20 @@ static void renderList(int sel, const char *status) {
         if (actions[i].contextFlags & ACT_CTX_EXECUTABLE)   ctx[2] = 'X';
         if (actions[i].contextFlags & ACT_CTX_CAN_STUN)     ctx[3] = 'S';
         if (actions[i].contextFlags & ACT_CTX_PLAYER_HURT)  ctx[4] = 'H';
-        mvprintw(i + 4, 2, "%2d  id:%-3d  %-16s  wt:%-3d  pow:%-3d  ctx:[%s]  img:%s",
+        char cat[6] = ".....";
+        if (actions[i].encounterCat & ACT_CAT_COMBAT)        cat[0] = 'C';
+        if (actions[i].encounterCat & ACT_CAT_SOCIAL)        cat[1] = 'S';
+        if (actions[i].encounterCat & ACT_CAT_INVESTIGATION) cat[2] = 'I';
+        if (actions[i].encounterCat & ACT_CAT_HUNT)          cat[3] = 'H';
+        if (actions[i].encounterCat & ACT_CAT_ENVIRONMENTAL) cat[4] = 'E';
+        mvprintw(i + 4, 2, "%2d  id:%-3d  %-16s  wt:%-3d  pow:%-3d  ctx:[%s]  cat:[%s]  img:%s",
             i,
             actions[i].id,
             actions[i].name[0] ? actions[i].name : "(unnamed)",
             actions[i].baseWeight,
             actions[i].power,
             ctx,
+            cat,
             actions[i].imgName[0] ? actions[i].imgName : "--");
         if (i == sel) attroff(A_REVERSE);
     }

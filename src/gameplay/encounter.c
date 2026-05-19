@@ -391,58 +391,58 @@ static void performPlayerAction(void) {
             break;
 
         /* ── Domain: Combat ─────────────────────────────────────── */
-        case ACTION_GUARDED_STANCE:
-            /* Small preemptive hit; incoming damage is halved (see enemy attack phase) */
+        case ACTION_INTIMIDATE:
+            /* Unnerve the foe; small preemptive hit, incoming damage halved */
             tgt->hp -= a->power;
             break;
 
-        case ACTION_SHIELD_BREAK:
-            /* Crush defenses open, deal bonus damage */
+        case ACTION_COUNTER:
+            /* Break through their guard, deal bonus damage */
             tgt->defense = 0;
             tgt->hp -= a->power;
             break;
 
-        case ACTION_RIPOSTE:
-            /* Swift counter-strike; skip enemy retaliation */
+        case ACTION_WAR_CRY:
+            /* Fierce cry staggers the foe; counter-strike and skip retaliation */
             tgt->hp -= getAttack() + a->power;
             encounter.skipEnemyAttack = 1;
             break;
 
         /* ── Domain: Trickery ───────────────────────────────────── */
-        case ACTION_POCKET_SAND:
-            /* Blind: strip perception, skip counter */
+        case ACTION_THREATEN:
+            /* Strip focus, skip counter */
             tgt->perception = 0;
             encounter.skipEnemyAttack = 1;
             break;
 
-        case ACTION_FAKE_WEAKNESS:
-            /* Bait the enemy into overextending, then punish */
+        case ACTION_AMBUSH:
+            /* Strike from cover; bonus damage and skip counter */
             tgt->hp -= getAttack() + a->power;
             encounter.skipEnemyAttack = 1;
             break;
 
-        /* ── Domain: Blood ──────────────────────────────────────── */
-        case ACTION_CRIMSON_RUSH:
-            /* Wounded fury: strike twice (simulated as double hit) */
+        case ACTION_VANISH:
+            /* Disappear; strike and skip enemy retaliation */
             tgt->hp -= getAttack() + a->power;
             encounter.skipEnemyAttack = 1;
             break;
 
-        case ACTION_BLOOD_MIST: {
-            /* Dissolve into fog: skip all counters, blind every enemy */
+        case ACTION_POISON_BLADE: {
+            /* Coat the blade; skip all counters, weaken every enemy */
             encounter.skipEnemyAttack = 1;
             for (int i = 0; i < encounter.enemyCount; i++)
                 if (encounter.enemies[i].perception > 1) encounter.enemies[i].perception--;
             break;
         }
 
-        case ACTION_HEMORRHAGE:
-            /* Exploit fresh wounds on a weakened target */
+        case ACTION_SET_TRAP:
+            /* Lay a trap; exploit positioning for bonus damage */
             tgt->hp -= getAttack() + a->power;
             break;
 
-        case ACTION_FEAST_FEAR: {
-            /* Drain a terrified (stunnable) enemy; restore HP */
+        /* ── Domain: Blood ──────────────────────────────────────── */
+        case ACTION_DECEIVE: {
+            /* Spin a web of lies; drain resolve, restore HP */
             int dmg = getAttack() + a->power;
             tgt->hp -= dmg;
             int newHp = (int)player.hp + a->power;
@@ -453,8 +453,8 @@ static void performPlayerAction(void) {
             break;
         }
 
-        case ACTION_BAT_SWARM: {
-            /* AoE darkness: chip all enemies, disrupt counters */
+        case ACTION_PICKPOCKET: {
+            /* Hit every distracted enemy while lifting valuables */
             int totalDealt = 0;
             for (int i = 0; i < encounter.enemyCount; i++) {
                 if (encounter.enemies[i].hp > 0 && encounter.enemies[i].maxHp > 0) {
@@ -464,7 +464,7 @@ static void performPlayerAction(void) {
                 }
             }
             char aoeMsg[28];
-            snprintf(aoeMsg, sizeof(aoeMsg), "Bat Swarm: %d dmg.", totalDealt);
+            snprintf(aoeMsg, sizeof(aoeMsg), "Pickpocket: %d dmg.", totalDealt);
             logPush(aoeMsg);
             ehpBefore = tgt->hp;
             encounter.skipEnemyAttack = 1;
@@ -472,23 +472,23 @@ static void performPlayerAction(void) {
         }
 
         /* ── Domain: Charm ──────────────────────────────────────── */
-        case ACTION_NOBLE_PRESENCE:
-            /* First-turn aura: halve every enemy's attack, skip counters */
+        case ACTION_INSPECT:
+            /* Read every enemy; halve all attacks, skip counters */
             encounter.skipEnemyAttack = 1;
             for (int i = 0; i < encounter.enemyCount; i++)
                 encounter.enemies[i].attack = encounter.enemies[i].attack > 1
                     ? encounter.enemies[i].attack / 2 : 1;
             break;
 
-        case ACTION_PROVE_SKILL:
-            /* Humiliate an armed foe: deal power damage, halve their attack */
+        case ACTION_TRACK:
+            /* Follow the weakness; power strike, halve their attack */
             tgt->hp -= a->power;
             tgt->attack = tgt->attack > 1 ? tgt->attack / 2 : 1;
             encounter.skipEnemyAttack = 1;
             break;
 
-        case ACTION_DUELIST_MARK:
-            /* Challenge: open with a strong blow and strip all defense */
+        case ACTION_BLOOD_DRAIN:
+            /* Open with a fierce blow and strip all defense */
             tgt->hp -= getAttack() + a->power;
             tgt->defense = 0;
             break;
@@ -649,7 +649,7 @@ static void performPlayerAction(void) {
                 logPush(cm);
             } else {
                 int dmg = encounter.enemies[i].attack;
-                if (a->type == ACTION_DEFEND || a->type == ACTION_GUARDED_STANCE) dmg = dmg / 2 + 1;
+                if (a->type == ACTION_DEFEND || a->type == ACTION_INTIMIDATE) dmg = dmg / 2 + 1;
                 player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
                 char cm[28];
                 snprintf(cm, 28, "%.10s: %d dmg.", encounter.enemies[i].name, dmg);

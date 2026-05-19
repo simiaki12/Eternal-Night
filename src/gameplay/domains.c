@@ -16,87 +16,93 @@
 Domain domains[DOMAIN_COUNT] = {
 
     /* ── DOMAIN_COMBAT ──────────────────────────────────────────────────────
-       col:      0                 1               2
-       row 0:              [Strong Attack]
-       row 1: [Grd.Stance] [Parry]       [Shield Break]
-       row 2: [+1 Atk]     [Stun]        [Disarm]
-       row 3:              [Riposte]                     ← prereq Stun+Disarm
-       row 4: [+1 Atk]     [Execute]     [+5 MaxHP]     ← prereq +1Atk+Riposte
-       row 5: [+1 Atk]                   [+1 Def]       ← from Execute         */
+       col:      0              1               2
+       row 0:            [Strong Attack]
+       row 1: [War Cry]  [Parry]          [Counter]
+       row 2: [+1 Atk]   [Stun]           [Disarm]
+       row 3: [Threaten] [Intimidate]               ← social branch
+       row 4: [+1 Atk]   [Death Star]     [+5 MaxHP] ← prereq +1Atk+Intimidate
+       row 5: [+1 Atk]                    [+1 Def]   ← from Death Star        */
     { DOMAIN_COMBAT, DOMAIN_TYPE_BASE, 0xFF, 0xFF, {
-        N( 0, DOMAIN_COMBAT, 0xFF,0xFF, 0, 0,1, NODE_REWARD_ACTION, ACTION_STRONG,         "Strong Attack"),
-        N( 1, DOMAIN_COMBAT, 0,   0xFF, 1, 1,0, NODE_REWARD_ACTION, ACTION_GUARDED_STANCE, "Guarded Stance"),
-        N( 2, DOMAIN_COMBAT, 0,   0xFF, 1, 1,1, NODE_REWARD_ACTION, ACTION_DEFEND,         "Parry"),
-        N( 3, DOMAIN_COMBAT, 0,   0xFF, 1, 1,2, NODE_REWARD_ACTION, ACTION_SHIELD_BREAK,   "Shield Break"),
+        N( 0, DOMAIN_COMBAT, 0xFF,0xFF, 0, 0,1, NODE_REWARD_ACTION, ACTION_STRONG,      "Strong Attack"),
+        N( 1, DOMAIN_COMBAT, 0,   0xFF, 1, 1,0, NODE_REWARD_ACTION, ACTION_WAR_CRY,     "War Cry"),
+        N( 2, DOMAIN_COMBAT, 0,   0xFF, 1, 1,1, NODE_REWARD_ACTION, ACTION_DEFEND,      "Parry"),
+        N( 3, DOMAIN_COMBAT, 0,   0xFF, 1, 1,2, NODE_REWARD_ACTION, ACTION_COUNTER,     "Counter"),
         N( 4, DOMAIN_COMBAT, 1,   0xFF, 2, 2,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_ATTACK,1),  "+1 Attack"),
-        N( 5, DOMAIN_COMBAT, 2,   0xFF, 2, 2,1, NODE_REWARD_ACTION, ACTION_STUN,           "Stun"),
-        N( 6, DOMAIN_COMBAT, 3,   0xFF, 2, 2,2, NODE_REWARD_ACTION, ACTION_DISARM,         "Disarm"),
-        N( 7, DOMAIN_COMBAT, 5,   6,    3, 3,1, NODE_REWARD_ACTION, ACTION_RIPOSTE,        "Riposte"),
-        N( 8, DOMAIN_COMBAT, 4,   7,    5, 4,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_ATTACK,1),  "+1 Attack"),
-        N( 9, DOMAIN_COMBAT, 4,   7,    5, 4,1, NODE_REWARD_ACTION, ACTION_EXECUTE,        "Execute"),
-        N(10, DOMAIN_COMBAT, 4,   7,    5, 4,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_MAXHP,5),   "+5 Max HP"),
-        N(11, DOMAIN_COMBAT, 9,   0xFF, 6, 5,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_ATTACK,1),  "+1 Attack"),
-        N(12, DOMAIN_COMBAT, 9,   0xFF, 6, 5,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_DEFENSE,1), "+1 Defense"),
+        N( 5, DOMAIN_COMBAT, 2,   0xFF, 2, 2,1, NODE_REWARD_ACTION, ACTION_STUN,        "Stun"),
+        N( 6, DOMAIN_COMBAT, 3,   0xFF, 2, 2,2, NODE_REWARD_ACTION, ACTION_DISARM,      "Disarm"),
+        N( 7, DOMAIN_COMBAT, 1,   0xFF, 2, 3,0, NODE_REWARD_ACTION, ACTION_THREATEN,    "Threaten"),
+        N( 8, DOMAIN_COMBAT, 5,   6,    3, 3,1, NODE_REWARD_ACTION, ACTION_INTIMIDATE,  "Intimidate"),
+        N( 9, DOMAIN_COMBAT, 4,   8,    5, 4,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_ATTACK,1),  "+1 Attack"),
+        N(10, DOMAIN_COMBAT, 4,   8,    5, 4,1, NODE_REWARD_ACTION, ACTION_EXECUTE,     "Death Star"),
+        N(11, DOMAIN_COMBAT, 4,   8,    5, 4,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_MAXHP,5),   "+5 Max HP"),
+        N(12, DOMAIN_COMBAT, 10,  0xFF, 6, 5,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_ATTACK,1),  "+1 Attack"),
+        N(13, DOMAIN_COMBAT, 10,  0xFF, 6, 5,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_DEFENSE,1), "+1 Defense"),
     }},
 
     /* ── DOMAIN_TRICKERY ────────────────────────────────────────────────────
-       col:      0               1               2
-       row 0:               [Moonstep]
-       row 1: [Pocket Sand]              [Fake Weakness]
-       row 2: [+1 Agility]  [Blindspot]  [+1 Agility]
-       row 3: [+1 Percep]   [Disarm]     [+1 Percep]  ← prereq from row 2
-       row 4:               [+1 Percep]               ← capstone              */
+       col:      0              1             2
+       row 0:            [Moonstep]
+       row 1: [PoisBlade] [Vanish]     [Set Trap]
+       row 2: [+1 Agi]    [Blindspot]  [+1 Agi]
+       row 3: [Deceive]   [Disarm]     [Pickpocket]  ← social branch
+       row 4: [+1 Perc]   [+1 Perc]   [+1 Perc]     ← capstone               */
     { DOMAIN_TRICKERY, DOMAIN_TYPE_BASE, 0xFF, 0xFF, {
-        N( 0, DOMAIN_TRICKERY, 0xFF,0xFF, 0, 0,1, NODE_REWARD_ACTION, ACTION_BACKSTAB,      "Moonstep"),
-        N( 1, DOMAIN_TRICKERY, 0,   0xFF, 1, 1,0, NODE_REWARD_ACTION, ACTION_POCKET_SAND,   "Pocket Sand"),
-        N( 2, DOMAIN_TRICKERY, 0,   0xFF, 1, 1,2, NODE_REWARD_ACTION, ACTION_FAKE_WEAKNESS, "Fake Weakness"),
-        N( 3, DOMAIN_TRICKERY, 1,   0xFF, 2, 2,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_AGILITY,1),    "+1 Agility"),
-        N( 4, DOMAIN_TRICKERY, 0,   0xFF, 2, 2,1, NODE_REWARD_ACTION, ACTION_HIDE,          "Blindspot"),
-        N( 5, DOMAIN_TRICKERY, 2,   0xFF, 2, 2,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_AGILITY,1),    "+1 Agility"),
-        N( 6, DOMAIN_TRICKERY, 3,   0xFF, 3, 3,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_PERCEPTION,1), "+1 Perception"),
-        N( 7, DOMAIN_TRICKERY, 3,   5,    3, 3,1, NODE_REWARD_ACTION, ACTION_DISARM,        "Disarm"),
-        N( 8, DOMAIN_TRICKERY, 5,   0xFF, 3, 3,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_PERCEPTION,1), "+1 Perception"),
-        N( 9, DOMAIN_TRICKERY, 6,   8,    4, 4,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_PERCEPTION,1), "+1 Perception"),
+        N( 0, DOMAIN_TRICKERY, 0xFF,0xFF, 0, 0,1, NODE_REWARD_ACTION, ACTION_BACKSTAB,     "Moonstep"),
+        N( 1, DOMAIN_TRICKERY, 0,   0xFF, 1, 1,0, NODE_REWARD_ACTION, ACTION_POISON_BLADE, "Poison Blade"),
+        N( 2, DOMAIN_TRICKERY, 0,   0xFF, 1, 1,1, NODE_REWARD_ACTION, ACTION_VANISH,       "Vanish"),
+        N( 3, DOMAIN_TRICKERY, 0,   0xFF, 1, 1,2, NODE_REWARD_ACTION, ACTION_SET_TRAP,     "Set Trap"),
+        N( 4, DOMAIN_TRICKERY, 1,   0xFF, 2, 2,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_AGILITY,1),    "+1 Agility"),
+        N( 5, DOMAIN_TRICKERY, 0,   0xFF, 2, 2,1, NODE_REWARD_ACTION, ACTION_HIDE,         "Blindspot"),
+        N( 6, DOMAIN_TRICKERY, 3,   0xFF, 2, 2,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_AGILITY,1),    "+1 Agility"),
+        N( 7, DOMAIN_TRICKERY, 4,   0xFF, 3, 3,0, NODE_REWARD_ACTION, ACTION_DECEIVE,      "Deceive"),
+        N( 8, DOMAIN_TRICKERY, 4,   6,    3, 3,1, NODE_REWARD_ACTION, ACTION_DISARM,       "Disarm"),
+        N( 9, DOMAIN_TRICKERY, 6,   0xFF, 3, 3,2, NODE_REWARD_ACTION, ACTION_PICKPOCKET,   "Pickpocket"),
+        N(10, DOMAIN_TRICKERY, 7,   0xFF, 4, 4,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_PERCEPTION,1), "+1 Perception"),
+        N(11, DOMAIN_TRICKERY, 7,   9,    4, 4,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_PERCEPTION,1), "+1 Perception"),
+        N(12, DOMAIN_TRICKERY, 9,   0xFF, 4, 4,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_PERCEPTION,1), "+1 Perception"),
     }},
 
     /* ── DOMAIN_BLOOD ───────────────────────────────────────────────────────
-       col:      0                1              2
-       row 0:               [+5 Max HP]
-       row 1: [Regenerate]  [Blood Mist]  [+1 Int.]
-       row 2: [Crimson Rush] [+5 MaxHP]   [+1 Stamina]
-       row 3: [Hemorrhage]               [Feast Fear]  ← from Crimson Rush
-       row 4:               [Bat Swarm]                ← prereq 6+7, capstone  */
+       col:      0              1              2
+       row 0:            [+5 Max HP]
+       row 1: [Regen]    [Blood Drain]  [+1 Int.]
+       row 2: [BldHowl]  [+5 MaxHP]     [+1 Stamina]
+       row 3: [LthBite]  [Blood Surge]  [Blood Scent]
+       row 4:            [+5 Max HP]                   ← capstone             */
     { DOMAIN_BLOOD, DOMAIN_TYPE_BASE, 0xFF, 0xFF, {
         N( 0, DOMAIN_BLOOD, 0xFF,0xFF, 0, 0,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_MAXHP,5),        "+5 Max HP"),
-        N( 1, DOMAIN_BLOOD, 0,   0xFF, 1, 1,0, NODE_REWARD_ACTION, ACTION_HEAL,          "Regenerate"),
-        N( 2, DOMAIN_BLOOD, 0,   0xFF, 1, 1,1, NODE_REWARD_ACTION, ACTION_BLOOD_MIST,    "Blood Mist"),
+        N( 1, DOMAIN_BLOOD, 0,   0xFF, 1, 1,0, NODE_REWARD_ACTION, ACTION_HEAL,         "Regenerate"),
+        N( 2, DOMAIN_BLOOD, 0,   0xFF, 1, 1,1, NODE_REWARD_ACTION, ACTION_BLOOD_DRAIN,  "Blood Drain"),
         N( 3, DOMAIN_BLOOD, 0,   0xFF, 1, 1,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_INTELLIGENCE,1), "+1 Int."),
-        N( 4, DOMAIN_BLOOD, 1,   0xFF, 2, 2,0, NODE_REWARD_ACTION, ACTION_CRIMSON_RUSH,  "Crimson Rush"),
+        N( 4, DOMAIN_BLOOD, 1,   0xFF, 2, 2,0, NODE_REWARD_ACTION, ACTION_BLOOD_HOWL,   "Blood Howl"),
         N( 5, DOMAIN_BLOOD, 2,   0xFF, 2, 2,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_MAXHP,5),        "+5 Max HP"),
         N( 6, DOMAIN_BLOOD, 3,   0xFF, 2, 2,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_STAMINA,1),      "+1 Stamina"),
-        N( 7, DOMAIN_BLOOD, 4,   0xFF, 3, 3,0, NODE_REWARD_ACTION, ACTION_HEMORRHAGE,    "Hemorrhage"),
-        N( 8, DOMAIN_BLOOD, 4,   6,    3, 3,2, NODE_REWARD_ACTION, ACTION_FEAST_FEAR,    "Feast Upon Fear"),
-        N( 9, DOMAIN_BLOOD, 7,   8,    5, 4,1, NODE_REWARD_ACTION, ACTION_BAT_SWARM,     "Bat Swarm"),
-        N(10, DOMAIN_BLOOD, 5,   9,    6, 5,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_MAXHP,5),        "+5 Max HP"),
+        N( 7, DOMAIN_BLOOD, 4,   0xFF, 3, 3,0, NODE_REWARD_ACTION, ACTION_LETHAL_BITE,  "Lethal Bite"),
+        N( 8, DOMAIN_BLOOD, 4,   6,    3, 3,1, NODE_REWARD_ACTION, ACTION_BLOOD_SURGE,  "Blood Surge"),
+        N( 9, DOMAIN_BLOOD, 6,   0xFF, 3, 3,2, NODE_REWARD_ACTION, ACTION_BLOOD_SCENT,  "Blood Scent"),
+        N(10, DOMAIN_BLOOD, 7,   8,    5, 4,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_MAXHP,5),        "+5 Max HP"),
     }},
 
     /* ── DOMAIN_CHARM ───────────────────────────────────────────────────────
-       col:      0                1               2
-       row 0:               [Persuade]
-       row 1: [Noble Pres.] [+1 Charisma] [Prove Skill]
-       row 2: [+1 Defense]  [+1 Int.]     [+1 Charisma]
-       row 3:               [+1 Charisma]              ← prereq 4+5
-       row 4:               [Duelist's Mark]            ← prereq 7            */
+       col:      0              1              2
+       row 0:            [+1 Charisma]
+       row 1: [SilvTng]  [+1 Charisma]  [Bribe]        ← social branch
+       row 2: [+1 Def]   [+1 Int.]      [+1 Charisma]
+       row 3:            [+1 Charisma]               ← prereq 4+5
+       row 4: [Mesmerize][Dominate]     [Interrogate] ← prereq node 7         */
     { DOMAIN_CHARM, DOMAIN_TYPE_BASE, 0xFF, 0xFF, {
         N( 0, DOMAIN_CHARM, 0xFF,0xFF, 0, 0,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_CHARISMA,1),     "+1 Charisma"),
-        N( 1, DOMAIN_CHARM, 0,   0xFF, 1, 1,0, NODE_REWARD_ACTION, ACTION_NOBLE_PRESENCE, "Noble Presence"),
+        N( 1, DOMAIN_CHARM, 0,   0xFF, 1, 1,0, NODE_REWARD_ACTION, ACTION_SILVER_TONGUE, "Silver Tongue"),
         N( 2, DOMAIN_CHARM, 0,   0xFF, 1, 1,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_CHARISMA,1),     "+1 Charisma"),
-        N( 3, DOMAIN_CHARM, 0,   0xFF, 1, 1,2, NODE_REWARD_ACTION, ACTION_PROVE_SKILL,    "Prove Skill"),
+        N( 3, DOMAIN_CHARM, 0,   0xFF, 1, 1,2, NODE_REWARD_ACTION, ACTION_BRIBE,         "Bribe"),
         N( 4, DOMAIN_CHARM, 1,   0xFF, 2, 2,0, NODE_REWARD_STAT,   STAT_NODE(DSTAT_DEFENSE,1),      "+1 Defense"),
         N( 5, DOMAIN_CHARM, 2,   0xFF, 2, 2,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_INTELLIGENCE,1), "+1 Int."),
         N( 6, DOMAIN_CHARM, 3,   0xFF, 2, 2,2, NODE_REWARD_STAT,   STAT_NODE(DSTAT_CHARISMA,1),     "+1 Charisma"),
         N( 7, DOMAIN_CHARM, 4,   5,    3, 3,1, NODE_REWARD_STAT,   STAT_NODE(DSTAT_CHARISMA,1),     "+1 Charisma"),
-        N( 8, DOMAIN_CHARM, 6,   7,    4, 4,1, NODE_REWARD_ACTION, ACTION_DUELIST_MARK,   "Duelist's Mark"),
+        N( 8, DOMAIN_CHARM, 4,   7,    4, 4,0, NODE_REWARD_ACTION, ACTION_MESMERIZE,     "Mesmerize"),
+        N( 9, DOMAIN_CHARM, 5,   7,    4, 4,1, NODE_REWARD_ACTION, ACTION_DOMINATE,      "Dominate"),
+        N(10, DOMAIN_CHARM, 6,   7,    4, 4,2, NODE_REWARD_ACTION, ACTION_INTERROGATE,   "Interrogate"),
     }},
 
     /* Fusion domains (nodes TBD) */
