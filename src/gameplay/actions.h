@@ -59,7 +59,17 @@ typedef enum {
     ACTION_COUNT          = 24
 } ActionId;
 
-/* 64 bytes — pak-friendly, no pointers */
+/* Bitmasks for ActionDef.effective_disp / backfire_disp.
+   Shift values (shift_effective / shift_backfire) use the Disposition enum
+   from encounter.h, or raw 0-5 / 0xFF when encounter.h is not included. */
+#define DISP_BIT_STRANGER   (1<<0)
+#define DISP_BIT_SUSPICIOUS (1<<1)
+#define DISP_BIT_FEARFUL    (1<<2)
+#define DISP_BIT_TRUSTING   (1<<3)
+#define DISP_BIT_HOSTILE    (1<<4)
+#define DISP_BIT_GREEDY     (1<<5)
+
+/* 68 bytes — pak-friendly, no pointers */
 typedef struct {
     uint8_t  id;
     uint8_t  contextFlags;
@@ -68,13 +78,17 @@ typedef struct {
     char     name[16];
     char     imgName[8];
     char     desc[32];
-    uint8_t  domain;       /* DOMAIN_* constant; 0xFF = unaffiliated */
-    uint8_t  encounterCat; /* ACT_CAT_* bitmask; 0 = universal (always included) */
-    uint8_t  actionFlags;  /* ACT_FLAG_* */
+    uint8_t  domain;          /* DOMAIN_* constant; 0xFF = unaffiliated */
+    uint8_t  encounterCat;    /* ACT_CAT_* bitmask; 0 = universal (always included) */
+    uint8_t  actionFlags;     /* ACT_FLAG_* */
+    uint8_t  effective_disp;  /* DISP_BIT_* bitmask — dispositions where action lands well */
+    uint8_t  backfire_disp;   /* DISP_BIT_* bitmask — dispositions where action backfires */
+    uint8_t  shift_effective; /* Disposition to shift NPC to on effective hit; DISP_NONE = no shift */
+    uint8_t  shift_backfire;  /* Disposition to shift NPC to on backfire; DISP_NONE = no shift */
     uint8_t  _pad;
 } ActionDef;
 
-typedef char _check_actiondef_size[(sizeof(ActionDef) == 64) ? 1 : -1];
+typedef char _check_actiondef_size[(sizeof(ActionDef) == 68) ? 1 : -1];
 
 extern ActionDef actionDefs[ACTION_MAX];
 extern int       actionDefCount;

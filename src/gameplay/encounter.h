@@ -10,12 +10,27 @@
 
 #define SE_DEF_MAX 64
 
-/* NPC trait tags — stored in NpcDef.tags */
-#define NPC_TAG_FEARFUL   (1<<0)  /* Red Eyes very effective; Intimidate hits hard */
-#define NPC_TAG_NOBLE     (1<<1)  /* Noble Presence works; Bribe backfires */
-#define NPC_TAG_CRIMINAL  (1<<2)  /* Bribe effective; Lie low-risk */
-#define NPC_TAG_CONNECTED (1<<3)  /* Critical failure alerts nearby NPCs */
-#define NPC_TAG_FEARLESS  (1<<4)  /* Immune to Red Eyes and Intimidate */
+/* NPC personality flags — stored in NpcDef.tags; permanent traits that
+   override social action tiers during encounter resolution */
+#define NPC_TAG_FEARFUL   (1<<0)  /* upgrades actions effective in FEARFUL from neutral to effective */
+#define NPC_TAG_NOBLE     (1<<1)  /* downgrades actions effective in GREEDY to backfire */
+#define NPC_TAG_CRIMINAL  (1<<2)  /* upgrades actions effective in SUSPICIOUS from neutral to effective */
+#define NPC_TAG_CONNECTED (1<<3)  /* critical failure alerts nearby NPCs */
+#define NPC_TAG_FEARLESS  (1<<4)  /* downgrades actions effective in FEARFUL from effective to neutral */
+
+/* NPC live disposition during a social encounter — dynamic, changes per action */
+typedef enum {
+    DISP_STRANGER   = 0,
+    DISP_SUSPICIOUS = 1,
+    DISP_FEARFUL    = 2,
+    DISP_TRUSTING   = 3,
+    DISP_HOSTILE    = 4,
+    DISP_GREEDY     = 5,
+    DISP_COUNT      = 6,
+    DISP_NONE       = 0xFF,
+} Disposition;
+
+/* Bitmasks for ActionDef.effective_disp / backfire_disp are in actions.h */
 
 /* NPC counter-move bitmask — stored in NpcDef.move_mask */
 #define NPC_MOVE_DISMISS  (1<<0)  /* lower disposition */
@@ -101,6 +116,7 @@ typedef struct {
     uint8_t xpReward;
     uint8_t goldDrop;
     uint8_t lootTableId;
+    uint8_t disposition;  /* Disposition enum; only meaningful in ENCOUNTER_SOCIAL */
 } Enemy;
 
 typedef struct { ActionId type; uint8_t power; } Action;
@@ -109,7 +125,7 @@ typedef enum { ENCOUNTER_PHASE_ACTIVE, ENCOUNTER_PHASE_VICTORY } EncounterPhase;
 
 typedef enum {
     SOCIAL_OUTCOME_NONE   = 0,
-    SOCIAL_OUTCOME_WIN    = 1, /* disposition reached high threshold */
+    SOCIAL_OUTCOME_WIN    = 1, /* willingness reached high threshold */
     SOCIAL_OUTCOME_DEMAND = 2, /* player forced an end with Demand   */
     SOCIAL_OUTCOME_LOSS   = 3, /* NPC walked away                    */
 } SocialOutcome;
@@ -140,9 +156,9 @@ typedef struct {
     char        log[128][28]; /* encounter log — newest at highest index */
     int         logCount;
     int         logScroll;   /* entries from bottom; 0 = newest visible */
-    int         socialNpcId;     /* npc_id during ENCOUNTER_SOCIAL; -1 otherwise */
-    SocialOutcome socialOutcome; /* how the social encounter ended             */
-    int         socialEndDisp;   /* final disposition when it ended            */
+    int         socialNpcId;          /* npc_id during ENCOUNTER_SOCIAL; -1 otherwise */
+    SocialOutcome socialOutcome;      /* how the social encounter ended               */
+    int         socialEndWillingness; /* final willingness (0-100) when it ended      */
 } EncounterState;
 
 extern EncounterState encounter;

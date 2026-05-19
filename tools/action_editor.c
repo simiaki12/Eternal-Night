@@ -35,6 +35,28 @@
 
 #define ACT_FLAG_STARTER (1<<0)
 
+/* Disposition bitmasks */
+#define DISP_BIT_STRANGER   (1<<0)
+#define DISP_BIT_SUSPICIOUS (1<<1)
+#define DISP_BIT_FEARFUL    (1<<2)
+#define DISP_BIT_TRUSTING   (1<<3)
+#define DISP_BIT_HOSTILE    (1<<4)
+#define DISP_BIT_GREEDY     (1<<5)
+
+/* Disposition shift values */
+#define DISP_STRANGER   0
+#define DISP_SUSPICIOUS 1
+#define DISP_FEARFUL    2
+#define DISP_TRUSTING   3
+#define DISP_HOSTILE    4
+#define DISP_GREEDY     5
+#define DISP_NONE       0xFF
+#define DISP_COUNT      6
+
+static const char *dispNames[DISP_COUNT + 1] = {
+    "Stranger", "Suspicious", "Fearful", "Trusting", "Hostile", "Greedy", "None"
+};
+
 #define ACTION_MAX 64
 
 typedef struct {
@@ -48,10 +70,14 @@ typedef struct {
     uint8_t  domain;
     uint8_t  encounterCat;
     uint8_t  actionFlags;
+    uint8_t  effective_disp;
+    uint8_t  backfire_disp;
+    uint8_t  shift_effective;
+    uint8_t  shift_backfire;
     uint8_t  _pad;
-} ActionDef;
+} ActionDef; /* 68 bytes */
 
-typedef char _check_size[(sizeof(ActionDef) == 64) ? 1 : -1];
+typedef char _check_size[(sizeof(ActionDef) == 68) ? 1 : -1];
 /* ----------------------------------------------------------------------- */
 
 static ActionDef actions[ACTION_MAX];
@@ -130,6 +156,20 @@ typedef enum {
     F_CTX_PLAYER_HURT,
     F_CTX_REQUIRES_DARK,
     F_CTX_BLOCKED_HOLY,
+    F_EFF_STRANGER,
+    F_EFF_SUSPICIOUS,
+    F_EFF_FEARFUL,
+    F_EFF_TRUSTING,
+    F_EFF_HOSTILE,
+    F_EFF_GREEDY,
+    F_BACK_STRANGER,
+    F_BACK_SUSPICIOUS,
+    F_BACK_FEARFUL,
+    F_BACK_TRUSTING,
+    F_BACK_HOSTILE,
+    F_BACK_GREEDY,
+    F_SHIFT_EFFECTIVE,
+    F_SHIFT_BACKFIRE,
     F_COUNT
 } Field;
 
@@ -150,6 +190,20 @@ static const char *fieldNames[] = {
     "Ctx: player hurt (<50%)",
     "Ctx: requires darkness",
     "Ctx: blocked on holy ground",
+    "Effective in: Stranger",
+    "Effective in: Suspicious",
+    "Effective in: Fearful",
+    "Effective in: Trusting",
+    "Effective in: Hostile",
+    "Effective in: Greedy",
+    "Backfire in: Stranger",
+    "Backfire in: Suspicious",
+    "Backfire in: Fearful",
+    "Backfire in: Trusting",
+    "Backfire in: Hostile",
+    "Backfire in: Greedy",
+    "Shift on effective hit",
+    "Shift on backfire",
 };
 
 static void renderEdit(ActionDef *a, int sel, const char *status) {
@@ -201,6 +255,40 @@ static void renderEdit(ActionDef *a, int sel, const char *status) {
                 mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_REQUIRES_DARK) ? "[X]" : "[ ]"); break;
             case F_CTX_BLOCKED_HOLY:
                 mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_BLOCKED_HOLY)  ? "[X]" : "[ ]"); break;
+            case F_EFF_STRANGER:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_STRANGER)   ? "[X]" : "[ ]"); break;
+            case F_EFF_SUSPICIOUS:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_SUSPICIOUS) ? "[X]" : "[ ]"); break;
+            case F_EFF_FEARFUL:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_FEARFUL)    ? "[X]" : "[ ]"); break;
+            case F_EFF_TRUSTING:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_TRUSTING)   ? "[X]" : "[ ]"); break;
+            case F_EFF_HOSTILE:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_HOSTILE)    ? "[X]" : "[ ]"); break;
+            case F_EFF_GREEDY:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_GREEDY)     ? "[X]" : "[ ]"); break;
+            case F_BACK_STRANGER:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_STRANGER)    ? "[X]" : "[ ]"); break;
+            case F_BACK_SUSPICIOUS:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_SUSPICIOUS)  ? "[X]" : "[ ]"); break;
+            case F_BACK_FEARFUL:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_FEARFUL)     ? "[X]" : "[ ]"); break;
+            case F_BACK_TRUSTING:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_TRUSTING)    ? "[X]" : "[ ]"); break;
+            case F_BACK_HOSTILE:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_HOSTILE)     ? "[X]" : "[ ]"); break;
+            case F_BACK_GREEDY:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_GREEDY)      ? "[X]" : "[ ]"); break;
+            case F_SHIFT_EFFECTIVE: {
+                uint8_t s = a->shift_effective;
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], dispNames[s < DISP_COUNT ? s : DISP_COUNT]);
+                break;
+            }
+            case F_SHIFT_BACKFIRE: {
+                uint8_t s = a->shift_backfire;
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], dispNames[s < DISP_COUNT ? s : DISP_COUNT]);
+                break;
+            }
         }
         if (i == sel) attroff(A_REVERSE);
     }
@@ -252,6 +340,28 @@ static void screenEdit(int idx) {
                     case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;     break;
                     case F_CTX_REQUIRES_DARK: a->contextFlags ^= ACT_CTX_REQUIRES_DARK;   break;
                     case F_CTX_BLOCKED_HOLY:  a->contextFlags ^= ACT_CTX_BLOCKED_HOLY;    break;
+                    case F_EFF_STRANGER:   a->effective_disp ^= DISP_BIT_STRANGER;   break;
+                    case F_EFF_SUSPICIOUS: a->effective_disp ^= DISP_BIT_SUSPICIOUS; break;
+                    case F_EFF_FEARFUL:    a->effective_disp ^= DISP_BIT_FEARFUL;    break;
+                    case F_EFF_TRUSTING:   a->effective_disp ^= DISP_BIT_TRUSTING;   break;
+                    case F_EFF_HOSTILE:    a->effective_disp ^= DISP_BIT_HOSTILE;    break;
+                    case F_EFF_GREEDY:     a->effective_disp ^= DISP_BIT_GREEDY;     break;
+                    case F_BACK_STRANGER:  a->backfire_disp  ^= DISP_BIT_STRANGER;   break;
+                    case F_BACK_SUSPICIOUS:a->backfire_disp  ^= DISP_BIT_SUSPICIOUS; break;
+                    case F_BACK_FEARFUL:   a->backfire_disp  ^= DISP_BIT_FEARFUL;    break;
+                    case F_BACK_TRUSTING:  a->backfire_disp  ^= DISP_BIT_TRUSTING;   break;
+                    case F_BACK_HOSTILE:   a->backfire_disp  ^= DISP_BIT_HOSTILE;    break;
+                    case F_BACK_GREEDY:    a->backfire_disp  ^= DISP_BIT_GREEDY;     break;
+                    case F_SHIFT_EFFECTIVE:
+                        a->shift_effective = (a->shift_effective == DISP_NONE) ? 0
+                                           : (a->shift_effective < DISP_COUNT - 1) ? a->shift_effective + 1
+                                           : DISP_NONE;
+                        break;
+                    case F_SHIFT_BACKFIRE:
+                        a->shift_backfire  = (a->shift_backfire == DISP_NONE) ? 0
+                                           : (a->shift_backfire < DISP_COUNT - 1) ? a->shift_backfire + 1
+                                           : DISP_NONE;
+                        break;
                     default: dirty = 0; break;
                 }
                 break;
@@ -273,6 +383,28 @@ static void screenEdit(int idx) {
                     case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;   break;
                     case F_CTX_REQUIRES_DARK: a->contextFlags ^= ACT_CTX_REQUIRES_DARK; break;
                     case F_CTX_BLOCKED_HOLY:  a->contextFlags ^= ACT_CTX_BLOCKED_HOLY;  break;
+                    case F_EFF_STRANGER:   a->effective_disp ^= DISP_BIT_STRANGER;   break;
+                    case F_EFF_SUSPICIOUS: a->effective_disp ^= DISP_BIT_SUSPICIOUS; break;
+                    case F_EFF_FEARFUL:    a->effective_disp ^= DISP_BIT_FEARFUL;    break;
+                    case F_EFF_TRUSTING:   a->effective_disp ^= DISP_BIT_TRUSTING;   break;
+                    case F_EFF_HOSTILE:    a->effective_disp ^= DISP_BIT_HOSTILE;    break;
+                    case F_EFF_GREEDY:     a->effective_disp ^= DISP_BIT_GREEDY;     break;
+                    case F_BACK_STRANGER:  a->backfire_disp  ^= DISP_BIT_STRANGER;   break;
+                    case F_BACK_SUSPICIOUS:a->backfire_disp  ^= DISP_BIT_SUSPICIOUS; break;
+                    case F_BACK_FEARFUL:   a->backfire_disp  ^= DISP_BIT_FEARFUL;    break;
+                    case F_BACK_TRUSTING:  a->backfire_disp  ^= DISP_BIT_TRUSTING;   break;
+                    case F_BACK_HOSTILE:   a->backfire_disp  ^= DISP_BIT_HOSTILE;    break;
+                    case F_BACK_GREEDY:    a->backfire_disp  ^= DISP_BIT_GREEDY;     break;
+                    case F_SHIFT_EFFECTIVE:
+                        a->shift_effective = (a->shift_effective == DISP_NONE) ? DISP_COUNT - 1
+                                           : (a->shift_effective > 0) ? a->shift_effective - 1
+                                           : DISP_NONE;
+                        break;
+                    case F_SHIFT_BACKFIRE:
+                        a->shift_backfire  = (a->shift_backfire == DISP_NONE) ? DISP_COUNT - 1
+                                           : (a->shift_backfire > 0) ? a->shift_backfire - 1
+                                           : DISP_NONE;
+                        break;
                     default: dirty = 0; break;
                 }
                 break;

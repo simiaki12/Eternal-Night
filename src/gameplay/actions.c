@@ -9,18 +9,19 @@ ActionDef actionDefs[ACTION_MAX];
 int       actionDefCount = 0;
 
 static const ActionDef builtinDefs[] = {
-    /*                                                                                                              flags */
-    { ACTION_ATTACK,   0,                    70,  0,  "Slash",         "a1",  "A quick, reliable strike.",        DOMAIN_COMBAT,   ACT_CAT_COMBAT,                ACT_FLAG_STARTER, 0 },
-    { ACTION_STRONG,   0,                    35,  4,  "Strong Attack",  "a2",  "Heavy blow dealing bonus damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0 },
-    { ACTION_HEAL,     ACT_CTX_PLAYER_HURT,  55, 10,  "Regenerate",    "a3",  "Draw on vitality to restore HP.",  DOMAIN_BLOOD,    ACT_CAT_COMBAT,                0,                0 },
-    { ACTION_DEFEND,   0,                    28,  0,  "Parry",         "a4",  "Brace and halve incoming damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0 },
-    { ACTION_DISARM,   ACT_CTX_ENEMY_WEAPON, 48,  0,  "Disarm",        "a5",  "Strip the weapon from the enemy.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0 },
-    { ACTION_BACKSTAB, ACT_CTX_FIRST_TURN,   60,  6,  "Moonstep",      "a6",  "Strike first. Skip the counter.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0 },
-    { ACTION_STUN,     ACT_CTX_CAN_STUN,     42,  0,  "Stun",          "a7",  "Stun the enemy, skip their turn.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0 },
-    { ACTION_CALM,     0,                    22,  0,  "Persuade",      "a8",  "Persuade the enemy, lower aggro.", DOMAIN_CHARM,    ACT_CAT_COMBAT|ACT_CAT_SOCIAL, ACT_FLAG_STARTER, 0 },
-    { ACTION_HIDE,     0,                    20,  0,  "Blindspot",     "a9",  "Find cover. Avoid the counter.",   DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0 },
-    { ACTION_EXECUTE,  ACT_CTX_EXECUTABLE,   78, 15,  "Death star",    "a10", "Lethal blow on a weakened enemy.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0 },
-    { ACTION_DEMAND,   0,                     0,  0,  "Demand",        "",    "Force the issue. End it now.",     DOMAIN_NONE,     ACT_CAT_SOCIAL,                0,                0 },
+    /*                                                                                                              flags                      eff  back  sh_e       sh_b */
+    { ACTION_ATTACK,   0,                    70,  0,  "Slash",         "a1",  "A quick, reliable strike.",        DOMAIN_COMBAT,   ACT_CAT_COMBAT,                ACT_FLAG_STARTER, 0, 0, 0xFF, 0xFF, 0 },
+    { ACTION_STRONG,   0,                    35,  4,  "Strong Attack",  "a2",  "Heavy blow dealing bonus damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0, 0, 0xFF, 0xFF, 0 },
+    { ACTION_HEAL,     ACT_CTX_PLAYER_HURT,  55, 10,  "Regenerate",    "a3",  "Draw on vitality to restore HP.",  DOMAIN_BLOOD,    ACT_CAT_COMBAT,                0,                0, 0, 0xFF, 0xFF, 0 },
+    { ACTION_DEFEND,   0,                    28,  0,  "Parry",         "a4",  "Brace and halve incoming damage.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0, 0, 0xFF, 0xFF, 0 },
+    { ACTION_DISARM,   ACT_CTX_ENEMY_WEAPON, 48,  0,  "Disarm",        "a5",  "Strip the weapon from the enemy.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0, 0, 0xFF, 0xFF, 0 },
+    { ACTION_BACKSTAB, ACT_CTX_FIRST_TURN,   60,  6,  "Moonstep",      "a6",  "Strike first. Skip the counter.", DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0, 0, 0xFF, 0xFF, 0 },
+    { ACTION_STUN,     ACT_CTX_CAN_STUN,     42,  0,  "Stun",          "a7",  "Stun the enemy, skip their turn.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0, 0, 0xFF, 0xFF, 0 },
+    { ACTION_CALM,     0,                    22,  0,  "Persuade",      "a8",  "Persuade the enemy, lower aggro.", DOMAIN_CHARM,    ACT_CAT_COMBAT|ACT_CAT_SOCIAL, ACT_FLAG_STARTER,
+        DISP_BIT_STRANGER|DISP_BIT_TRUSTING, DISP_BIT_HOSTILE, 3 /*TRUSTING*/, 4 /*HOSTILE*/, 0 },
+    { ACTION_HIDE,     0,                    20,  0,  "Blindspot",     "a9",  "Find cover. Avoid the counter.",   DOMAIN_TRICKERY, ACT_CAT_COMBAT,                0,                0, 0, 0xFF, 0xFF, 0 },
+    { ACTION_EXECUTE,  ACT_CTX_EXECUTABLE,   78, 15,  "Death star",    "a10", "Lethal blow on a weakened enemy.", DOMAIN_COMBAT,   ACT_CAT_COMBAT,                0,                0, 0, 0xFF, 0xFF, 0 },
+    { ACTION_DEMAND,   0,                     0,  0,  "Demand",        "",    "Force the issue. End it now.",     DOMAIN_NONE,     ACT_CAT_SOCIAL,                0,                0, 0, 0xFF, 0xFF, 0 },
 };
 #define BUILTIN_COUNT (int)(sizeof(builtinDefs)/sizeof(builtinDefs[0]))
 

@@ -72,10 +72,11 @@ void socialEncounterStart(int se_idx) {
     tmp.imgName[1]   = npc->imgName[1];
 
     encounterStart(ENCOUNTER_SOCIAL, &tmp, 0);
-    encounter.socialNpcId          = (int)se->npc_id;
-    encounter.enemies[0].maxHp     = 100;
-    encounter.enemies[0].hp        = (int)npc->base_standing;
-    player.seStates[se_idx].state  = SE_STATE_PARTIAL;
+    encounter.socialNpcId            = (int)se->npc_id;
+    encounter.enemies[0].maxHp       = 100;
+    encounter.enemies[0].hp          = (int)npc->base_standing;
+    encounter.enemies[0].disposition = DISP_STRANGER;
+    player.seStates[se_idx].state    = SE_STATE_PARTIAL;
 }
 
 
@@ -263,9 +264,9 @@ void encounterStartCombat(const EnemyDef *def) {
     encounter.modifiers       = 0;
     encounter.logCount        = 0;
     encounter.logScroll       = 0;
-    encounter.socialNpcId     = -1;
-    encounter.socialOutcome   = SOCIAL_OUTCOME_NONE;
-    encounter.socialEndDisp   = 0;
+    encounter.socialNpcId          = -1;
+    encounter.socialOutcome        = SOCIAL_OUTCOME_NONE;
+    encounter.socialEndWillingness = 0;
     memset(encounter.gainedDomainXp, 0, sizeof(encounter.gainedDomainXp));
     {
         char opening[28];
@@ -337,8 +338,10 @@ static void performPlayerAction(void) {
     Action *a   = &encounter.actions[encounter.selectedIndex];
     Enemy  *tgt = &encounter.enemies[encounter.targetIndex];
     encounter.skipEnemyAttack = 0;
-    int ehpBefore = tgt->hp;
-    int phpBefore = (int)player.hp;
+    int     ehpBefore  = tgt->hp;
+    int     phpBefore  = (int)player.hp;
+    uint8_t dispBefore = tgt->disposition;
+    int     socialTier = 0;
 
     switch (a->type) {
         case ACTION_ATTACK:
@@ -494,21 +497,52 @@ static void performPlayerAction(void) {
             /* Force the issue: skip any counter, end the exchange immediately */
             encounter.skipEnemyAttack  = 1;
             encounter.phase            = ENCOUNTER_PHASE_VICTORY;
-            encounter.socialOutcome    = SOCIAL_OUTCOME_DEMAND;
-            encounter.socialEndDisp    = encounter.enemies[0].hp;
+            encounter.socialOutcome         = SOCIAL_OUTCOME_DEMAND;
+            encounter.socialEndWillingness  = encounter.enemies[0].hp;
             break;
 
         default:
             break;
     }
 
-    /* Social: category actions raise disposition */
+    /* Social: category actions affect willingness based on disposition tier */
     if (encounter.encounterType == ENCOUNTER_SOCIAL && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
         const ActionDef *sadef = getActionDef((uint8_t)a->type);
         if (sadef && (sadef->encounterCat & ACT_CAT_SOCIAL) && a->type != ACTION_DEMAND) {
-            int boost = 10 + sadef->power;
-            tgt->hp  += boost;
+            /* Determine base tier from current disposition */
+            uint8_t dispBit = (uint8_t)(1u << tgt->disposition);
+            if      (sadef->backfire_disp  & dispBit) socialTier = -1;
+            else if (sadef->effective_disp & dispBit) socialTier =  1;
+            else                                      socialTier =  0;
+
+            /* Apply personality overrides */
+            if (encounter.socialNpcId >= 0 && encounter.socialNpcId < npcDefCount) {
+                const NpcDef *npcd = &npcDefs[encounter.socialNpcId];
+                if ((npcd->tags & NPC_TAG_FEARLESS) && (sadef->effective_disp & DISP_BIT_FEARFUL))
+                    { if (socialTier > 0) socialTier = 0; }
+                if ((npcd->tags & NPC_TAG_NOBLE) && (sadef->effective_disp & DISP_BIT_GREEDY))
+                    { if (socialTier >= 0) socialTier = -1; }
+                if ((npcd->tags & NPC_TAG_CRIMINAL) && (sadef->effective_disp & DISP_BIT_SUSPICIOUS))
+                    { if (socialTier == 0) socialTier = 1; }
+                if ((npcd->tags & NPC_TAG_FEARFUL) && (sadef->effective_disp & DISP_BIT_FEARFUL))
+                    { if (socialTier == 0) socialTier = 1; }
+            }
+
+            /* Scale willingness delta by tier */
+            int base  = 10 + (int)sadef->power;
+            int delta = (socialTier > 0) ? base * 3 / 2
+                      : (socialTier < 0) ? -base
+                      :                    base * 7 / 10;
+
+            tgt->hp += delta;
             if (tgt->hp > tgt->maxHp) tgt->hp = tgt->maxHp;
+            if (tgt->hp < 0)          tgt->hp = 0;
+
+            /* Shift disposition if specified */
+            if (socialTier > 0 && sadef->shift_effective != DISP_NONE)
+                tgt->disposition = sadef->shift_effective;
+            else if (socialTier < 0 && sadef->shift_backfire != DISP_NONE)
+                tgt->disposition = sadef->shift_backfire;
         }
     }
 
@@ -518,10 +552,11 @@ static void performPlayerAction(void) {
         const char *nm = adef ? adef->name : "?";
         char lm[28];
         if (encounter.encounterType == ENCOUNTER_SOCIAL) {
-            int dispDelta = tgt->hp - ehpBefore;
-            if      (dispDelta > 0) snprintf(lm, 28, "%.12s: +%d disp.", nm, dispDelta);
-            else if (dispDelta < 0) snprintf(lm, 28, "%.11s: %d disp.", nm, dispDelta);
-            else                    snprintf(lm, 28, "%.26s.", nm);
+            int wDelta = tgt->hp - ehpBefore;
+            if      (socialTier > 0) snprintf(lm, 28, "%.12s: lands (+%d)", nm, wDelta > 0 ? wDelta : 0);
+            else if (socialTier < 0) snprintf(lm, 28, "%.9s: backfires (-%d)", nm, wDelta < 0 ? -wDelta : 0);
+            else if (wDelta > 0)     snprintf(lm, 28, "%.14s: +%d", nm, wDelta);
+            else                     snprintf(lm, 28, "%.26s.", nm);
         } else {
             int dealt  = ehpBefore - tgt->hp;
             int healed = (int)player.hp - phpBefore;
@@ -532,6 +567,17 @@ static void performPlayerAction(void) {
             else                              snprintf(lm, 28, "%.26s.", nm);
         }
         logPush(lm);
+    }
+
+    /* Log disposition shift so the player can read the room */
+    if (encounter.encounterType == ENCOUNTER_SOCIAL && tgt->disposition != dispBefore) {
+        static const char *dnames[] = {
+            "Stranger","Suspicious","Fearful","Trusting","Hostile","Greedy"
+        };
+        char sm[28];
+        uint8_t d = tgt->disposition;
+        snprintf(sm, 28, "Now: %.19s.", d < DISP_COUNT ? dnames[d] : "?");
+        logPush(sm);
     }
 
     fireLogMessages(LOGTRIG_ACTION, (uint8_t)a->type, encounter.targetIndex);
@@ -552,8 +598,8 @@ static void performPlayerAction(void) {
             logPush("They come around.");
             encounter.phase          = ENCOUNTER_PHASE_VICTORY;
             encounter.skipEnemyAttack = 1;
-            encounter.socialOutcome  = SOCIAL_OUTCOME_WIN;
-            encounter.socialEndDisp  = encounter.enemies[0].hp;
+            encounter.socialOutcome         = SOCIAL_OUTCOME_WIN;
+            encounter.socialEndWillingness  = encounter.enemies[0].hp;
         }
     }
 
@@ -599,7 +645,7 @@ static void performPlayerAction(void) {
                 encounter.enemies[i].hp -= pushback;
                 if (encounter.enemies[i].hp < 0) encounter.enemies[i].hp = 0;
                 char cm[28];
-                snprintf(cm, 28, "%.10s: -%d disp.", encounter.enemies[i].name, pushback);
+                snprintf(cm, 28, "%.10s: pushes back.", encounter.enemies[i].name);
                 logPush(cm);
             } else {
                 int dmg = encounter.enemies[i].attack;
@@ -619,8 +665,8 @@ static void performPlayerAction(void) {
             encounter.enemies[0].hp  = 0;
             logPush("They end the conversation.");
             encounter.phase         = ENCOUNTER_PHASE_VICTORY;
-            encounter.socialOutcome = SOCIAL_OUTCOME_LOSS;
-            encounter.socialEndDisp = 0;
+            encounter.socialOutcome        = SOCIAL_OUTCOME_LOSS;
+            encounter.socialEndWillingness = 0;
         }
     }
 
@@ -718,6 +764,26 @@ static void drawCard(int cx, int cy, int cw, int ch,
     fillRect(cx + cw - 4, cy + ch - 4, 2, 2, bgCol);
 }
 
+static const char *willingnessTag(int w) {
+    if (w >= 90) return "Fully committed";
+    if (w >= 70) return "Willing";
+    if (w >= 50) return "On the fence";
+    if (w >= 25) return "Reluctant";
+    return "Openly opposes";
+}
+
+static const char *dispositionLabel(uint8_t d) {
+    switch (d) {
+        case DISP_STRANGER:   return "Stranger";
+        case DISP_SUSPICIOUS: return "Suspicious";
+        case DISP_FEARFUL:    return "Fearful";
+        case DISP_TRUSTING:   return "Trusting";
+        case DISP_HOSTILE:    return "Hostile";
+        case DISP_GREEDY:     return "Greedy";
+        default:              return "Unknown";
+    }
+}
+
 void renderEncounter(void) {
     /* ── Layout ─────────────────────────────────────────────────── */
     const int CARD_W   = 140;
@@ -788,15 +854,11 @@ void renderEncounter(void) {
             int oi = (encounter.socialOutcome >= 1 && encounter.socialOutcome <= 3) ? encounter.socialOutcome : 0;
             drawText(bx, y, labels[oi], cols[oi], 2);  y += 28;
 
-            /* Disposition bar */
-            int disp  = encounter.socialEndDisp;
-            int dfill = disp * barW / 100;
-            uint32_t dispCol = disp > 66 ? rgb(50, 190, 80) : disp > 33 ? rgb(190, 170, 40) : rgb(190, 55, 55);
-            fillRect(bx, y, barW, 8, rgb(12, 12, 35));
-            if (dfill > 0) fillRect(bx, y, dfill, 8, dispCol);
-            y += 10;
-            snprintf(buf, sizeof(buf), "Final disposition: %d / 100", disp);
-            drawText(bx, y, buf, rgb(100, 120, 200), 1);  y += 18;
+            /* Final willingness */
+            int w = encounter.socialEndWillingness;
+            const char *wtag = willingnessTag(w);
+            uint32_t wcol = w >= 70 ? rgb(50, 190, 80) : w >= 50 ? rgb(190, 170, 40) : rgb(190, 55, 55);
+            drawText(bx, y, wtag, wcol, 1);  y += 18;
 
             /* Domain XP */
             fillRect(LP_X + 8, y + 2, LP_W - 16, 1, rgb(30, 35, 80));  y += 10;
@@ -830,23 +892,18 @@ void renderEncounter(void) {
         return;
     }
 
-    /* ── Enemy / Disposition section ───────────────────────────── */
+    /* ── Enemy / Social section ────────────────────────────────── */
     if (encounter.encounterType == ENCOUNTER_SOCIAL) {
-        drawText(bx, y, "DISPOSITION", rgb(80, 110, 200), 1);  y += 12;
-
         const Enemy *e = &encounter.enemies[0];
-        int disp       = e->hp;
-        drawText(bx, y, e->name, rgb(140, 165, 230), 1);  y += 11;
+        drawText(bx, y, e->name, rgb(140, 165, 230), 1);  y += 12;
 
-        int      dfill   = disp * barW / 100;
-        uint32_t dispCol = disp > 66 ? rgb(50, 190, 80)
-                         : disp > 33 ? rgb(190, 170, 40)
-                         :             rgb(190, 55,  55);
-        fillRect(bx, y, barW, 8, rgb(12, 12, 35));
-        if (dfill > 0) fillRect(bx, y, dfill, 8, dispCol);
-        y += 10;
-        snprintf(buf, sizeof(buf), "%d / 100", disp);
-        drawText(bx, y, buf, rgb(90, 110, 175), 1);  y += 14;
+        const char *dlabel = dispositionLabel(e->disposition);
+        drawText(bx, y, dlabel, rgb(100, 120, 200), 1);  y += 11;
+
+        int w = e->hp;
+        const char *wtag = willingnessTag(w);
+        uint32_t wcol = w >= 70 ? rgb(50, 190, 80) : w >= 50 ? rgb(190, 170, 40) : rgb(190, 55, 55);
+        drawText(bx, y, wtag, wcol, 1);  y += 14;
 
     } else {
         drawText(bx, y, "ENEMIES", rgb(100, 50, 50), 1);  y += 12;
