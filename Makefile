@@ -109,6 +109,15 @@ seed_items:
 	$(CC_HOST) -std=c11 -Os tools/seed_items.c -o build/seed_items
 	./build/seed_items
 
+seed_shops:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os tools/seed_shops.c -o build/seed_shops
+	./build/seed_shops
+
+shop_editor:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/shop_editor.c -o build/shop_editor -lncurses
+
 seed_loottables:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os tools/seed_loottables.c -o build/seed_loottables
