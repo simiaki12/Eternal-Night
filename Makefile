@@ -200,7 +200,11 @@ music_editor_gui:
 	mkdir -p build
 	$(CC) -std=c11 -Os tools/music_editor_gui.c -o build/music_editor_gui.exe -lgdi32 -lwinmm -lcomdlg32 -mwindows
 
-tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor ambient_editor logmessage_editor social_encounter_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui
+editor_hub:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/editor_hub.c -o build/editor_hub -lncurses
+
+tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor ambient_editor logmessage_editor social_encounter_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui editor_hub
 
 clean:
 	rm -rf build data.pak
