@@ -16,7 +16,7 @@ Inventory inventory = {
 
 static const ItemDef builtinDefs[] = {
     { "Iron Sword",    ITEM_WEAPON,      3, 0, 0, 0, 0, 0, 0,              15, "A reliable iron blade.",  {ACTION_DEFEND, 0xFF, 0xFF, 0xFF}, {0} },
-    { "Leather Armor", ITEM_ARMOR,       0, 2, 0, 0, 0, 0, 0,              12, "Light but protective.",   {0xFF, 0xFF, 0xFF, 0xFF},          {0} },
+    { "Leather Armor", ITEM_OUTFIT,      0, 2, 0, 0, 0, 0, 0,              12, "Light but protective.",   {0xFF, 0xFF, 0xFF, 0xFF},          {0} },
     { "Health Potion", ITEM_CONSUMABLE,  0, 0, 0, 0, 0, 0, ITEM_FLAG_HEAL,  8, "Restores 10 HP.",         {0xFF, 0xFF, 0xFF, 0xFF},          {0} },
 };
 #define BUILTIN_COUNT (int)(sizeof(builtinDefs)/sizeof(builtinDefs[0]))
@@ -53,9 +53,12 @@ const char *itemDesc(uint8_t id) {
 int itemSlot(const ItemDef *d) {
     if (!d) return -1;
     switch (d->type) {
-        case ITEM_WEAPON: return SLOT_WEAPON;
-        case ITEM_ARMOR:  return SLOT_ARMOR;
-        default:          return -1;
+        case ITEM_WEAPON:       return SLOT_WEAPON;
+        case ITEM_OUTFIT:       return SLOT_OUTFIT;
+        case ITEM_UNDERGARMENT: return SLOT_UNDER;
+        case ITEM_ACCESSORY:    return SLOT_ACCESSORY_1; /* dual-slot: see useOrEquipItem */
+        case ITEM_RELIC:        return SLOT_RELIC;
+        default:                return -1;
     }
 }
 
@@ -101,16 +104,22 @@ int getStat(StatType stat) {
 int getStatPreview(StatType stat, uint8_t itemId) {
     const ItemDef *newItem = itemGetDef(itemId);
     if (!newItem) return getStat(stat);
-    int slot = itemSlot(newItem);
-    if (slot < 0) return getStat(stat); /* consumable — no equip bonus change */
+    if (newItem->type == ITEM_CONSUMABLE) return getStat(stat);
+    if (isEquipped(itemId)) return getStat(stat); /* already on — no change */
 
-    uint8_t curId = player.equipped[slot];
-    if (curId == itemId) return getStat(stat); /* already equipped — no change to show */
+    /* For accessories, find which slot would be displaced (if any) */
+    int replaceSlot;
+    if (newItem->type == ITEM_ACCESSORY) {
+        if      (player.equipped[SLOT_ACCESSORY_1] == ITEM_UNEQUIPPED) replaceSlot = -1;
+        else if (player.equipped[SLOT_ACCESSORY_2] == ITEM_UNEQUIPPED) replaceSlot = -1;
+        else                                                             replaceSlot = SLOT_ACCESSORY_2;
+    } else {
+        replaceSlot = itemSlot(newItem);
+    }
 
-    /* Preview: replace whatever is in this slot with the new item */
     int result = baseStat(stat);
     for (int i = 0; i < EQUIP_SLOTS; i++) {
-        if (i == slot) continue;
+        if (i == replaceSlot) continue;
         if (player.equipped[i] != ITEM_UNEQUIPPED)
             result += bonusOf(itemGetDef(player.equipped[i]), stat);
     }
@@ -145,6 +154,18 @@ void useOrEquipItem(int index) {
     uint8_t id = inventory.items[index];
     const ItemDef *d = itemGetDef(id);
     if (!d) return;
+
+    if (d->type == ITEM_ACCESSORY) {
+        /* Dual-slot: unequip from whichever slot holds it, or fill an empty slot, or replace slot 1 */
+        if (player.equipped[SLOT_ACCESSORY_1] == id) { player.equipped[SLOT_ACCESSORY_1] = ITEM_UNEQUIPPED; return; }
+        if (player.equipped[SLOT_ACCESSORY_2] == id) { player.equipped[SLOT_ACCESSORY_2] = ITEM_UNEQUIPPED; return; }
+        if (player.equipped[SLOT_ACCESSORY_1] == ITEM_UNEQUIPPED) { player.equipped[SLOT_ACCESSORY_1] = id; return; }
+        if (player.equipped[SLOT_ACCESSORY_2] == ITEM_UNEQUIPPED) { player.equipped[SLOT_ACCESSORY_2] = id; return; }
+        player.equipped[SLOT_ACCESSORY_2] = player.equipped[SLOT_ACCESSORY_1];
+        player.equipped[SLOT_ACCESSORY_1] = id;
+        return;
+    }
+
     int slot = itemSlot(d);
     if (slot >= 0) {
         /* toggle: unequip if already in this slot, otherwise equip (replacing whatever was there) */

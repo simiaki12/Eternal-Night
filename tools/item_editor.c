@@ -13,9 +13,12 @@
 #include <stdlib.h>
 
 /* ---- mirror of src/items.h (keep in sync) ---- */
-#define ITEM_WEAPON      0
-#define ITEM_ARMOR       1
-#define ITEM_CONSUMABLE  2
+#define ITEM_WEAPON       0
+#define ITEM_OUTFIT       1
+#define ITEM_CONSUMABLE   2
+#define ITEM_UNDERGARMENT 3
+#define ITEM_ACCESSORY    4
+#define ITEM_RELIC        5
 
 #define ITEM_FLAG_HEAL        0x01
 #define ITEM_FLAG_BUFF_ATTACK 0x02
@@ -53,7 +56,8 @@ static int     itemCount = 0;
 static int     dirty     = 0;
 static const char *outfile = "assets/data/items.dat";
 
-static const char *typeNames[] = { "Weapon", "Armor", "Consumable" };
+static const char *typeNames[] = { "Weapon", "Outfit", "Consumable", "Undergarment", "Accessory", "Relic" };
+#define TYPE_COUNT 6
 
 /* ---- file I/O ---- */
 
@@ -198,7 +202,7 @@ static void screenEdit(int idx) {
             case '+': case '=':
                 dirty = 1;
                 switch (sel) {
-                    case F_TYPE:  it->type = (it->type + 1) % 3; break;
+                    case F_TYPE:  it->type = (it->type + 1) % TYPE_COUNT; break;
                     case F_ATK:   if (it->attackBonus       < 127) it->attackBonus++;       break;
                     case F_DEF:   if (it->defenseBonus      < 127) it->defenseBonus++;      break;
                     case F_MHP:   if (it->hpBonus           < 127) it->hpBonus++;           break;
@@ -222,7 +226,7 @@ static void screenEdit(int idx) {
             case '-':
                 dirty = 1;
                 switch (sel) {
-                    case F_TYPE:  it->type = (it->type + 2) % 3; break;
+                    case F_TYPE:  it->type = (it->type + TYPE_COUNT - 1) % TYPE_COUNT; break;
                     case F_ATK:   if (it->attackBonus       > -128) it->attackBonus--;       break;
                     case F_DEF:   if (it->defenseBonus      > -128) it->defenseBonus--;      break;
                     case F_MHP:   if (it->hpBonus           > -128) it->hpBonus--;           break;
@@ -261,7 +265,7 @@ static void renderList(int sel, int scroll, const char *status) {
         mvprintw((i - scroll) + 4, 2, "%2d  %-16s  %-10s  %+dATK %+dDEF  %dg",
             i,
             items[i].name[0] ? items[i].name : "(unnamed)",
-            typeNames[items[i].type % 3],
+            typeNames[items[i].type % TYPE_COUNT],
             items[i].attackBonus,
             items[i].defenseBonus,
             items[i].price);

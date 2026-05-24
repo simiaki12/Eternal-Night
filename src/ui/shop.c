@@ -103,7 +103,7 @@ void renderShop(void) {
                 drawText(x, y, buf, col, 2); y += lineH; }
 
             if (d->attackBonus      || d->type == ITEM_WEAPON)  { STAT_ROW("ATK", STAT_ATK, rgb(220, 100, 100)) }
-            if (d->defenseBonus     || d->type == ITEM_ARMOR)   { STAT_ROW("DEF", STAT_DEF, rgb(100, 160, 220)) }
+            if (d->defenseBonus     || d->type == ITEM_OUTFIT)  { STAT_ROW("DEF", STAT_DEF, rgb(100, 160, 220)) }
             if (d->hpBonus)                                      { STAT_ROW("MHP", STAT_MHP, rgb( 80, 200,  80)) }
             if (d->intelligenceBonus)                            { STAT_ROW("INT", STAT_INT, rgb(180, 100, 220)) }
             if (d->perceptionBonus)                              { STAT_ROW("PER", STAT_PER, rgb(220, 180, 100)) }

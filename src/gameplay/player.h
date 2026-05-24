@@ -7,9 +7,13 @@
 #define EQUIP_SLOTS 8
 
 typedef enum {
-    SLOT_WEAPON = 0,
-    SLOT_ARMOR  = 1,
-    EQUIP_SLOT_COUNT = 2
+    SLOT_WEAPON      = 0,
+    SLOT_OUTFIT      = 1,  /* main armour or role disguise */
+    SLOT_UNDER       = 2,  /* undergarment — stacks with outfit */
+    SLOT_ACCESSORY_1 = 3,
+    SLOT_ACCESSORY_2 = 4,
+    SLOT_RELIC       = 5,
+    EQUIP_SLOT_COUNT = 6
 } EquipSlot;
 
 typedef struct {

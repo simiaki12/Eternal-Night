@@ -6,9 +6,12 @@
 #include <string.h>
 #include <stdint.h>
 
-#define ITEM_WEAPON     0
-#define ITEM_ARMOR      1
-#define ITEM_CONSUMABLE 2
+#define ITEM_WEAPON       0
+#define ITEM_OUTFIT       1
+#define ITEM_CONSUMABLE   2
+#define ITEM_UNDERGARMENT 3
+#define ITEM_ACCESSORY    4
+#define ITEM_RELIC        5
 
 #define ITEM_FLAG_HEAL        0x01
 #define ITEM_FLAG_BUFF_ATTACK 0x02
@@ -40,7 +43,7 @@ typedef struct {
 /*            name              type            atk def int per sta  hp  flags              price  description                       actions */
 static ItemDef items[] = {
     { "Iron Sword",    ITEM_WEAPON,      3,  1,  0,  1,  2,  0,  0,                 15, "A reliable iron blade.",  {ACTION_STRONG, NO_ACTION,     NO_ACTION, NO_ACTION} },
-    { "Leather Armor", ITEM_ARMOR,       0,  2,  0,  0,  0,  0,  0,                 12, "Light but protective.",   {ACTION_DEFEND, NO_ACTION,     NO_ACTION, NO_ACTION} },
+    { "Leather Armor", ITEM_OUTFIT,      0,  2,  0,  0,  0,  0,  0,                 12, "Light but protective.",   {ACTION_DEFEND, NO_ACTION,     NO_ACTION, NO_ACTION} },
     { "Health Potion", ITEM_CONSUMABLE,  0,  0,  0,  0,  0,  0,  ITEM_FLAG_HEAL,     8, "Restores 10 HP.",         {NO_ACTION,     NO_ACTION,     NO_ACTION, NO_ACTION} },
     { "Flaming Sword", ITEM_WEAPON,      6,  0,  2,  0,  0,  0,  0,                 40, "Burns with goblin fire.", {ACTION_STRONG, NO_ACTION,     NO_ACTION, NO_ACTION} },
 };

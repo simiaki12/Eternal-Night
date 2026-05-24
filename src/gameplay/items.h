@@ -2,7 +2,14 @@
 #include <stdint.h>
 #include "pak.h"
 
-typedef enum { ITEM_WEAPON, ITEM_ARMOR, ITEM_CONSUMABLE } ItemType;
+typedef enum {
+    ITEM_WEAPON      = 0,
+    ITEM_OUTFIT      = 1,  /* main armour or role disguise */
+    ITEM_CONSUMABLE  = 2,
+    ITEM_UNDERGARMENT= 3,  /* worn beneath outfit, stacks */
+    ITEM_ACCESSORY   = 4,  /* ring/watch/badge/pendant — two slots available */
+    ITEM_RELIC       = 5,  /* story-gated powerful item */
+} ItemType;
 
 #define ITEM_FLAG_HEAL        0x01
 #define ITEM_FLAG_BUFF_ATTACK 0x02
