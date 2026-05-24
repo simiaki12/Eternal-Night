@@ -1,1 +1,0 @@
-/* Social encounter implementation moved to encounter.c. */
