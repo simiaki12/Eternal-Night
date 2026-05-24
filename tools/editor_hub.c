@@ -42,6 +42,7 @@ static const Entry entries[] = {
 
     { ENTRY_HEADER, "-- Items & Loot ----------------------------------------", NULL, NULL },
     { ENTRY_EDITOR, "Item Editor",              "build/item_editor",              "assets/data/items.dat" },
+    { ENTRY_EDITOR, "Shop Editor",              "build/shop_editor",              "assets/data/shops.dat" },
     { ENTRY_EDITOR, "Loot Table Editor",        "build/loottable_editor",         "assets/data/loottables.dat" },
 
     { ENTRY_HEADER, "-- NPCs & Story ----------------------------------------", NULL, NULL },

@@ -37,7 +37,7 @@ void handleTownInput(int key) {
                     player.hp    = (uint16_t)getMaxHp();
                     g_restMsgEnd = GetTickCount() + 2500;
                     break;
-                case 2: enterShop(STATE_TOWN); break;
+                case 2: enterShop(0, STATE_TOWN); break;
                 case 3: state = STATE_WORLD;   break;
             }
             break;

@@ -255,7 +255,7 @@ static void triggerMapEvent(const MapEvent *ev) {
 
 void handleWorldInput(int key) {
     if (key == 'I') { state = STATE_INVENTORY; return; }
-    if (key == 'B') { enterShop(STATE_WORLD);  return; }
+    if (key == 'B') { enterShop(0, STATE_WORLD);  return; }
     if (key == VK_TAB) {
         if (g_targetCount > 1)
             g_targetIdx = (g_targetIdx + 1) % g_targetCount;

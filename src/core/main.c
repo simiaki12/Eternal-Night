@@ -334,6 +334,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     PakData ambientData   = pakRead("assets/data/ambient.dat");
     PakData logMsgData    = pakRead("assets/data/log_messages.dat");
     PakData seData        = pakRead("assets/data/social_encounters.dat");
+    PakData shopData      = pakRead("assets/data/shops.dat");
 
     loadItems(itemData);        /* optional — falls back to builtins if not in pak */
     loadEnemies(enemyData);     /* optional — falls back to builtins if not in pak */
@@ -345,6 +346,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadAmbient(ambientData);           /* optional — no ambient text if absent */
     loadLogMessages(logMsgData);        /* optional — no reactive messages if absent */
     loadSocialEncounters(seData);       /* optional — no social encounters if absent */
+    loadShops(shopData);               /* optional — falls back to builtin shop 0 if absent */
     socialNewGame();            /* must run after loadNpcs + loadSocialEncounters */
     free(itemData.data);
     free(enemyData.data);
@@ -356,6 +358,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     free(ambientData.data);
     free(logMsgData.data);
     free(seData.data);
+    free(shopData.data);
 
     const int screenW = 640;
     const int screenH = 480;
