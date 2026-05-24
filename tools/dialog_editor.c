@@ -68,6 +68,14 @@ typedef struct {
 
 static const char *outfile = "assets/data/dialog.dat";
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 static DialogTree trees[DIALOG_MAX_TREES];
 static int        treeCount = 0;
 static int        dirty     = 0;
@@ -243,21 +251,25 @@ static uint8_t domainPrev(uint8_t d) {
 
 typedef enum { SCR_TREES, SCR_NODES, SCR_NODE, SCR_OPTION } Screen;
 
-static Screen screen   = SCR_TREES;
-static int    selTree  = 0;
-static int    selNode  = 0;
-static int    selOpt   = 0;   /* option index within node */
+static Screen screen      = SCR_TREES;
+static int    selTree     = 0;
+static int    scrollTree  = 0;
+static int    selNode     = 0;
+static int    scrollNode  = 0;
+static int    selOpt      = 0;   /* option index within node */
 
 /* ------ SCR_TREES ------ */
 static void drawTrees(void) {
     clear();
-    mvprintw(0, 0, "DIALOG EDITOR  [%s]  trees: %d/%d",
-        dirty ? "unsaved" : "saved", treeCount, DIALOG_MAX_TREES);
+    int visible = LINES - 3;
+    scroll_to(selTree, &scrollTree, visible);
+    mvprintw(0, 0, "DIALOG EDITOR  [%s]  [%d/%d]",
+        dirty ? "unsaved" : "saved", treeCount > 0 ? selTree + 1 : 0, treeCount);
     mvprintw(1, 0, "Enter=open  A=add  D=delete  E=rename  S=save  Q=quit");
 
-    for (int i = 0; i < treeCount; i++) {
+    for (int i = scrollTree; i < treeCount && i < scrollTree + visible; i++) {
         if (i == selTree) attron(A_REVERSE);
-        mvprintw(i + 3, 2, "%-30s  nodes:%d", trees[i].speakerName, trees[i].nodeCount);
+        mvprintw((i - scrollTree) + 3, 2, "%-30s  nodes:%d", trees[i].speakerName, trees[i].nodeCount);
         if (i == selTree) attroff(A_REVERSE);
     }
     if (treeCount == 0)
@@ -269,7 +281,7 @@ static void handleTrees(int ch) {
         case KEY_UP:   if (selTree > 0) selTree--; break;
         case KEY_DOWN: if (selTree < treeCount - 1) selTree++; break;
         case '\n': case KEY_ENTER:
-            if (treeCount > 0) { selNode = 0; screen = SCR_NODES; }
+            if (treeCount > 0) { selNode = 0; scrollNode = 0; screen = SCR_NODES; }
             break;
         case 'a': case 'A':
             if (treeCount < DIALOG_MAX_TREES) {
@@ -278,8 +290,9 @@ static void handleTrees(int ch) {
                 selTree = treeCount++;
                 dirty = 1;
                 /* immediately edit name */
-                mvprintw(selTree + 3, 2, "%-30s", "");
-                editStr(selTree + 3, 2, trees[selTree].speakerName, 32);
+                scroll_to(selTree, &scrollTree, LINES - 3);
+                mvprintw((selTree - scrollTree) + 3, 2, "%-30s", "");
+                editStr((selTree - scrollTree) + 3, 2, trees[selTree].speakerName, 32);
             }
             break;
         case 'd': case 'D':
@@ -293,7 +306,7 @@ static void handleTrees(int ch) {
             break;
         case 'e': case 'E':
             if (treeCount > 0)
-                editStr(selTree + 3, 2, trees[selTree].speakerName, 32);
+                editStr((selTree - scrollTree) + 3, 2, trees[selTree].speakerName, 32);
             dirty = 1;
             break;
         case 's': case 'S': save(); break;
@@ -305,17 +318,20 @@ static void handleTrees(int ch) {
 static void drawNodes(void) {
     clear();
     DialogTree *t = &trees[selTree];
-    mvprintw(0, 0, "TREE: %s  [%s]  nodes: %d/%d",
-        t->speakerName, dirty ? "unsaved" : "saved", t->nodeCount, DIALOG_MAX_NODES);
+    int visible = LINES - 3;
+    scroll_to(selNode, &scrollNode, visible);
+    mvprintw(0, 0, "TREE: %s  [%s]  [%d/%d]",
+        t->speakerName, dirty ? "unsaved" : "saved",
+        t->nodeCount > 0 ? selNode + 1 : 0, t->nodeCount);
     mvprintw(1, 0, "Enter=open  A=add  D=delete  E=edit text  R=rename speaker  Bksp/Q=back");
 
-    for (int i = 0; i < t->nodeCount; i++) {
+    for (int i = scrollNode; i < t->nodeCount && i < scrollNode + visible; i++) {
         if (i == selNode) attron(A_REVERSE);
         /* truncate line to 50 chars for display */
         char preview[51];
         strncpy(preview, t->nodes[i].line, 50);
         preview[50] = '\0';
-        mvprintw(i + 3, 2, "[%2d] opts:%d  \"%s\"", i, t->nodes[i].optionCount, preview);
+        mvprintw((i - scrollNode) + 3, 2, "[%2d] opts:%d  \"%s\"", i, t->nodes[i].optionCount, preview);
         if (i == selNode) attroff(A_REVERSE);
     }
     if (t->nodeCount == 0)
@@ -349,7 +365,7 @@ static void handleNodes(int ch) {
             break;
         case 'e': case 'E':
             if (t->nodeCount > 0) {
-                int row = selNode + 3;
+                int row = (selNode - scrollNode) + 3;
                 mvprintw(row, 2, "[%2d] opts:%d  \"", selNode, t->nodes[selNode].optionCount);
                 int col = 2 + 13;
                 editStr(row, col, t->nodes[selNode].line, 74);

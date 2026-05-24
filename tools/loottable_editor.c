@@ -36,6 +36,14 @@ typedef struct {
 
 static const char *questStatusNames[] = { "Inactive", "Active", "Done" };
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 static LootTable tables[LOOT_TABLE_MAX];
 static int       tableCount = 0;
 static int       dirty      = 0;
@@ -157,22 +165,24 @@ static void screenEntry(int tableIdx, int entryIdx) {
 
 /* ---- entry list screen ---- */
 
-static void renderEntries(int tableIdx, int sel, const char *status) {
+static void renderEntries(int tableIdx, int sel, int scroll, const char *status) {
     LootTable *t = &tables[tableIdx];
     clear();
-    mvprintw(0, 0, "TABLE %d  (%d entries)  [%s]", tableIdx, t->count, dirty ? "unsaved" : "saved");
+    int visible = LINES - 4;
+    mvprintw(0, 0, "TABLE %d  [%d/%d]  [%s]", tableIdx,
+        t->count > 0 ? sel + 1 : 0, t->count, dirty ? "unsaved" : "saved");
     mvprintw(1, 0, "Up/Down=select  Enter=edit  N=new  D=delete  S=save  Bksp=back");
     if (status) mvprintw(2, 0, "%s", status);
 
-    for (int i = 0; i < t->count; i++) {
+    for (int i = scroll; i < t->count && i < scroll + visible; i++) {
         LootEntry *e = &t->entries[i];
         if (i == sel) attron(A_REVERSE);
         if (e->questId == 0xFF)
-            mvprintw(i + 4, 2, "%d  item=%-3d  chance=%3d (~%d%%)  quest=---",
+            mvprintw((i - scroll) + 4, 2, "%d  item=%-3d  chance=%3d (~%d%%)  quest=---",
                 i, e->itemId, e->chance,
                 (int)((unsigned)e->chance * 100 / 255));
         else
-            mvprintw(i + 4, 2, "%d  item=%-3d  chance=%3d (~%d%%)  quest=%d [%s]",
+            mvprintw((i - scroll) + 4, 2, "%d  item=%-3d  chance=%3d (~%d%%)  quest=%d [%s]",
                 i, e->itemId, e->chance,
                 (int)((unsigned)e->chance * 100 / 255),
                 e->questId, questStatusNames[e->questStatus % 3]);
@@ -187,14 +197,16 @@ static void renderEntries(int tableIdx, int sel, const char *status) {
 
 static void screenEntries(int tableIdx) {
     int sel = 0;
+    int scroll = 0;
     const char *status = NULL;
 
     while (1) {
         LootTable *t = &tables[tableIdx];
         if (sel >= t->count && t->count > 0) sel = t->count - 1;
         if (sel < 0) sel = 0;
+        scroll_to(sel, &scroll, LINES - 4);
 
-        renderEntries(tableIdx, sel, status);
+        renderEntries(tableIdx, sel, scroll, status);
         status = NULL;
         int ch = getch();
 
@@ -242,15 +254,17 @@ static void screenEntries(int tableIdx) {
 
 /* ---- table list screen ---- */
 
-static void renderTables(int sel, const char *status) {
+static void renderTables(int sel, int scroll, const char *status) {
     clear();
-    mvprintw(0, 0, "LOOT TABLES  [%s]  (%d tables)", dirty ? "unsaved" : "saved", tableCount);
+    int visible = LINES - 4;
+    mvprintw(0, 0, "LOOT TABLES  [%s]  [%d/%d]", dirty ? "unsaved" : "saved",
+        tableCount > 0 ? sel + 1 : 0, tableCount);
     mvprintw(1, 0, "Up/Down=select  Enter=open  N=new  D=delete  S=save  Q=quit");
     if (status) mvprintw(2, 0, "%s", status);
 
-    for (int i = 0; i < tableCount; i++) {
+    for (int i = scroll; i < tableCount && i < scroll + visible; i++) {
         if (i == sel) attron(A_REVERSE);
-        mvprintw(i + 4, 2, "Table %-3d  %d entr%s",
+        mvprintw((i - scroll) + 4, 2, "Table %-3d  %d entr%s",
             i, tables[i].count, tables[i].count == 1 ? "y" : "ies");
         if (i == sel) attroff(A_REVERSE);
     }
@@ -271,14 +285,16 @@ int main(void) {
     curs_set(0);
 
     int sel = 0;
+    int scroll = 0;
     int running = 1;
     const char *status = NULL;
 
     while (running) {
         if (sel >= tableCount && tableCount > 0) sel = tableCount - 1;
         if (sel < 0) sel = 0;
+        scroll_to(sel, &scroll, LINES - 4);
 
-        renderTables(sel, status);
+        renderTables(sel, scroll, status);
         status = NULL;
         int ch = getch();
 

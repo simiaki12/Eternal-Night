@@ -33,6 +33,14 @@ typedef struct {
 
 typedef char _check_se_size[(sizeof(SocialEncounterDef) == 8) ? 1 : -1];
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 static SocialEncounterDef ses[SE_DEF_MAX];
 static int                seCount = 0;
 static int                dirty   = 0;
@@ -64,9 +72,10 @@ static void save(void) {
 
 typedef enum { SCR_LIST, SCR_EDIT } Screen;
 
-static Screen screen  = SCR_LIST;
-static int    selSe   = 0;
-static int    selFld  = 0;
+static Screen screen    = SCR_LIST;
+static int    selSe     = 0;
+static int    scrollSe  = 0;
+static int    selFld    = 0;
 
 /* Fields in SCR_EDIT */
 #define FLD_NPC_ID         0
@@ -92,20 +101,22 @@ static const char *fldLabels[] = {
 
 static void drawList(void) {
     clear();
-    mvprintw(0, 0, "SOCIAL ENCOUNTER EDITOR  [%s]  count: %d/%d",
-        dirty ? "unsaved" : "saved", seCount, SE_DEF_MAX);
+    int visible = LINES - 3;
+    scroll_to(selSe, &scrollSe, visible);
+    mvprintw(0, 0, "SOCIAL ENCOUNTER EDITOR  [%s]  [%d/%d]",
+        dirty ? "unsaved" : "saved", seCount > 0 ? selSe + 1 : 0, seCount);
     mvprintw(1, 0, "Enter=edit  N=new  D=delete  S=save  Q=quit");
     mvprintw(2, 0, "  %-4s  %-6s  %-8s  %-8s  %-8s  flags",
         "id", "npc_id", "p_reward", "f_reward", "disp");
 
-    for (int i = 0; i < seCount; i++) {
+    for (int i = scrollSe; i < seCount && i < scrollSe + visible; i++) {
         SocialEncounterDef *s = &ses[i];
         if (i == selSe) attron(A_REVERSE);
         char flags[32] = "";
         if (s->flags & SE_FLAG_ONE_SHOT)      strcat(flags, "ONE_SHOT ");
         if (s->flags & SE_FLAG_DISP_OVERRIDE) strcat(flags, "DISP_OVR ");
         if (s->flags & SE_FLAG_HIDDEN)        strcat(flags, "HIDDEN");
-        mvprintw(i + 3, 2, "[%2d]  npc:%-4d  p:%-4d  f:%-4d  disp:%-4d  %s",
+        mvprintw((i - scrollSe) + 3, 2, "[%2d]  npc:%-4d  p:%-4d  f:%-4d  disp:%-4d  %s",
             i, s->npc_id, s->reward_partial, s->reward_full, s->disp_start, flags);
         if (i == selSe) attroff(A_REVERSE);
     }

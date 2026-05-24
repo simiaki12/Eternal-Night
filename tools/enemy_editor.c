@@ -44,6 +44,14 @@ typedef struct {
 typedef char check_size[(sizeof(EnemyDef) == 48) ? 1 : -1];
 /* ------------------------------------------------ */
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 #define MAX_ENEMIES 32
 static EnemyDef  enemies[MAX_ENEMIES];
 static int       enemyCount = 0;
@@ -238,22 +246,280 @@ static void screenEdit(int idx) {
     }
 }
 
-/* ---- list screen ---- */
+/* ---- enemy picker (used by pool edit to choose slot contents) ---- */
 
-static void renderList(int sel, const char *status) {
+/* Returns chosen enemy ID, or 0xFF to clear the slot.
+   Returns current unchanged if the user cancels with Esc/Backspace. */
+static uint8_t pickEnemy(uint8_t current) {
+    if (enemyCount == 0) return current;
+
+    int total  = enemyCount + 1; /* enemies 0..N-1, then "(clear)" */
+    int sel    = (current == 0xFF || current >= (uint8_t)enemyCount)
+                     ? enemyCount : (int)current;
+    int scroll = 0;
+
+    while (1) {
+        int visible = LINES - 3;
+        scroll_to(sel, &scroll, visible);
+        clear();
+        mvprintw(0, 0, "PICK ENEMY  [%d/%d]", sel < enemyCount ? sel + 1 : 0, enemyCount);
+        mvprintw(1, 0, "Up/Down=select  Enter=confirm  Esc/Bksp=cancel");
+
+        for (int i = scroll; i < total && i < scroll + visible; i++) {
+            int row = (i - scroll) + 3;
+            if (i == sel) attron(A_REVERSE);
+            if (i < enemyCount) {
+                char flags[5] = "----";
+                if (enemies[i].flags & EDEF_HAS_WEAPON) flags[0] = 'W';
+                if (enemies[i].flags & EDEF_EXECUTABLE) flags[1] = 'E';
+                if (enemies[i].flags & EDEF_BLOCKABLE)  flags[2] = 'B';
+                if (enemies[i].flags & EDEF_STUNNABLE)  flags[3] = 'S';
+                mvprintw(row, 2, "%2d  %-15s  hp:%-3d atk:%-3d def:%-3d  [%s]",
+                    i, enemies[i].name[0] ? enemies[i].name : "(unnamed)",
+                    enemies[i].hp, enemies[i].attack, enemies[i].defense, flags);
+            } else {
+                mvprintw(row, 2, " -  (clear slot)");
+            }
+            if (i == sel) attroff(A_REVERSE);
+        }
+        refresh();
+
+        int ch = getch();
+        switch (ch) {
+            case KEY_UP:   if (sel > 0) sel--; break;
+            case KEY_DOWN: if (sel < total - 1) sel++; break;
+            case '\n': case KEY_ENTER:
+                return (sel < enemyCount) ? (uint8_t)sel : 0xFF;
+            case 27:
+            case KEY_BACKSPACE: case 127:
+                return current;
+        }
+    }
+}
+
+/* ---- pool edit screen ---- */
+
+typedef enum {
+    PF_TILE = 0,
+    PF_SLOT0, PF_SLOT1, PF_SLOT2, PF_SLOT3,
+    PF_COUNT,
+    PF_NFIELDS
+} PoolField;
+
+static const char *pFieldNames[] = {
+    "Tile Name",
+    "Slot 0", "Slot 1", "Slot 2", "Slot 3",
+    "Count (active)"
+};
+
+static void renderPoolEdit(EnemyPool *p, int poolIdx, int sel, const char *status) {
     clear();
-    mvprintw(0, 0, "ENEMY LIST  [%s]  (%d enemies)", dirty ? "unsaved" : "saved", enemyCount);
-    mvprintw(1, 0, "Up/Down=select  Enter=edit  N=new  D=delete  S=save  Q=quit");
+    mvprintw(0, 0, "POOL EDITOR — Pool %d (loc tile 0x%02X)", poolIdx + 1, poolIdx + 1);
+    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=pick/edit  Bksp=back  S=save");
     if (status) mvprintw(2, 0, "%s", status);
 
-    for (int i = 0; i < enemyCount; i++) {
+    for (int i = 0; i < PF_NFIELDS; i++) {
+        if (i == sel) attron(A_REVERSE);
+        int row = i + 4;
+        if (i == PF_TILE) {
+            mvprintw(row, 2, "%-16s  %s", pFieldNames[i], p->tileName[0] ? p->tileName : "(none)");
+        } else if (i >= PF_SLOT0 && i <= PF_SLOT3) {
+            int slot = i - PF_SLOT0;
+            uint8_t id = p->enemyIds[slot];
+            if (id == 0xFF)
+                mvprintw(row, 2, "%-16s  --  (empty)", pFieldNames[i]);
+            else if (id < (uint8_t)enemyCount)
+                mvprintw(row, 2, "%-16s  %2d  (%s)", pFieldNames[i], id, enemies[id].name);
+            else
+                mvprintw(row, 2, "%-16s  %2d  (?)", pFieldNames[i], id);
+        } else {
+            mvprintw(row, 2, "%-16s  %d", pFieldNames[i], p->count);
+        }
+        if (i == sel) attroff(A_REVERSE);
+    }
+    refresh();
+}
+
+static void screenPoolEdit(int idx) {
+    EnemyPool  *p      = &pools[idx];
+    int         sel    = 0;
+    const char *status = NULL;
+
+    while (1) {
+        renderPoolEdit(p, idx, sel, status);
+        status = NULL;
+        int ch = getch();
+
+        switch (ch) {
+            case KEY_UP:   if (sel > 0) sel--; break;
+            case KEY_DOWN: if (sel < PF_NFIELDS - 1) sel++; break;
+
+            case KEY_BACKSPACE: case 127: return;
+
+            case 's': case 'S': save(); status = "Saved."; break;
+
+            case '\n': case KEY_ENTER:
+                if (sel == PF_TILE) {
+                    if (editString(sel + 4, 20, p->tileName, 16)) dirty = 1;
+                } else if (sel >= PF_SLOT0 && sel <= PF_SLOT3) {
+                    int slot = sel - PF_SLOT0;
+                    uint8_t picked = pickEnemy(p->enemyIds[slot]);
+                    if (picked != p->enemyIds[slot]) { p->enemyIds[slot] = picked; dirty = 1; }
+                }
+                break;
+
+            case '+': case '=':
+                dirty = 1;
+                if (sel >= PF_SLOT0 && sel <= PF_SLOT3) {
+                    int slot = sel - PF_SLOT0;
+                    uint8_t id = p->enemyIds[slot];
+                    if (id == 0xFF)
+                        p->enemyIds[slot] = 0;
+                    else if (enemyCount > 0 && id < (uint8_t)(enemyCount - 1))
+                        p->enemyIds[slot]++;
+                    else
+                        dirty = 0;
+                } else if (sel == PF_COUNT) {
+                    if (p->count < ENEMY_POOL_SIZE) p->count++;
+                    else dirty = 0;
+                } else {
+                    dirty = 0;
+                }
+                break;
+
+            case '-':
+                dirty = 1;
+                if (sel >= PF_SLOT0 && sel <= PF_SLOT3) {
+                    int slot = sel - PF_SLOT0;
+                    uint8_t id = p->enemyIds[slot];
+                    if (id == 0)
+                        p->enemyIds[slot] = 0xFF;
+                    else if (id == 0xFF)
+                        p->enemyIds[slot] = enemyCount > 0 ? (uint8_t)(enemyCount - 1) : 0xFF;
+                    else
+                        p->enemyIds[slot]--;
+                } else if (sel == PF_COUNT) {
+                    if (p->count > 0) p->count--;
+                    else dirty = 0;
+                } else {
+                    dirty = 0;
+                }
+                break;
+        }
+    }
+}
+
+/* ---- pool list screen ---- */
+
+static void renderPools(int sel, int scroll, const char *status) {
+    clear();
+    int visible = LINES - 4;
+    mvprintw(0, 0, "POOL LIST  [%s]  (%d/%d)",
+             dirty ? "unsaved" : "saved", poolCount > 0 ? sel + 1 : 0, poolCount);
+    mvprintw(1, 0, "Up/Down=select  Enter=edit  N=new  D=delete  Bksp=back  S=save");
+    if (status) mvprintw(2, 0, "%s", status);
+
+    for (int i = scroll; i < poolCount && i < scroll + visible; i++) {
+        int row = (i - scroll) + 4;
+        if (i == sel) attron(A_REVERSE);
+        char members[64] = "";
+        int n = pools[i].count < ENEMY_POOL_SIZE ? pools[i].count : ENEMY_POOL_SIZE;
+        for (int s = 0; s < n; s++) {
+            uint8_t id = pools[i].enemyIds[s];
+            if (s > 0) strncat(members, " ", sizeof(members) - strlen(members) - 1);
+            if (id < (uint8_t)enemyCount)
+                strncat(members, enemies[id].name, sizeof(members) - strlen(members) - 1);
+            else
+                strncat(members, "?", sizeof(members) - strlen(members) - 1);
+        }
+        mvprintw(row, 2, "Pool %2d (0x%02X)  tile:%-16s  [%s]",
+            i + 1, i + 1,
+            pools[i].tileName[0] ? pools[i].tileName : "(none)",
+            members[0] ? members : "empty");
+        if (i == sel) attroff(A_REVERSE);
+    }
+
+    if (poolCount == 0)
+        mvprintw(4, 2, "(no pools -- press N to add one)");
+
+    refresh();
+}
+
+static void screenPools(void) {
+    int  sel    = 0;
+    int  scroll = 0;
+    const char *status = NULL;
+
+    while (1) {
+        if (sel >= poolCount && poolCount > 0) sel = poolCount - 1;
+        if (sel < 0) sel = 0;
+        scroll_to(sel, &scroll, LINES - 4);
+
+        renderPools(sel, scroll, status);
+        status = NULL;
+        int ch = getch();
+
+        switch (ch) {
+            case KEY_UP:   if (sel > 0) sel--; break;
+            case KEY_DOWN: if (sel < poolCount - 1) sel++; break;
+
+            case '\n': case KEY_ENTER:
+                if (poolCount > 0) screenPoolEdit(sel);
+                break;
+
+            case 'n': case 'N':
+                if (poolCount < ENEMY_POOL_MAX) {
+                    memset(&pools[poolCount], 0, sizeof(EnemyPool));
+                    memset(pools[poolCount].enemyIds, 0xFF, ENEMY_POOL_SIZE);
+                    pools[poolCount].count = 0;
+                    sel = poolCount++;
+                    dirty = 1;
+                    screenPoolEdit(sel);
+                } else {
+                    status = "Max pools reached (15).";
+                }
+                break;
+
+            case 'd': case 'D':
+                if (poolCount > 0) {
+                    for (int i = sel; i < poolCount - 1; i++)
+                        pools[i] = pools[i + 1];
+                    poolCount--;
+                    dirty = 1;
+                    status = "Pool deleted.";
+                }
+                break;
+
+            case 's': case 'S':
+                save();
+                status = "Saved.";
+                break;
+
+            case KEY_BACKSPACE: case 127:
+                return;
+        }
+    }
+}
+
+/* ---- list screen ---- */
+
+static void renderList(int sel, int scroll, const char *status) {
+    clear();
+    int visible = LINES - 4;
+    mvprintw(0, 0, "ENEMY LIST  [%s]  (%d/%d)",
+             dirty ? "unsaved" : "saved", enemyCount > 0 ? sel + 1 : 0, enemyCount);
+    mvprintw(1, 0, "Up/Down=select  Enter=edit  N=new  D=delete  P=pools  S=save  Q=quit");
+    if (status) mvprintw(2, 0, "%s", status);
+
+    for (int i = scroll; i < enemyCount && i < scroll + visible; i++) {
+        int row = (i - scroll) + 4;
         if (i == sel) attron(A_REVERSE);
         char flags[5] = "----";
         if (enemies[i].flags & EDEF_HAS_WEAPON) flags[0] = 'W';
         if (enemies[i].flags & EDEF_EXECUTABLE) flags[1] = 'E';
         if (enemies[i].flags & EDEF_BLOCKABLE)  flags[2] = 'B';
         if (enemies[i].flags & EDEF_STUNNABLE)  flags[3] = 'S';
-        mvprintw(i + 4, 2, "%2d  %-15s  hp:%-3d atk:%-3d def:%-3d  [%s]  img:%s",
+        mvprintw(row, 2, "%2d  %-15s  hp:%-3d atk:%-3d def:%-3d  [%s]  img:%s",
             i,
             enemies[i].name[0] ? enemies[i].name : "(unnamed)",
             enemies[i].hp, enemies[i].attack, enemies[i].defense,
@@ -263,7 +529,7 @@ static void renderList(int sel, const char *status) {
     }
 
     if (enemyCount == 0)
-        mvprintw(4, 2, "(no enemies — press N to add one)");
+        mvprintw(4, 2, "(no enemies -- press N to add one)");
 
     refresh();
 }
@@ -278,14 +544,16 @@ int main(void) {
     curs_set(0);
 
     int  sel     = 0;
+    int  scroll  = 0;
     int  running = 1;
     const char *status = NULL;
 
     while (running) {
         if (sel >= enemyCount && enemyCount > 0) sel = enemyCount - 1;
         if (sel < 0) sel = 0;
+        scroll_to(sel, &scroll, LINES - 4);
 
-        renderList(sel, status);
+        renderList(sel, scroll, status);
         status = NULL;
         int ch = getch();
 
@@ -323,6 +591,10 @@ int main(void) {
             case 's': case 'S':
                 save();
                 status = "Saved.";
+                break;
+
+            case 'p': case 'P':
+                screenPools();
                 break;
 
             case 'q': case 'Q':

@@ -44,6 +44,14 @@ typedef struct {
 
 typedef char check_size[(sizeof(NpcDef) == 40) ? 1 : -1];
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 static NpcDef npcs[NPC_DEF_MAX];
 static int    npcCount = 0;
 static int    dirty    = 0;
@@ -227,15 +235,17 @@ static void screenEdit(int idx) {
 
 /* ---- list screen ---- */
 
-static void renderList(int sel, const char *status) {
+static void renderList(int sel, int scroll, const char *status) {
     clear();
-    mvprintw(0, 0, "NPC LIST  [%s]  (%d NPCs)", dirty ? "unsaved" : "saved", npcCount);
+    int visible = LINES - 4;
+    mvprintw(0, 0, "NPC LIST  [%s]  [%d/%d]", dirty ? "unsaved" : "saved",
+        npcCount > 0 ? sel + 1 : 0, npcCount);
     mvprintw(1, 0, "Up/Down=select  Enter=edit  N=new  D=delete  S=save  Q=quit");
     if (status) mvprintw(2, 0, "%s", status);
 
-    for (int i = 0; i < npcCount; i++) {
+    for (int i = scroll; i < npcCount && i < scroll + visible; i++) {
         if (i == sel) attron(A_REVERSE);
-        mvprintw(i + 4, 2, "%2d  %-15s  (%3d,%3d)  map:%-7s  tree:%s  img:%s",
+        mvprintw((i - scroll) + 4, 2, "%2d  %-15s  (%3d,%3d)  map:%-7s  tree:%s  img:%s",
             i,
             npcs[i].name[0] ? npcs[i].name : "(unnamed)",
             npcs[i].x, npcs[i].y,
@@ -243,7 +253,7 @@ static void renderList(int sel, const char *status) {
             npcs[i].treeId == 0xFF ? "none" : (char[4]){""},
             npcs[i].imgName[0] ? npcs[i].imgName : "--");
         if (npcs[i].treeId != 0xFF) {
-            mvprintw(i + 4, 63, "%d", npcs[i].treeId);
+            mvprintw((i - scroll) + 4, 63, "%d", npcs[i].treeId);
         }
         if (i == sel) attroff(A_REVERSE);
     }
@@ -264,14 +274,16 @@ int main(void) {
     curs_set(0);
 
     int  sel     = 0;
+    int  scroll  = 0;
     int  running = 1;
     const char *status = NULL;
 
     while (running) {
         if (sel >= npcCount && npcCount > 0) sel = npcCount - 1;
         if (sel < 0) sel = 0;
+        scroll_to(sel, &scroll, LINES - 4);
 
-        renderList(sel, status);
+        renderList(sel, scroll, status);
         status = NULL;
         int ch = getch();
 

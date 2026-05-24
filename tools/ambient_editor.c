@@ -38,6 +38,14 @@ typedef struct {
 
 static const char *outfile = "assets/data/ambient.dat";
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 static AmbientEntry entries[MAX_AMBIENT];
 static int          entryCount = 0;
 static int          dirty      = 0;
@@ -104,9 +112,10 @@ static void editStr(int row, int col, char *buf, int maxLen) {
 #define SCR_LIST  0
 #define SCR_ENTRY 1
 
-static int screen   = SCR_LIST;
-static int selEntry = 0;
-static int selField = 0;
+static int screen       = SCR_LIST;
+static int selEntry     = 0;
+static int scrollEntry  = 0;
+static int selField     = 0;
 
 #define ENTRY_FIELD_COUNT 9
 
@@ -114,7 +123,10 @@ static int selField = 0;
 
 static void drawList(void) {
     clear();
-    mvprintw(0, 0, "AMBIENT TEXT  [%s]", dirty ? "unsaved" : "saved");
+    int visible = LINES - 3;
+    scroll_to(selEntry, &scrollEntry, visible);
+    mvprintw(0, 0, "AMBIENT TEXT  [%s]  [%d/%d]", dirty ? "unsaved" : "saved",
+        entryCount > 0 ? selEntry + 1 : 0, entryCount);
     mvprintw(1, 0, "Up/Down=select  Enter=edit  A=add  D=delete  S=save  Q=quit");
 
     if (entryCount == 0) {
@@ -122,13 +134,13 @@ static void drawList(void) {
         return;
     }
 
-    for (int i = 0; i < entryCount; i++) {
+    for (int i = scrollEntry; i < entryCount && i < scrollEntry + visible; i++) {
         AmbientEntry *e = &entries[i];
         if (i == selEntry) attron(A_REVERSE);
         char truncated[32];
         strncpy(truncated, e->text, 31);
         truncated[31] = '\0';
-        mvprintw(3 + i, 2, "[%3d] %-8s (%2d-%2d, %2d-%2d) %-12s  %s",
+        mvprintw((i - scrollEntry) + 3, 2, "[%3d] %-8s (%2d-%2d, %2d-%2d) %-12s  %s",
             i, e->mapId, e->leftX, e->rightX, e->topY, e->bottomY,
             flagNames[e->flags <= AMBIENT_ONCE_EVER ? e->flags : 0],
             truncated);

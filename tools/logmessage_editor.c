@@ -43,6 +43,14 @@ typedef struct {
 
 static const char *outfile = "assets/data/log_messages.dat";
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 static LogMessage entries[LOG_MSG_MAX];
 static int        entryCount = 0;
 static int        dirty      = 0;
@@ -102,9 +110,10 @@ static void editStr(int row, int col, char *buf, int maxLen) {
 
 typedef enum { SCR_LIST, SCR_EDIT } Screen;
 
-static Screen screen    = SCR_LIST;
-static int    listSel   = 0;
-static int    editField = 0;
+static Screen screen      = SCR_LIST;
+static int    listSel     = 0;
+static int    listScroll  = 0;
+static int    editField   = 0;
 #define EDIT_FIELDS 11
 
 static const char *fieldLabel(int f) {
@@ -162,12 +171,14 @@ static void fieldCycle(int f, LogMessage *m, int delta) {
 
 static void drawList(void) {
     clear();
-    mvprintw(0, 0, "LOG MESSAGE EDITOR  [%d/%d]%s", entryCount, LOG_MSG_MAX, dirty ? " *" : "");
+    int visible = LINES - 3;
+    scroll_to(listSel, &listScroll, visible);
+    mvprintw(0, 0, "LOG MESSAGE EDITOR  [%d/%d]%s",
+        entryCount > 0 ? listSel + 1 : 0, entryCount, dirty ? " *" : "");
     mvprintw(1, 0, "Up/Down=select  Enter=edit  N=new  D=delete  S=save  Q=quit");
     mvhline(2, 0, '-', 78);
-    for (int i = 0; i < entryCount; i++) {
-        int row = 3 + i;
-        if (row >= LINES - 1) break;
+    for (int i = listScroll; i < entryCount && i < listScroll + visible; i++) {
+        int row = (i - listScroll) + 3;
         if (i == listSel) attron(A_REVERSE);
         mvprintw(row, 0, "%3d  %-28s  %s", i,
                  entries[i].text,

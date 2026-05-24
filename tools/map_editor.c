@@ -47,7 +47,25 @@ static MapEvent  events[MAX_MAP_EVENTS];
 static int       eventCount = 0;
 static int       mapW = 10, mapH = 8;
 static int       curX = 0, curY = 0;
+static int       camX = 0, camY = 0;   /* top-left tile of the viewport */
 static int       spawnX = 2, spawnY = 2;
+
+#define MAP_MARGIN 3   /* scrolloff distance in tiles */
+
+/* Shift camera so the cursor stays MAP_MARGIN tiles from every edge. */
+static void cam_follow(void) {
+    int visW = COLS / 2;
+    int visH = LINES - 5;   /* rows 0-3 header, row LINES-1 status */
+    if (visW < 1) visW = 1;
+    if (visH < 1) visH = 1;
+
+    if (curX - camX < MAP_MARGIN)              camX = curX - MAP_MARGIN;
+    if (curX - camX > visW - MAP_MARGIN - 1)   camX = curX - visW + MAP_MARGIN + 1;
+    if (curY - camY < MAP_MARGIN)              camY = curY - MAP_MARGIN;
+    if (curY - camY > visH - MAP_MARGIN - 1)   camY = curY - visH + MAP_MARGIN + 1;
+    if (camX < 0) camX = 0;
+    if (camY < 0) camY = 0;
+}
 static char      outfile[64] = "assets/maps/map1.bin";
 
 /* --- Event helpers ------------------------------------------------ */
@@ -114,6 +132,7 @@ static void resetMapState(void) {
     mapW = 10; mapH = 8;
     spawnX = 2; spawnY = 2;
     curX = 0; curY = 0;
+    camX = 0; camY = 0;
 }
 
 /* --- File I/O (new format) --------------------------------------- */
@@ -173,8 +192,10 @@ static const char *gfxName(uint8_t gfx) {
 }
 
 static void drawMap(void) {
-    for (int y = 0; y < mapH; y++) {
-        for (int x = 0; x < mapW; x++) {
+    int visW = COLS / 2;
+    int visH = LINES - 5;
+    for (int y = camY; y < mapH && y < camY + visH; y++) {
+        for (int x = camX; x < mapW && x < camX + visW; x++) {
             uint8_t       gfx = mapGfx[y * mapW + x];
             const MapEvent *ev = findEvAt(x, y);
             char ch;
@@ -216,7 +237,7 @@ static void drawMap(void) {
 
             if (x == curX && y == curY) attr |= A_REVERSE;
             attron(attr);
-            mvaddch(y + 3, x * 2, ch);
+            mvaddch((y - camY) + 4, (x - camX) * 2, ch);
             attroff(attr);
         }
     }
@@ -248,14 +269,15 @@ int main(int argc, char *argv[]) {
     int dirty   = 0;
 
     while (running) {
+        cam_follow();
         clear();
-        mvprintw(0, 0, "MAP EDITOR  %dx%d  spawn(%d,%d)  [%s]  %s",
-                 mapW, mapH, spawnX, spawnY,
+        mvprintw(0, 0, "MAP EDITOR  %dx%d  cursor(%d,%d)  spawn(%d,%d)  cam(%d,%d)  [%s]  %s",
+                 mapW, mapH, curX, curY, spawnX, spawnY, camX, camY,
                  dirty ? "unsaved" : "saved",
                  fileFound ? outfile : "NEW FILE");
         if (!fileFound) {
             attron(COLOR_PAIR(2));
-            mvprintw(1, 0, "WARNING: '%s' not found — starting blank map", outfile);
+            mvprintw(1, 0, "WARNING: '%s' not found -- starting blank map", outfile);
             attroff(COLOR_PAIR(2));
         }
         mvprintw(1 + !fileFound, 0,
@@ -265,7 +287,7 @@ int main(int argc, char *argv[]) {
 
         drawMap();
 
-        /* Status line: event at cursor */
+        /* Status line pinned to the bottom of the terminal */
         const MapEvent *cev = findEvAt(curX, curY);
         char evDesc[128] = "none";
         if (cev) {
@@ -287,7 +309,7 @@ int main(int argc, char *argv[]) {
                     break;
             }
         }
-        mvprintw(mapH + 4, 0, "(%d,%d)  gfx=%s  event=%s  total events=%d",
+        mvprintw(LINES - 1, 0, "(%d,%d)  gfx=%s  event=%s  total events=%d",
                  curX, curY, gfxName(mapGfx[curY * mapW + curX]), evDesc, eventCount);
 
         refresh();
@@ -343,7 +365,7 @@ int main(int argc, char *argv[]) {
             }
             case 'd': case 'D': {
                 echo(); curs_set(1);
-                mvprintw(mapH + 6, 0, "Dest map (blank=dungeon state): assets/maps/");
+                mvprintw(LINES - 3, 0, "Dest map (blank=dungeon state): assets/maps/");
                 clrtoeol(); refresh();
                 char dest[19] = {0};
                 getnstr(dest, (int)sizeof(dest) - 1);
@@ -362,16 +384,16 @@ int main(int argc, char *argv[]) {
             }
             case 'r': case 'R': {
                 echo(); curs_set(1);
-                mvprintw(mapH + 6, 0, "Portal dest: assets/maps/");
+                mvprintw(LINES - 5, 0, "Portal dest: assets/maps/");
                 clrtoeol(); refresh();
                 char dest[19] = {0};
                 getnstr(dest, (int)sizeof(dest) - 1);
-                mvprintw(mapH + 7, 0, "Spawn X in dest: ");
+                mvprintw(LINES - 4, 0, "Spawn X in dest: ");
                 clrtoeol(); refresh();
                 char numBuf[8] = {0};
                 getnstr(numBuf, (int)sizeof(numBuf) - 1);
                 int sx = atoi(numBuf);
-                mvprintw(mapH + 8, 0, "Spawn Y in dest: ");
+                mvprintw(LINES - 3, 0, "Spawn Y in dest: ");
                 clrtoeol(); refresh();
                 memset(numBuf, 0, sizeof(numBuf));
                 getnstr(numBuf, (int)sizeof(numBuf) - 1);
@@ -405,22 +427,29 @@ int main(int argc, char *argv[]) {
             case 'o': case 'O': {
                 if (dirty) { saveMap(); dirty = 0; fileFound = 1; }
                 scanMaps();
-                int sel = 0;
+                int sel = 0, fscroll = 0;
                 for (int i = 0; i < mapFileCount; i++)
                     if (strcmp(mapFiles[i], outfile) == 0) { sel = i; break; }
                 int browsing = 1;
                 while (browsing) {
+                    int vis = LINES - 3;
+                    /* scrolloff for file browser */
+                    if (sel - fscroll < MAP_MARGIN)              fscroll = sel - MAP_MARGIN;
+                    if (sel - fscroll > vis - MAP_MARGIN - 1)    fscroll = sel - vis + MAP_MARGIN + 1;
+                    if (fscroll < 0) fscroll = 0;
                     clear();
-                    mvprintw(0, 0, "OPEN MAP — Arrows=select  Enter=open  Esc=cancel");
-                    for (int i = 0; i < mapFileCount; i++) {
+                    mvprintw(0, 0, "OPEN MAP  [%d/%d]", sel + 1, mapFileCount);
+                    mvprintw(1, 0, "Arrows=select  Enter=open  Esc=cancel");
+                    for (int i = fscroll; i < mapFileCount && i < fscroll + vis; i++) {
+                        int row = (i - fscroll) + 3;
                         if (i == sel) attron(A_REVERSE);
-                        mvprintw(i + 2, 2, "%s", mapFiles[i]);
+                        mvprintw(row, 2, "%s", mapFiles[i]);
                         if (i == sel) attroff(A_REVERSE);
                     }
                     refresh();
                     int c = getch();
-                    if      (c == KEY_UP   && sel > 0)             sel--;
-                    else if (c == KEY_DOWN && sel < mapFileCount-1) sel++;
+                    if      (c == KEY_UP   && sel > 0)              sel--;
+                    else if (c == KEY_DOWN && sel < mapFileCount-1)  sel++;
                     else if (c == '\n' || c == KEY_ENTER) {
                         strncpy(outfile, mapFiles[sel], sizeof(outfile)-1);
                         outfile[sizeof(outfile)-1] = '\0';
@@ -436,17 +465,17 @@ int main(int argc, char *argv[]) {
             case 'n': case 'N': {
                 if (dirty) { saveMap(); dirty = 0; fileFound = 1; }
                 echo(); curs_set(1);
-                mvprintw(mapH + 6, 0, "New map name: assets/maps/");
+                mvprintw(LINES - 5, 0, "New map name: assets/maps/");
                 clrtoeol();
                 char nameBuf[32] = {0};
                 getnstr(nameBuf, (int)sizeof(nameBuf)-1);
                 if (nameBuf[0]) {
                     char dimBuf[8] = {0};
-                    mvprintw(mapH + 7, 0, "Width  (1-%d): ", MAX_W);
+                    mvprintw(LINES - 4, 0, "Width  (1-%d): ", MAX_W);
                     clrtoeol(); refresh();
                     getnstr(dimBuf, (int)sizeof(dimBuf)-1);
                     int newW = atoi(dimBuf);
-                    mvprintw(mapH + 8, 0, "Height (1-%d): ", MAX_H);
+                    mvprintw(LINES - 3, 0, "Height (1-%d): ", MAX_H);
                     clrtoeol(); refresh();
                     memset(dimBuf, 0, sizeof(dimBuf));
                     getnstr(dimBuf, (int)sizeof(dimBuf)-1);
@@ -456,6 +485,7 @@ int main(int argc, char *argv[]) {
                     resetMapState();
                     if (newW >= 1 && newW <= MAX_W) mapW = newW;
                     if (newH >= 1 && newH <= MAX_H) mapH = newH;
+                    cam_follow();
                     fileFound = 0;
                     dirty = 1;
                 } else {

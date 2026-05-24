@@ -39,6 +39,14 @@ typedef struct {
 typedef char check_size[(sizeof(ItemDef) == 64) ? 1 : -1];
 /* ------------------------------------------------ */
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 #define MAX_ITEMS 64
 static ItemDef items[MAX_ITEMS];
 static int     itemCount = 0;
@@ -240,15 +248,17 @@ static void screenEdit(int idx) {
 
 /* ---- list screen ---- */
 
-static void renderList(int sel, const char *status) {
+static void renderList(int sel, int scroll, const char *status) {
     clear();
-    mvprintw(0, 0, "ITEM LIST  [%s]  (%d items)", dirty ? "unsaved" : "saved", itemCount);
+    int visible = LINES - 4;
+    mvprintw(0, 0, "ITEM LIST  [%s]  [%d/%d]", dirty ? "unsaved" : "saved",
+        itemCount > 0 ? sel + 1 : 0, itemCount);
     mvprintw(1, 0, "Up/Down=select  Enter=edit  N=new  D=delete  S=save  Q=quit");
     if (status) mvprintw(2, 0, "%s", status);
 
-    for (int i = 0; i < itemCount; i++) {
+    for (int i = scroll; i < itemCount && i < scroll + visible; i++) {
         if (i == sel) attron(A_REVERSE);
-        mvprintw(i + 4, 2, "%2d  %-16s  %-10s  %+dATK %+dDEF  %dg",
+        mvprintw((i - scroll) + 4, 2, "%2d  %-16s  %-10s  %+dATK %+dDEF  %dg",
             i,
             items[i].name[0] ? items[i].name : "(unnamed)",
             typeNames[items[i].type % 3],
@@ -274,14 +284,16 @@ int main(void) {
     curs_set(0);
 
     int  sel     = 0;
+    int  scroll  = 0;
     int  running = 1;
     const char *status = NULL;
 
     while (running) {
         if (sel >= itemCount && itemCount > 0) sel = itemCount - 1;
         if (sel < 0) sel = 0;
+        scroll_to(sel, &scroll, LINES - 4);
 
-        renderList(sel, status);
+        renderList(sel, scroll, status);
         status = NULL;
         int ch = getch();
 

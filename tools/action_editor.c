@@ -80,6 +80,14 @@ typedef struct {
 typedef char _check_size[(sizeof(ActionDef) == 68) ? 1 : -1];
 /* ----------------------------------------------------------------------- */
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 static ActionDef actions[ACTION_MAX];
 static int       actionCount = 0;
 static int       dirty       = 0;
@@ -414,13 +422,15 @@ static void screenEdit(int idx) {
 
 /* ---- list screen ---- */
 
-static void renderList(int sel, const char *status) {
+static void renderList(int sel, int scroll, const char *status) {
     clear();
-    mvprintw(0, 0, "ACTION LIST  [%s]  (%d actions)", dirty ? "unsaved" : "saved", actionCount);
+    int visible = LINES - 4;
+    mvprintw(0, 0, "ACTION LIST  [%s]  [%d/%d]", dirty ? "unsaved" : "saved",
+        actionCount > 0 ? sel + 1 : 0, actionCount);
     mvprintw(1, 0, "Up/Down=select  Enter=edit  N=new  D=delete  S=save  Q=quit");
     if (status) mvprintw(2, 0, "%s", status);
 
-    for (int i = 0; i < actionCount; i++) {
+    for (int i = scroll; i < actionCount && i < scroll + visible; i++) {
         if (i == sel) attron(A_REVERSE);
         char ctx[6] = "-----";
         if (actions[i].contextFlags & ACT_CTX_FIRST_TURN)   ctx[0] = 'F';
@@ -434,7 +444,7 @@ static void renderList(int sel, const char *status) {
         if (actions[i].encounterCat & ACT_CAT_INVESTIGATION) cat[2] = 'I';
         if (actions[i].encounterCat & ACT_CAT_HUNT)          cat[3] = 'H';
         if (actions[i].encounterCat & ACT_CAT_ENVIRONMENTAL) cat[4] = 'E';
-        mvprintw(i + 4, 2, "%2d  id:%-3d  %-16s  wt:%-3d  pow:%-3d  ctx:[%s]  cat:[%s]  img:%s",
+        mvprintw((i - scroll) + 4, 2, "%2d  id:%-3d  %-16s  wt:%-3d  pow:%-3d  ctx:[%s]  cat:[%s]  img:%s",
             i,
             actions[i].id,
             actions[i].name[0] ? actions[i].name : "(unnamed)",
@@ -462,14 +472,16 @@ int main(void) {
     curs_set(0);
 
     int  sel     = 0;
+    int  scroll  = 0;
     int  running = 1;
     const char *status = NULL;
 
     while (running) {
         if (sel >= actionCount && actionCount > 0) sel = actionCount - 1;
         if (sel < 0) sel = 0;
+        scroll_to(sel, &scroll, LINES - 4);
 
-        renderList(sel, status);
+        renderList(sel, scroll, status);
         status = NULL;
         int ch = getch();
 

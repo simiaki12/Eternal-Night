@@ -59,6 +59,14 @@ typedef struct {
 
 static const char *outfile = "assets/data/quests.dat";
 
+#define SCROLL_MARGIN 3
+
+static void scroll_to(int sel, int *scroll, int visible) {
+    if (sel - *scroll < SCROLL_MARGIN)               *scroll = sel - SCROLL_MARGIN;
+    if (sel - *scroll > visible - SCROLL_MARGIN - 1)  *scroll = sel - visible + SCROLL_MARGIN + 1;
+    if (*scroll < 0) *scroll = 0;
+}
+
 static QuestDef quests[MAX_QUESTS];
 static int      questCount = 0;
 static int      dirty      = 0;
@@ -129,6 +137,7 @@ typedef enum { SCR_QUESTS, SCR_QUEST, SCR_OBJECTIVE } Screen;
 
 static Screen screen  = SCR_QUESTS;
 static int    selQ    = 0;   /* selected quest index */
+static int    scrollQ = 0;   /* scroll offset for quest list */
 static int    selField = 0;  /* field in SCR_QUEST: 0-5 = quest fields, 6+ = objectives */
 static int    selObj  = 0;   /* selected objective in SCR_OBJECTIVE */
 static int    selObjField = 0; /* field in SCR_OBJECTIVE */
@@ -137,11 +146,13 @@ static int    selObjField = 0; /* field in SCR_OBJECTIVE */
 
 static void drawQuests(void) {
     clear();
-    mvprintw(0, 0, "QUEST EDITOR  [%s]  quests: %d/%d",
-        dirty ? "unsaved" : "saved", questCount, MAX_QUESTS);
+    int visible = LINES - 3;
+    scroll_to(selQ, &scrollQ, visible);
+    mvprintw(0, 0, "QUEST EDITOR  [%s]  [%d/%d]",
+        dirty ? "unsaved" : "saved", questCount > 0 ? selQ + 1 : 0, questCount);
     mvprintw(1, 0, "Enter=open  A=add  D=delete  E=edit name  S=save  Q=quit");
 
-    for (int i = 0; i < questCount; i++) {
+    for (int i = scrollQ; i < questCount && i < scrollQ + visible; i++) {
         QuestDef *q = &quests[i];
         if (i == selQ) attron(A_REVERSE);
 
@@ -155,7 +166,7 @@ static void drawQuests(void) {
         else
             snprintf(rewardBuf, sizeof(rewardBuf), "%dxp+item%d", q->rewardXp, q->rewardItemId);
 
-        mvprintw(i + 3, 2, "#%-3d  %-23s  %-10s  %-8s  %s  obj:%d",
+        mvprintw((i - scrollQ) + 3, 2, "#%-3d  %-23s  %-10s  %-8s  %s  obj:%d",
             i, q->name, flagBuf, trigNames[q->startType < TRIG_COUNT ? q->startType : 0],
             rewardBuf, q->objectiveCount);
 
@@ -181,7 +192,8 @@ static void handleQuests(int ch) {
                 q->startType = TRIG_ALWAYS;
                 selQ = questCount++;
                 dirty = 1;
-                editStr(selQ + 3, 7, quests[selQ].name, 24);
+                scroll_to(selQ, &scrollQ, LINES - 3);
+                editStr((selQ - scrollQ) + 3, 7, quests[selQ].name, 24);
             }
             break;
         case 'd': case 'D':
@@ -195,7 +207,7 @@ static void handleQuests(int ch) {
             break;
         case 'e': case 'E':
             if (questCount > 0) {
-                editStr(selQ + 3, 7, quests[selQ].name, 24);
+                editStr((selQ - scrollQ) + 3, 7, quests[selQ].name, 24);
                 dirty = 1;
             }
             break;
