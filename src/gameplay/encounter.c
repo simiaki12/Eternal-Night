@@ -15,6 +15,7 @@
 #include "loot.h"
 #include "world_enemies.h"
 #include "npcs.h"
+#include "investigations.h"
 
 EncounterState encounter;
 
@@ -166,7 +167,7 @@ static int computeWeight(const ActionDef *def) {
 }
 
 
-static void generateActions(void) {
+void generateActions(void) {
     encounter.actionCount = 0;
 
     /* Social encounters always have Demand as the first card */
@@ -334,7 +335,20 @@ static void advanceTarget(void) {
     }
 }
 
+/* TODO: combat.c — performPlayerAction, killEnemy, advanceTarget are self-contained
+ * combat math with no render calls; good candidate for extraction once social
+ * encounter resolution grows and starts crowding this file. */
 static void performPlayerAction(void) {
+    /* Investigation encounters are handled entirely in investigations.c */
+    if (encounter.encounterType == ENCOUNTER_INVESTIGATION) {
+        Action *ia = &encounter.actions[encounter.selectedIndex];
+        domainAwardXp(getActionDef(ia->type) ? getActionDef(ia->type)->domain : 0, 1);
+        investigationDoAction((uint8_t)ia->type);
+        if (encounter.phase == ENCOUNTER_PHASE_ACTIVE)
+            generateActions();
+        return;
+    }
+
     /* A log effect from the previous turn may have killed the current target */
     if (encounter.enemies[encounter.targetIndex].maxHp == 0)
         advanceTarget();
@@ -694,7 +708,8 @@ static void performPlayerAction(void) {
 }
 
 void handleEncounterInput(int key) {
-    if (encounter.phase == ENCOUNTER_PHASE_VICTORY) {
+    if (encounter.phase == ENCOUNTER_PHASE_VICTORY ||
+        encounter.phase == ENCOUNTER_PHASE_TIMEOUT) {
         if (key == VK_RETURN || key == VK_ESCAPE) {
             for (int i = 0; i < encounter.enemyCount; i++)
                 if (encounter.fromWorldEnemy[i])
@@ -849,8 +864,39 @@ void renderEncounter(void) {
     const int barW = LP_W - 20;
     int y = LP_Y + 12;
 
-    /* ── Victory screen ─────────────────────────────────────────── */
-    if (encounter.phase == ENCOUNTER_PHASE_VICTORY) {
+    /* ── Victory / Timeout screen ──────────────────────────────── */
+    if (encounter.phase == ENCOUNTER_PHASE_VICTORY ||
+        encounter.phase == ENCOUNTER_PHASE_TIMEOUT) {
+
+        if (encounter.encounterType == ENCOUNTER_INVESTIGATION) {
+            const InvestigationDef *inv = invGetDef((uint8_t)encounter.invId);
+            if (encounter.phase == ENCOUNTER_PHASE_VICTORY && encounter.invSuccess) {
+                drawText(bx, y, "SCENE UNDERSTOOD", rgb(220, 190, 50), 2);  y += 28;
+            } else if (encounter.phase == ENCOUNTER_PHASE_TIMEOUT) {
+                drawText(bx, y, "TIME RAN OUT", rgb(160, 120, 50), 2);  y += 28;
+            } else {
+                drawText(bx, y, "Left without answers.", rgb(140, 120, 80), 1);  y += 20;
+            }
+            if (inv) {
+                drawText(bx, y, inv->name, rgb(180, 160, 100), 1);  y += 14;
+                fillRect(LP_X + 8, y, LP_W - 16, 1, bdPanel);  y += 8;
+                for (int i = 0; i < inv->clueCount; i++) {
+                    const ClueDef *c = clueGetDef(inv->clueIds[i]);
+                    if (!c) continue;
+                    int found = (encounter.invFoundMask >> i) & 1;
+                    uint32_t fc = found ? rgb(160, 200, 160) : rgb(60, 60, 60);
+                    char cbuf[36];
+                    cbuf[0] = found ? '+' : '-'; cbuf[1] = ' ';
+                    int cl = 0; while (c->text[cl] && cl < 30) cl++;
+                    for (int k = 0; k < cl; k++) cbuf[2 + k] = c->text[k];
+                    cbuf[2 + cl] = '\0';
+                    drawText(bx, y, cbuf, fc, 1);  y += 12;
+                }
+            }
+            drawText(bx, LP_Y + LP_H - 20, "Enter to continue", rgb(100, 90, 60), 1);
+            return;
+        }
+
         if (encounter.encounterType == ENCOUNTER_SOCIAL) {
             /* Social outcome header */
             static const char    *labels[] = { "Exchange over.",  "Agreement reached.", "Demand made.",         "They walked away." };
@@ -894,6 +940,28 @@ void renderEncounter(void) {
 
         drawText(bx, LP_Y + LP_H - 20, "Enter to continue", rgb(100, 90, 80), 1);
         return;
+    }
+
+    /* ── Investigation active section ───────────────────────────── */
+    if (encounter.encounterType == ENCOUNTER_INVESTIGATION) {
+        const InvestigationDef *inv = invGetDef((uint8_t)encounter.invId);
+        if (inv) {
+            drawText(bx, y, inv->name, rgb(200, 180, 80), 2);  y += 22;
+            snprintf(buf, sizeof(buf), "Turns: %d", encounter.invTurns);
+            uint32_t tc = encounter.invTurns > 3 ? rgb(180, 160, 80)
+                        : encounter.invTurns > 1 ? rgb(210, 130, 40)
+                        :                          rgb(210, 60,  40);
+            drawText(bx, y, buf, tc, 1);  y += 14;
+            fillRect(LP_X + 8, y, LP_W - 16, 1, bdPanel);  y += 8;
+            drawText(bx, y, inv->pressureText, rgb(120, 105, 55), 1);  y += 14;
+            fillRect(LP_X + 8, y, LP_W - 16, 1, bdPanel);  y += 8;
+            int found = 0, total = inv->clueCount;
+            for (int i = 0; i < total; i++)
+                if ((encounter.invFoundMask >> i) & 1) found++;
+            snprintf(buf, sizeof(buf), "%d / %d clues", found, total);
+            drawText(bx, y, buf, rgb(140, 130, 70), 1);
+        }
+        goto render_log;
     }
 
     /* ── Enemy / Social section ────────────────────────────────── */
@@ -959,6 +1027,7 @@ void renderEncounter(void) {
     snprintf(buf, sizeof(buf), "DEF  %d", getDefense());
     drawText(bx + 90, y, buf, rgb(90, 140, 210), 1);  y += 16;
 
+render_log:
     /* ── Encounter log ──────────────────────────────────────────── */
     if (encounter.logCount > 0) {
         fillRect(LP_X + 8, y + 4, LP_W - 16, 1, rgb(45, 30, 30));  y += 12;

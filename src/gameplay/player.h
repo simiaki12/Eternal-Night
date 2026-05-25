@@ -42,6 +42,8 @@ typedef struct {
     uint8_t suppressedActions[FAVOUR_MAX];
     uint8_t favourCount;
     uint8_t suppressCount;
+    /* Investigation clue state — one bit per clue ID (up to 64 clues) */
+    uint8_t clueFound[8];
 } PlayerData;
 
 extern PlayerData player;

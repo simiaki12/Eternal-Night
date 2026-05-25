@@ -28,6 +28,8 @@
 #include "actions.h"
 #include "ambient.h"
 #include "log_messages.h"
+#include "investigations.h"
+#include "cluelog.h"
 
 /* State machine */
 GameState state     = STATE_MAIN_MENU;
@@ -38,7 +40,7 @@ static GameState g_lastMusicState = STATE_MAIN_MENU;
 
 /* Overlay states sit on top of the world and don't affect music. */
 #define IS_OVERLAY(s) ((s)==STATE_INVENTORY||(s)==STATE_DOMAINS|| \
-                       (s)==STATE_QUEST_LOG||(s)==STATE_CHAR_SHEET|| \
+                       (s)==STATE_QUEST_LOG||(s)==STATE_CLUE_LOG||(s)==STATE_CHAR_SHEET|| \
                        (s)==STATE_PAUSE_MENU||(s)==STATE_DIALOG|| \
                        (s)==STATE_OPTIONS||(s)==STATE_SHOP)
 
@@ -335,6 +337,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     PakData logMsgData    = pakRead("assets/data/log_messages.dat");
     PakData seData        = pakRead("assets/data/social_encounters.dat");
     PakData shopData      = pakRead("assets/data/shops.dat");
+    PakData clueData      = pakRead("assets/data/clues.dat");
+    PakData invData       = pakRead("assets/data/investigations.dat");
 
     loadItems(itemData);        /* optional — falls back to builtins if not in pak */
     loadEnemies(enemyData);     /* optional — falls back to builtins if not in pak */
@@ -347,6 +351,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadLogMessages(logMsgData);        /* optional — no reactive messages if absent */
     loadSocialEncounters(seData);       /* optional — no social encounters if absent */
     loadShops(shopData);               /* optional — falls back to builtin shop 0 if absent */
+    loadClues(clueData);               /* optional — no investigations if absent */
+    loadInvestigations(invData);       /* optional — no investigations if absent */
     socialNewGame();            /* must run after loadNpcs + loadSocialEncounters */
     free(itemData.data);
     free(enemyData.data);
@@ -359,6 +365,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     free(logMsgData.data);
     free(seData.data);
     free(shopData.data);
+    free(clueData.data);
+    free(invData.data);
 
     const int screenW = 640;
     const int screenH = 480;
@@ -440,6 +448,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     questLogSt.sel = 0;
                     state = STATE_QUEST_LOG;
                 }
+            /* L toggles the clue log from any non-encounter state */
+            } else if (g_pendingKey == 'L' && state != STATE_ENCOUNTER) {
+                if (state == STATE_CLUE_LOG)
+                    state = STATE_WORLD;
+                else
+                    clueLogOpen(state);
             /* C toggles the character sheet from any non-encounter state */
             } else if (g_pendingKey == 'C' && state != STATE_ENCOUNTER && state != STATE_MAIN_MENU && state != STATE_LOADING) {
                 if (state == STATE_CHAR_SHEET)
@@ -464,6 +478,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     case STATE_DUNGEON:   handleDungeonInput(g_pendingKey);   break;
                     case STATE_TOWN:     handleTownInput(g_pendingKey);      break;
                     case STATE_QUEST_LOG:  handleQuestLogInput(g_pendingKey); break;
+                    case STATE_CLUE_LOG:   handleClueLogInput(g_pendingKey); break;
                     case STATE_DEATH:      handleDeathInput(g_pendingKey);   break;
                     case STATE_CHAR_SHEET: handleCharSheetInput(g_pendingKey); break;
                     case STATE_OPTIONS:     handleOptionsInput(g_pendingKey); break;
@@ -516,6 +531,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             case STATE_DUNGEON:   renderDungeon();   break;
             case STATE_TOWN:     renderTown();      break;
             case STATE_QUEST_LOG: renderQuestLog(); break;
+            case STATE_CLUE_LOG:  renderClueLog();  break;
             case STATE_DEATH:      renderDeath();      break;
             case STATE_PAUSE_MENU: renderPauseMenu();  break;
             case STATE_CHAR_SHEET: renderCharSheet();  break;

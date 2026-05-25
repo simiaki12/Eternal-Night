@@ -59,6 +59,7 @@ typedef enum {
 
 int         itemSlot(const ItemDef *d);            /* EquipSlot index, or -1 if not equippable */
 int         isEquipped(uint8_t id);
+int         playerHasItem(uint8_t id);            /* 1 if in inventory or equipped */
 int         getStat(StatType stat);                /* base + all equipped bonuses */
 int         getStatPreview(StatType stat, uint8_t itemId); /* getStat after equipping/toggling itemId */
 

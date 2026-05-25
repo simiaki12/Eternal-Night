@@ -24,6 +24,7 @@ void playerInit(void) {
     player.suppressCount  = 0;
     memset(player.favouredActions,   0xFF, FAVOUR_MAX);
     memset(player.suppressedActions, 0xFF, FAVOUR_MAX);
+    memset(player.clueFound, 0, sizeof(player.clueFound));
     for (int i = 0; i < DOMAIN_COUNT; i++)
         player.domains[i].perk_points = 10;
 }

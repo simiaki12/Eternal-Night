@@ -121,7 +121,7 @@ typedef struct {
 
 typedef struct { ActionId type; uint8_t power; } Action;
 
-typedef enum { ENCOUNTER_PHASE_ACTIVE, ENCOUNTER_PHASE_VICTORY } EncounterPhase;
+typedef enum { ENCOUNTER_PHASE_ACTIVE, ENCOUNTER_PHASE_VICTORY, ENCOUNTER_PHASE_TIMEOUT } EncounterPhase;
 
 typedef enum {
     SOCIAL_OUTCOME_NONE   = 0,
@@ -159,10 +159,16 @@ typedef struct {
     int         socialNpcId;          /* npc_id during ENCOUNTER_SOCIAL; -1 otherwise */
     SocialOutcome socialOutcome;      /* how the social encounter ended               */
     int         socialEndWillingness; /* final willingness (0-100) when it ended      */
+    /* Investigation state */
+    int         invId;                /* active InvestigationDef ID; -1 if none */
+    int         invTurns;             /* turns remaining */
+    uint8_t     invFoundMask;         /* bitmask of locally-found clue positions */
+    int         invSuccess;           /* 1 if all key clues were found */
 } EncounterState;
 
 extern EncounterState encounter;
 
+void generateActions(void);
 void encounterStartCombat(const EnemyDef *def);
 void encounterAddEnemy(const EnemyDef *def, uint8_t wx, uint8_t wy);
 void encounterStart(EncounterType type, const EnemyDef *def, uint32_t mods);
@@ -172,6 +178,8 @@ void returnToTown(void);
 void encounterLog(const char *msg); /* public log push — for use from log_messages.c */
 
 int  loadSocialEncounters(PakData data);
+int  loadClues(PakData data);
+int  loadInvestigations(PakData data);
 void socialNewGame(void);              /* copy base standings into PlayerData; reset encounter states */
 int  socialFindActive(uint8_t npc_id); /* first non-locked, non-hidden SE for this NPC; -1 if none */
 void socialEncounterStart(int se_idx); /* begin a social encounter; transitions to STATE_ENCOUNTER */

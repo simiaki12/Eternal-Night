@@ -68,6 +68,13 @@ int isEquipped(uint8_t id) {
     return 0;
 }
 
+int playerHasItem(uint8_t id) {
+    if (isEquipped(id)) return 1;
+    for (int i = 0; i < inventory.count; i++)
+        if (inventory.items[i] == id) return 1;
+    return 0;
+}
+
 static int bonusOf(const ItemDef *d, StatType stat) {
     if (!d) return 0;
     switch (stat) {

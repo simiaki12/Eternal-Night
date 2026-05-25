@@ -9,7 +9,7 @@
 #include "world.h"
 
 #define SAVE_MAGIC   0x53415645u  /* "SAVE" */
-#define SAVE_VERSION 8  /* bumped: PlayerData gained favouredActions + suppressedActions queues */
+#define SAVE_VERSION 9  /* bumped: PlayerData gained clueFound bitmask */
 
 /* Layout (fixed, do not reorder):
  *   4  magic

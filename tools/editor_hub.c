@@ -52,6 +52,10 @@ static const Entry entries[] = {
     { ENTRY_EDITOR, "Quest Editor",             "build/quest_editor",             "assets/data/quests.dat" },
     { ENTRY_EDITOR, "Ambient Editor",           "build/ambient_editor",           "assets/data/ambient.dat" },
 
+    { ENTRY_HEADER, "-- Investigations --------------------------------------", NULL, NULL },
+    { ENTRY_EDITOR, "Clue Editor",              "build/clue_editor",              "assets/data/clues.dat" },
+    { ENTRY_EDITOR, "Investigation Editor",     "build/investigation_editor",     "assets/data/investigations.dat" },
+
     { ENTRY_HEADER, "-- Player ----------------------------------------------", NULL, NULL },
     { ENTRY_EDITOR, "Player Editor",            "build/player_editor",            "assets/data/player.dat" },
 
