@@ -149,14 +149,18 @@ static int computeWeight(const ActionDef *def) {
         if (def->id == ACTION_DEFEND)   w -= 10;
     }
 
-    /* Domain affinity — reward what the player has invested in */
+    /* Domain affinity — scales with investment so a committed style feels cohesive */
     uint8_t primary = domainPrimary();
-    if (player.domains[primary].level > 0 && def->domain == primary)
-        w += 20;
+    if (def->domain == primary)
+        w += (int)player.domains[primary].level * 3;
 
-    /* Focused domain — stronger pull toward the player's chosen style */
+    /* Focused domain — explicit player choice always carries a base pull, plus scales */
     if (player.focusedDomain != DOMAIN_NONE && def->domain == player.focusedDomain)
-        w += 35;
+        w += 20 + (int)player.domains[player.focusedDomain].level * 2;
+
+    /* Player-marked preferences */
+    if (isActionFavoured(def->id))   w += 60;
+    if (isActionSuppressed(def->id)) w  = 1;
 
     return w < 1 ? 1 : w;
 }
@@ -1025,10 +1029,17 @@ void renderEncounter(void) {
 
         if (sel)
             fillRect(cx + CARD_W/2 - 2, CARD_Y + CARD_H - 8, 4, 4, rgb(220, 200, 50));
+
+        /* Favour / suppress badge */
+        if (isActionFavoured(aid))
+            drawText(cx + 4, CARD_Y + 4, "F", rgb(80, 220, 80), 1);
+        else if (isActionSuppressed(aid))
+            drawText(cx + 4, CARD_Y + 4, "S", rgb(220, 70, 70), 1);
     }
 
     if (encounter.enemyCount > 1) {
         drawText(CARD_X0, CARD_Y + CARD_H + 4,
                  "TAB: switch target", rgb(55, 55, 80), 1);
     }
+    drawText(CARD_X0, CARD_Y + CARD_H + 16, "F: favour  S: suppress", rgb(55, 55, 80), 1);
 }

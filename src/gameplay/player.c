@@ -18,9 +18,92 @@ void playerInit(void) {
     player.charisma     =  3;
     player.agility      =  3;
     player.hp           = player.maxHp;
-    player.focusedDomain = DOMAIN_NONE;
+    player.gold         = 200;
+    player.focusedDomain  = DOMAIN_NONE;
+    player.favourCount    = 0;
+    player.suppressCount  = 0;
+    memset(player.favouredActions,   0xFF, FAVOUR_MAX);
+    memset(player.suppressedActions, 0xFF, FAVOUR_MAX);
     for (int i = 0; i < DOMAIN_COUNT; i++)
         player.domains[i].perk_points = 10;
+}
+
+int favourSlots(void) {
+    uint8_t best = 0;
+    for (int i = 0; i < DOMAIN_COUNT; i++)
+        if (player.domains[i].level > best) best = player.domains[i].level;
+    int n = best > 0 ? 1 + (best - 1) / 2 : 1;
+    return n > FAVOUR_MAX ? FAVOUR_MAX : n;
+}
+
+int isActionFavoured(uint8_t id) {
+    for (int i = 0; i < player.favourCount; i++)
+        if (player.favouredActions[i] == id) return 1;
+    return 0;
+}
+
+int isActionSuppressed(uint8_t id) {
+    for (int i = 0; i < player.suppressCount; i++)
+        if (player.suppressedActions[i] == id) return 1;
+    return 0;
+}
+
+void toggleFavoured(uint8_t id) {
+    for (int i = 0; i < player.favourCount; i++) {
+        if (player.favouredActions[i] == id) {
+            for (int j = i; j < player.favourCount - 1; j++)
+                player.favouredActions[j] = player.favouredActions[j + 1];
+            player.favourCount--;
+            return;
+        }
+    }
+    playerRemoveActionFromQueues(id);
+    int cap = favourSlots();
+    if (player.favourCount >= (uint8_t)cap) {
+        for (int i = 0; i < player.favourCount - 1; i++)
+            player.favouredActions[i] = player.favouredActions[i + 1];
+        player.favourCount--;
+    }
+    player.favouredActions[player.favourCount++] = id;
+}
+
+void toggleSuppressed(uint8_t id) {
+    for (int i = 0; i < player.suppressCount; i++) {
+        if (player.suppressedActions[i] == id) {
+            for (int j = i; j < player.suppressCount - 1; j++)
+                player.suppressedActions[j] = player.suppressedActions[j + 1];
+            player.suppressCount--;
+            return;
+        }
+    }
+    playerRemoveActionFromQueues(id);
+    int cap = favourSlots();
+    if (player.suppressCount >= (uint8_t)cap) {
+        for (int i = 0; i < player.suppressCount - 1; i++)
+            player.suppressedActions[i] = player.suppressedActions[i + 1];
+        player.suppressCount--;
+    }
+    player.suppressedActions[player.suppressCount++] = id;
+}
+
+void playerRemoveActionFromQueues(uint8_t id) {
+    int i, j;
+    for (i = 0; i < player.favourCount; i++) {
+        if (player.favouredActions[i] == id) {
+            for (j = i; j < player.favourCount - 1; j++)
+                player.favouredActions[j] = player.favouredActions[j + 1];
+            player.favourCount--;
+            break;
+        }
+    }
+    for (i = 0; i < player.suppressCount; i++) {
+        if (player.suppressedActions[i] == id) {
+            for (j = i; j < player.suppressCount - 1; j++)
+                player.suppressedActions[j] = player.suppressedActions[j + 1];
+            player.suppressCount--;
+            break;
+        }
+    }
 }
 
 void enterDeath(void) {

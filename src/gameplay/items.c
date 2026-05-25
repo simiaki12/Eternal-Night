@@ -150,6 +150,14 @@ void removeItem(int index) {
         inventory.selected = inventory.count - 1;
 }
 
+static void purgeItemActions(uint8_t itemId) {
+    const ItemDef *d = itemGetDef(itemId);
+    if (!d) return;
+    for (int k = 0; k < 4; k++)
+        if (d->actions[k] != 0xFF)
+            playerRemoveActionFromQueues(d->actions[k]);
+}
+
 void useOrEquipItem(int index) {
     uint8_t id = inventory.items[index];
     const ItemDef *d = itemGetDef(id);
@@ -157,10 +165,12 @@ void useOrEquipItem(int index) {
 
     if (d->type == ITEM_ACCESSORY) {
         /* Dual-slot: unequip from whichever slot holds it, or fill an empty slot, or replace slot 1 */
-        if (player.equipped[SLOT_ACCESSORY_1] == id) { player.equipped[SLOT_ACCESSORY_1] = ITEM_UNEQUIPPED; return; }
-        if (player.equipped[SLOT_ACCESSORY_2] == id) { player.equipped[SLOT_ACCESSORY_2] = ITEM_UNEQUIPPED; return; }
+        if (player.equipped[SLOT_ACCESSORY_1] == id) { purgeItemActions(id); player.equipped[SLOT_ACCESSORY_1] = ITEM_UNEQUIPPED; return; }
+        if (player.equipped[SLOT_ACCESSORY_2] == id) { purgeItemActions(id); player.equipped[SLOT_ACCESSORY_2] = ITEM_UNEQUIPPED; return; }
         if (player.equipped[SLOT_ACCESSORY_1] == ITEM_UNEQUIPPED) { player.equipped[SLOT_ACCESSORY_1] = id; return; }
         if (player.equipped[SLOT_ACCESSORY_2] == ITEM_UNEQUIPPED) { player.equipped[SLOT_ACCESSORY_2] = id; return; }
+        /* Both slots full — old slot 2 is pushed out */
+        purgeItemActions(player.equipped[SLOT_ACCESSORY_2]);
         player.equipped[SLOT_ACCESSORY_2] = player.equipped[SLOT_ACCESSORY_1];
         player.equipped[SLOT_ACCESSORY_1] = id;
         return;
@@ -168,8 +178,10 @@ void useOrEquipItem(int index) {
 
     int slot = itemSlot(d);
     if (slot >= 0) {
-        /* toggle: unequip if already in this slot, otherwise equip (replacing whatever was there) */
-        player.equipped[slot] = (player.equipped[slot] == id) ? ITEM_UNEQUIPPED : id;
+        /* toggle: unequip if already in slot, otherwise equip (replacing whatever was there) */
+        uint8_t prev = player.equipped[slot];
+        if (prev != ITEM_UNEQUIPPED) purgeItemActions(prev);
+        player.equipped[slot] = (prev == id) ? ITEM_UNEQUIPPED : id;
     } else if (d->type == ITEM_CONSUMABLE) {
         if (d->flags & ITEM_FLAG_HEAL) {
             int newHp = (int)player.hp + 10;

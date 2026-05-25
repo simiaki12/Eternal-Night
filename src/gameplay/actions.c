@@ -119,13 +119,18 @@ void renderActionPanel(const char *title, const uint8_t *ids, int count, int sel
         const ActionDef *a = getActionDef(ids[i]);
         if (!a) continue;
         int s = (i == sel);
-        char buf[20];
+        char buf[24];
         buf[0] = s ? '>' : ' '; buf[1] = ' ';
         int len = 0; while (a->name[len] && len < 16) len++;
         for (int c = 0; c < len; c++) buf[2 + c] = a->name[c];
         buf[2 + len] = '\0';
         uint32_t col = s ? rgb(255, 255, 100) : rgb(160, 180, 220);
         drawText(TX, y, buf, col, 2);
+        /* F / S badge */
+        if (isActionFavoured(ids[i]))
+            drawText(TX + PW - 36, y, "F", rgb(80, 220, 80), 2);
+        else if (isActionSuppressed(ids[i]))
+            drawText(TX + PW - 36, y, "S", rgb(220, 70, 70), 2);
         y += LH;
     }
 
@@ -137,5 +142,5 @@ void renderActionPanel(const char *title, const uint8_t *ids, int count, int sel
             drawText(TX, y, a->desc, rgb(140, 170, 210), 1);
     }
 
-    drawText(TX, PY + PH - 14, "UP/DN  A/ESC: close", rgb(50, 60, 90), 1);
+    drawText(TX, PY + PH - 14, "F: favour  S: suppress  A/ESC: close", rgb(50, 60, 90), 1);
 }

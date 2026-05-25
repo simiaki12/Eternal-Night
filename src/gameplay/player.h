@@ -4,7 +4,8 @@
 #include "encounter.h"
 #include "npcs.h"
 
-#define EQUIP_SLOTS 8
+#define EQUIP_SLOTS  8
+#define FAVOUR_MAX   8
 
 typedef enum {
     SLOT_WEAPON      = 0,
@@ -36,9 +37,20 @@ typedef struct {
     /* Social encounter state */
     NpcSaveState             npcStates[NPC_DEF_MAX];
     SocialEncounterSaveState seStates[SE_DEF_MAX];
+    /* Action preferences */
+    uint8_t favouredActions[FAVOUR_MAX];
+    uint8_t suppressedActions[FAVOUR_MAX];
+    uint8_t favourCount;
+    uint8_t suppressCount;
 } PlayerData;
 
 extern PlayerData player;
 
 void playerInit(void);
 void enterDeath(void);
+void playerRemoveActionFromQueues(uint8_t id);
+int  favourSlots(void);
+int  isActionFavoured(uint8_t id);
+int  isActionSuppressed(uint8_t id);
+void toggleFavoured(uint8_t id);
+void toggleSuppressed(uint8_t id);

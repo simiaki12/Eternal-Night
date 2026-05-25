@@ -422,15 +422,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                 } else {
                     g_worldActPanel = 1; g_worldActSel = 0;
                 }
-            } else if (g_worldActPanel && state == STATE_WORLD &&
-                       (g_pendingKey == VK_UP || g_pendingKey == VK_DOWN || g_pendingKey == VK_ESCAPE)) {
-                if (g_pendingKey == VK_ESCAPE) {
-                    g_worldActPanel = 0;
-                } else {
-                    uint8_t pool[64]; int cnt = buildActionPool(pool, ACT_CAT_ANY);
-                    if (g_pendingKey == VK_UP   && g_worldActSel > 0)       g_worldActSel--;
-                    if (g_pendingKey == VK_DOWN  && g_worldActSel < cnt - 1) g_worldActSel++;
-                }
+            } else if (g_worldActPanel && state == STATE_WORLD) {
+                uint8_t pool[64]; int cnt = buildActionPool(pool, ACT_CAT_ANY);
+                if      (g_pendingKey == VK_UP   && g_worldActSel > 0)       g_worldActSel--;
+                else if (g_pendingKey == VK_DOWN  && g_worldActSel < cnt - 1) g_worldActSel++;
+                else if (g_pendingKey == 'F' && cnt > 0) toggleFavoured(pool[g_worldActSel]);
+                else if (g_pendingKey == 'S' && cnt > 0) toggleSuppressed(pool[g_worldActSel]);
             /* P is a global hotkey — opens domain tree from world */
             } else if (g_pendingKey == 'P' && (state == STATE_WORLD || state == STATE_DOMAINS)) {
                 state = (state == STATE_DOMAINS) ? STATE_WORLD : STATE_DOMAINS;
