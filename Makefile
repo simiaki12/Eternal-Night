@@ -228,6 +228,24 @@ env_encounter_editor:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/env_encounter_editor.c -o build/env_encounter_editor -lncurses
 
+seed_hunt_encounters:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os tools/seed_hunt_encounters.c -o build/seed_hunt_encounters
+	./build/seed_hunt_encounters
+
+hunt_encounter_editor:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/hunt_encounter_editor.c -o build/hunt_encounter_editor -lncurses
+
+seed_camp_zones:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os tools/seed_camp_zones.c -o build/seed_camp_zones
+	./build/seed_camp_zones
+
+camp_zone_editor:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/camp_zone_editor.c -o build/camp_zone_editor -lncurses
+
 music_editor:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/music_editor.c -o build/music_editor -lncurses
@@ -240,7 +258,7 @@ editor_hub:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/editor_hub.c -o build/editor_hub -lncurses
 
-tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor ambient_editor logmessage_editor social_encounter_editor clue_editor investigation_editor env_encounter_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui editor_hub
+tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor ambient_editor logmessage_editor social_encounter_editor clue_editor investigation_editor env_encounter_editor hunt_encounter_editor camp_zone_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui editor_hub
 
 clean:
 	rm -rf build data.pak
