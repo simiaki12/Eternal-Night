@@ -30,6 +30,7 @@
 #include "log_messages.h"
 #include "investigations.h"
 #include "env_encounter.h"
+#include "hunt_encounter.h"
 #include "cluelog.h"
 
 /* State machine */
@@ -341,6 +342,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     PakData clueData      = pakRead("assets/data/clues.dat");
     PakData invData       = pakRead("assets/data/investigations.dat");
     PakData envEncData    = pakRead("assets/data/env_encounters.dat");
+    PakData huntEncData   = pakRead("assets/data/hunt_encounters.dat");
+    PakData campZoneData  = pakRead("assets/data/camp_zones.dat");
 
     loadItems(itemData);        /* optional — falls back to builtins if not in pak */
     loadEnemies(enemyData);     /* optional — falls back to builtins if not in pak */
@@ -356,6 +359,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadClues(clueData);               /* optional — no investigations if absent */
     loadInvestigations(invData);       /* optional — no investigations if absent */
     loadEnvEncounters(envEncData);     /* optional — no env encounters if absent */
+    loadHuntEncounters(huntEncData);   /* optional — no hunt encounters if absent */
+    loadCampZones(campZoneData);       /* optional — no camp zones if absent */
     socialNewGame();            /* must run after loadNpcs + loadSocialEncounters */
     free(itemData.data);
     free(enemyData.data);
@@ -371,6 +376,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     free(clueData.data);
     free(invData.data);
     free(envEncData.data);
+    free(huntEncData.data);
+    free(campZoneData.data);
 
     const int screenW = 640;
     const int screenH = 480;

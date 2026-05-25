@@ -96,3 +96,27 @@ void encounterStartFromPool(uint8_t poolId, int triggerX, int triggerY) {
         encounterAddEnemy(&enemyDefs[nDefId], (uint8_t)nx, (uint8_t)ny);
     }
 }
+
+void encounterStartFromPoolN(uint8_t poolId, int n) {
+    if (n <= 0) return;
+    if (n > ENCOUNTER_MAX_ENEMIES) n = ENCOUNTER_MAX_ENEMIES;
+
+    int idx = (int)poolId - 1;
+    if (idx < 0 || idx >= enemyPoolCount || enemyPools[idx].count == 0) {
+        if (enemyDefCount > 0) {
+            encounterStartCombat(&enemyDefs[0]);
+            for (int i = 1; i < n; i++)
+                encounterAddEnemy(&enemyDefs[0], 0, 0);
+        }
+        return;
+    }
+    EnemyPool *pool = &enemyPools[idx];
+    uint8_t defId = pool->enemyIds[rand() % pool->count];
+    if (defId >= (uint8_t)enemyDefCount) defId = 0;
+    encounterStartCombat(&enemyDefs[defId]);
+    for (int i = 1; i < n; i++) {
+        defId = pool->enemyIds[rand() % pool->count];
+        if (defId >= (uint8_t)enemyDefCount) defId = 0;
+        encounterAddEnemy(&enemyDefs[defId], 0, 0);
+    }
+}

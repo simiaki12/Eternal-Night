@@ -169,6 +169,12 @@ typedef struct {
     int         envStateIdx;          /* current state index within the encounter */
     int         envProgress;          /* accumulated progress (0–progressGoal) */
     int         envTurnInState;       /* turns spent in the current state */
+    /* Hunt encounter state */
+    int         huntEncId;            /* active HuntEncounterDef ID; -1 if none */
+    int         huntStateIdx;         /* current state index */
+    int         huntEnemiesLeft;      /* enemies remaining in the group */
+    int         huntEnemiesTotal;     /* initial enemy count */
+    int         huntTurnInState;      /* turns spent in the current state */
 } EncounterState;
 
 extern EncounterState encounter;

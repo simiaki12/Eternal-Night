@@ -70,7 +70,9 @@ typedef enum {
     ACTION_RALLY         = 34,
     /* Special */
     ACTION_DEMAND        = 35,
-    ACTION_COUNT         = 36
+    /* Hunt */
+    ACTION_MASSACRE      = 36,
+    ACTION_COUNT         = 37
 } ActionId;
 
 /* Bitmasks for ActionDef.effective_disp / backfire_disp.

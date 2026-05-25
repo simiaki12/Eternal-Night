@@ -17,6 +17,7 @@
 #include "npcs.h"
 #include "investigations.h"
 #include "env_encounter.h"
+#include "hunt_encounter.h"
 
 EncounterState encounter;
 
@@ -354,6 +355,13 @@ static void performPlayerAction(void) {
     if (encounter.encounterType == ENCOUNTER_ENVIRONMENTAL) {
         Action *ea = &encounter.actions[encounter.selectedIndex];
         envEncounterDoAction((uint8_t)ea->type);
+        return;
+    }
+
+    /* Hunt encounters are handled entirely in hunt_encounter.c */
+    if (encounter.encounterType == ENCOUNTER_HUNT) {
+        Action *ha = &encounter.actions[encounter.selectedIndex];
+        huntEncounterDoAction((uint8_t)ha->type, ha->power);
         return;
     }
 
@@ -925,6 +933,30 @@ void renderEncounter(void) {
             return;
         }
 
+        if (encounter.encounterType == ENCOUNTER_HUNT) {
+            const HuntEncounterDef *hdef = huntEncGetDef((uint8_t)encounter.huntEncId);
+            if (encounter.phase == ENCOUNTER_PHASE_VICTORY) {
+                drawText(bx, y, "HUNT COMPLETE", rgb(220, 180, 50), 2);  y += 28;
+            } else {
+                drawText(bx, y, "HUNT FAILED",   rgb(200, 70,  70), 2);  y += 28;
+            }
+            if (hdef) {
+                drawText(bx, y, hdef->name, rgb(180, 150, 60), 1);  y += 14;
+                fillRect(LP_X + 8, y, LP_W - 16, 1, bdPanel);  y += 8;
+                int killed = encounter.huntEnemiesTotal - encounter.huntEnemiesLeft;
+                snprintf(buf, sizeof(buf), "Eliminated: %d / %d",
+                    killed, encounter.huntEnemiesTotal);
+                drawText(bx, y, buf, rgb(160, 130, 50), 1);  y += 14;
+            }
+            for (int i = 0; i < 4; i++) {
+                if (encounter.gainedDomainXp[i] == 0) continue;
+                snprintf(buf, sizeof(buf), "+%d %s xp", encounter.gainedDomainXp[i], domainName(i));
+                drawText(bx, y, buf, rgb(140, 200, 255), 1);  y += 14;
+            }
+            drawText(bx, LP_Y + LP_H - 20, "Enter to continue", rgb(100, 90, 60), 1);
+            return;
+        }
+
         if (encounter.encounterType == ENCOUNTER_SOCIAL) {
             /* Social outcome header */
             static const char    *labels[] = { "Exchange over.",  "Agreement reached.", "Demand made.",         "They walked away." };
@@ -988,6 +1020,40 @@ void renderEncounter(void) {
                 if ((encounter.invFoundMask >> i) & 1) found++;
             snprintf(buf, sizeof(buf), "%d / %d clues", found, total);
             drawText(bx, y, buf, rgb(140, 130, 70), 1);
+        }
+        goto render_log;
+    }
+
+    /* ── Hunt encounter active section ─────────────────────────── */
+    if (encounter.encounterType == ENCOUNTER_HUNT) {
+        const HuntEncounterDef *hdef = huntEncGetDef((uint8_t)encounter.huntEncId);
+        if (hdef) {
+            drawText(bx, y, hdef->name, rgb(220, 170, 40), 2);  y += 22;
+            const HuntStateDef *st = &hdef->states[encounter.huntStateIdx];
+            drawText(bx, y, st->description, rgb(170, 135, 50), 1);  y += 14;
+            fillRect(LP_X + 8, y, LP_W - 16, 1, bdPanel);  y += 8;
+
+            /* Enemy count bar */
+            int left  = encounter.huntEnemiesLeft;
+            int total = encounter.huntEnemiesTotal > 0 ? encounter.huntEnemiesTotal : 1;
+            int fill  = (total - left) * barW / total;
+            if (fill > barW) fill = barW;
+            fillRect(bx, y, barW, 8, rgb(35, 20, 5));
+            if (fill > 0) fillRect(bx, y, fill, 8, rgb(210, 140, 30));
+            y += 10;
+            snprintf(buf, sizeof(buf), "Enemies: %d remaining", left);
+            drawText(bx, y, buf, rgb(180, 120, 40), 1);  y += 14;
+
+            /* State turn budget */
+            if (st->turnBudget > 0) {
+                int budget_left = st->turnBudget - encounter.huntTurnInState;
+                uint32_t tc = budget_left > 2 ? rgb(200, 170, 60)
+                            : budget_left > 0 ? rgb(210, 120, 30)
+                            :                   rgb(210, 60,  40);
+                snprintf(buf, sizeof(buf), "Turns: %d / %d",
+                    encounter.huntTurnInState, st->turnBudget);
+                drawText(bx, y, buf, tc, 1);
+            }
         }
         goto render_log;
     }

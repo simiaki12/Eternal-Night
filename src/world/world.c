@@ -16,6 +16,7 @@
 #include "pak.h"
 #include "shop.h"
 #include "world_enemies.h"
+#include "hunt_encounter.h"
 
 /* ── iso tile images, lazy-loaded on first render ── */
 #define TIMG_GRASS       0
@@ -94,7 +95,8 @@ static const MapEvent *findEvent(int x, int y); /* forward declaration */
 /* --- Interaction target list --- */
 #define MAX_TARGETS 8
 
-typedef struct { int isNpc; int idx; } Target;
+typedef enum { TARGET_MAP_EVENT = 0, TARGET_NPC = 1, TARGET_HUNT = 2 } TargetType;
+typedef struct { TargetType type; int idx; } Target;
 
 static Target g_targets[MAX_TARGETS];
 static int    g_targetCount = 0;
@@ -106,12 +108,16 @@ static void buildTargets(void) {
 
     const MapEvent *ev = findEvent(worldPlayerX, worldPlayerY);
     if (ev && ev->type != MAP_EV_ENEMY)
-        g_targets[g_targetCount++] = (Target){ 0, 0 };
+        g_targets[g_targetCount++] = (Target){ TARGET_MAP_EVENT, 0 };
 
     int npcIdxs[MAX_TARGETS];
     int nc = npcGetInteractable(npcIdxs, MAX_TARGETS - g_targetCount);
     for (int i = 0; i < nc && g_targetCount < MAX_TARGETS; i++)
-        g_targets[g_targetCount++] = (Target){ 1, npcIdxs[i] };
+        g_targets[g_targetCount++] = (Target){ TARGET_NPC, npcIdxs[i] };
+
+    int huntId = campZoneAt(currentMapName, (uint8_t)worldPlayerX, (uint8_t)worldPlayerY);
+    if (huntId >= 0 && g_targetCount < MAX_TARGETS)
+        g_targets[g_targetCount++] = (Target){ TARGET_HUNT, huntId };
 }
 
 int     worldPlayerX  = 2;
@@ -264,11 +270,18 @@ void handleWorldInput(int key) {
     if (key == 'E') {
         if (g_targetCount > 0) {
             const Target *t = &g_targets[g_targetIdx];
-            if (t->isNpc) {
-                npcTriggerByIdx(t->idx);
-            } else {
-                const MapEvent *ev = findEvent(worldPlayerX, worldPlayerY);
-                if (ev) triggerMapEvent(ev);
+            switch (t->type) {
+                case TARGET_NPC:
+                    npcTriggerByIdx(t->idx);
+                    break;
+                case TARGET_MAP_EVENT: {
+                    const MapEvent *ev = findEvent(worldPlayerX, worldPlayerY);
+                    if (ev) triggerMapEvent(ev);
+                    break;
+                }
+                case TARGET_HUNT:
+                    huntEncounterStart(t->idx);
+                    break;
             }
         }
         return;
@@ -525,17 +538,30 @@ void renderWorld(void) {
         char prompt[96] = {0};
         const Target *t = &g_targets[g_targetIdx];
 
-        if (t->isNpc) {
-            const NpcDef *n = &npcDefs[t->idx];
-            snprintf(prompt, sizeof(prompt), "[E]: Talk with %s",
-                     n->name[0] ? n->name : "Stranger");
-        } else {
-            const MapEvent *ev = findEvent(worldPlayerX, worldPlayerY);
-            if (ev) switch (ev->type) {
-                case MAP_EV_TOWN:    snprintf(prompt, sizeof(prompt), "[E]: Enter Town");    break;
-                case MAP_EV_DUNGEON: snprintf(prompt, sizeof(prompt), "[E]: Enter Dungeon"); break;
-                case MAP_EV_PORTAL:  snprintf(prompt, sizeof(prompt), "[E]: Enter Portal");  break;
-                default: break;
+        switch (t->type) {
+            case TARGET_NPC: {
+                const NpcDef *n = &npcDefs[t->idx];
+                snprintf(prompt, sizeof(prompt), "[E]: Talk with %s",
+                         n->name[0] ? n->name : "Stranger");
+                break;
+            }
+            case TARGET_MAP_EVENT: {
+                const MapEvent *ev = findEvent(worldPlayerX, worldPlayerY);
+                if (ev) switch (ev->type) {
+                    case MAP_EV_TOWN:    snprintf(prompt, sizeof(prompt), "[E]: Enter Town");    break;
+                    case MAP_EV_DUNGEON: snprintf(prompt, sizeof(prompt), "[E]: Enter Dungeon"); break;
+                    case MAP_EV_PORTAL:  snprintf(prompt, sizeof(prompt), "[E]: Enter Portal");  break;
+                    default: break;
+                }
+                break;
+            }
+            case TARGET_HUNT: {
+                const HuntEncounterDef *hdef = huntEncGetDef((uint8_t)t->idx);
+                if (hdef)
+                    snprintf(prompt, sizeof(prompt), "[E]: Hunt: %.40s", hdef->name);
+                else
+                    snprintf(prompt, sizeof(prompt), "[E]: Begin Hunt");
+                break;
             }
         }
 

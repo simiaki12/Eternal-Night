@@ -119,8 +119,11 @@ static const ActionDef defaults[] = {
     { 34, 0,                   40, 12, "Rally",        "a35", "Gather resolve, restore HP.",      DOMAIN_COMBAT,   ACT_CAT_ENVIRONMENTAL,         0, NO_DISP },
     /* Special: always injected into social encounters */
     { 35, 0,                    0,  0, "Demand",       "",    "Force the issue. End it now.",     DOMAIN_NONE,     ACT_CAT_SOCIAL,                0, NO_DISP },
+    /* Hunt special */
+    { 36, 0,                   55, 50, "Massacre",     "a37", "End them all. No mercy.",          DOMAIN_BLOOD,    ACT_CAT_HUNT,                  0, NO_DISP },
 };
 
+/* ACTION_COUNT = 37 (includes Massacre at id 36) */
 int main(void) {
     FILE *f = fopen("assets/data/actions.dat", "wb");
     if (!f) { fprintf(stderr, "Cannot open assets/data/actions.dat\n"); return 1; }

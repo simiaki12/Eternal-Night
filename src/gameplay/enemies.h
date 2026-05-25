@@ -52,3 +52,4 @@ extern int       enemyPoolCount;
 
 int  loadEnemies(PakData data);
 void encounterStartFromPool(uint8_t poolId, int triggerX, int triggerY);
+void encounterStartFromPoolN(uint8_t poolId, int n); /* spawn exactly n enemies from pool */
