@@ -56,8 +56,146 @@ static DWORD g_savedNotifyEnd = 0;
 
 static int g_actPanel      = 0;
 static int g_actPanelSel   = 0;
-static int g_worldActPanel = 0;
-static int g_worldActSel   = 0;
+static int g_worldActPanel  = 0;
+static int g_worldActSel    = 0;
+static int g_worldActPage   = 0;  /* 0=All 1=Combat 2=Social 3=Investigation 4=Env 5=Hunt */
+static int g_worldActScroll = 0;
+static int g_worldActTabOff = 0;  /* index of first visible tab in the scrolling tab bar */
+
+static const char *g_actPageNames[] = {
+    "All", "Combat", "Social", "Investigation", "Environment", "Hunt"
+};
+#define ACT_PAGE_COUNT 6
+
+/* Last tab index visible when the tab bar starts at tabOff.
+   Uses PW=360 and 50px reserved for < > indicators + margins. */
+static int tabLastVisible(int tabOff) {
+    const int TAB_AVAIL = 360 - 50; /* PW minus reserved margins */
+    int used = 0, last = tabOff;
+    for (int p = tabOff; p < ACT_PAGE_COUNT; p++) {
+        int lw = (int)strlen(g_actPageNames[p]) * 8;
+        int need = used > 0 ? lw + 10 : lw;
+        if (used + need > TAB_AVAIL) break;
+        used += need;
+        last = p;
+    }
+    return last;
+}
+
+/* Filter the full action pool by page. Returns filtered count into out[]. */
+static int filterActionPool(const uint8_t *pool, int cnt, int page, uint8_t *out) {
+    if (page == 0) { memcpy(out, pool, (size_t)cnt); return cnt; }
+    static const uint8_t pageCats[] = {
+        0,
+        ACT_CAT_COMBAT,
+        ACT_CAT_SOCIAL,
+        ACT_CAT_INVESTIGATION,
+        ACT_CAT_ENVIRONMENTAL,
+        ACT_CAT_HUNT,
+    };
+    uint8_t cat = pageCats[page];
+    int n = 0;
+    for (int i = 0; i < cnt; i++) {
+        const ActionDef *a = getActionDef(pool[i]);
+        if (a && (a->encounterCat & cat)) out[n++] = pool[i];
+    }
+    return n;
+}
+
+#define ACT_MAX_VIS 12  /* max rows visible in the scrollable list */
+
+static void renderWorldActionPanel(const uint8_t *filtered, int cnt, int sel, int scroll) {
+
+    const int PW   = 360;
+    const int LH   = 20;
+    const int visN = ACT_MAX_VIS;
+    const int PH   = 12 + 20 + 6 + 22 + 6 + visN * LH + 8 + 18 + 16 + 12;
+    const int PX   = gfxWidth  / 2 - PW / 2;
+    const int PY   = gfxHeight / 2 - PH / 2;
+    const int TX   = PX + 14;
+
+    /* Background + border */
+    fillRect(PX,        PY,       PW, PH,  rgb(8,  14, 30));
+    fillRect(PX,        PY,       PW,  1,  rgb(80, 120, 200));
+    fillRect(PX,        PY+PH-1,  PW,  1,  rgb(80, 120, 200));
+    fillRect(PX,        PY,        1, PH,  rgb(80, 120, 200));
+    fillRect(PX+PW-1,   PY,        1, PH,  rgb(80, 120, 200));
+
+    /* Title */
+    int y = PY + 12;
+    drawText(TX, y, "Your Actions", rgb(200, 220, 255), 2);
+    y += 20;
+    fillRect(PX + 6, y + 1, PW - 12, 1, rgb(50, 70, 130));
+    y += 6;
+
+    /* Tab row — scrolling window; < > shown when tabs are clipped */
+    while (g_worldActPage > tabLastVisible(g_worldActTabOff) && g_worldActTabOff < g_worldActPage)
+        g_worldActTabOff++;
+    if (g_worldActPage < g_worldActTabOff) g_worldActTabOff = g_worldActPage;
+    int lastVis = tabLastVisible(g_worldActTabOff);
+    if (g_worldActTabOff > 0)
+        drawText(PX + 4, y, "<", rgb(120, 150, 200), 1);
+    if (lastVis < ACT_PAGE_COUNT - 1)
+        drawText(PX + PW - 12, y, ">", rgb(120, 150, 200), 1);
+    int tx = TX + (g_worldActTabOff > 0 ? 10 : 0);
+    for (int p = g_worldActTabOff; p <= lastVis; p++) {
+        const char *lbl = g_actPageNames[p];
+        int lw = (int)strlen(lbl) * 8;
+        if (p == g_worldActPage) {
+            fillRect(tx - 2, y - 1, lw + 4, 12, rgb(50, 80, 160));
+            drawText(tx, y, lbl, rgb(220, 240, 255), 1);
+        } else {
+            drawText(tx, y, lbl, rgb(80, 100, 160), 1);
+        }
+        tx += lw + 10;
+    }
+    y += 12;
+    fillRect(PX + 6, y + 1, PW - 12, 1, rgb(50, 70, 130));
+    y += 6;
+
+    /* Scroll up indicator */
+    if (scroll > 0)
+        drawText(PX + PW - 20, y - 2, "^", rgb(80, 100, 150), 1);
+
+    /* Action list */
+    int itemEnd = scroll + visN;
+    if (itemEnd > cnt) itemEnd = cnt;
+    for (int i = scroll; i < itemEnd; i++) {
+        const ActionDef *a = getActionDef(filtered[i]);
+        if (!a) { y += LH; continue; }
+        int isSel = (i == sel);
+        char buf[22];
+        buf[0] = isSel ? '>' : ' '; buf[1] = ' ';
+        int len = 0; while (a->name[len] && len < 16) len++;
+        for (int c = 0; c < len; c++) buf[2 + c] = a->name[c];
+        buf[2 + (len < 18 ? len : 18)] = '\0';
+        uint32_t col = isSel ? rgb(255, 255, 100) : rgb(160, 180, 220);
+        drawText(TX, y, buf, col, 1);
+        if (isActionFavoured(filtered[i]))
+            drawText(PX + PW - 22, y, "F", rgb(80, 220, 80), 1);
+        else if (isActionSuppressed(filtered[i]))
+            drawText(PX + PW - 22, y, "S", rgb(220, 70, 70), 1);
+        y += LH;
+    }
+
+    /* Scroll down indicator */
+    if (itemEnd < cnt)
+        drawText(PX + PW - 20, y - 2, "v", rgb(80, 100, 150), 1);
+
+    /* Footer pinned 8px below last item slot, anchored from list start */
+    int footerY = PY + 56 + ACT_MAX_VIS * LH + 8;
+    fillRect(PX + 6, footerY, PW - 12, 1, rgb(50, 70, 130));
+    footerY += 10;
+
+    if (sel >= 0 && sel < cnt) {
+        const ActionDef *a = getActionDef(filtered[sel]);
+        if (a && a->desc[0])
+            drawText(TX, footerY, a->desc, rgb(130, 155, 200), 1);
+    }
+    footerY += 18;
+
+    drawText(TX, footerY, "L/R:page  F:fav  S:supp  A/Esc:close", rgb(45, 55, 90), 1);
+}
 
 static void handleInventoryInput(int key) {
     if (g_actPanel) {
@@ -440,13 +578,41 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
                     g_worldActPanel = 0;
                 } else {
                     g_worldActPanel = 1; g_worldActSel = 0;
+                    g_worldActPage = 0; g_worldActScroll = 0; g_worldActTabOff = 0;
                 }
             } else if (g_worldActPanel && state == STATE_WORLD) {
-                uint8_t pool[64]; int cnt = buildActionPool(pool, ACT_CAT_ANY);
-                if      (g_pendingKey == VK_UP   && g_worldActSel > 0)       g_worldActSel--;
-                else if (g_pendingKey == VK_DOWN  && g_worldActSel < cnt - 1) g_worldActSel++;
-                else if (g_pendingKey == 'F' && cnt > 0) toggleFavoured(pool[g_worldActSel]);
-                else if (g_pendingKey == 'S' && cnt > 0) toggleSuppressed(pool[g_worldActSel]);
+                uint8_t pool[ACTION_MAX]; int poolCnt = buildActionPool(pool, ACT_CAT_ANY);
+                uint8_t filtered[ACTION_MAX]; int cnt = filterActionPool(pool, poolCnt, g_worldActPage, filtered);
+                if (g_worldActSel >= cnt) g_worldActSel = cnt > 0 ? cnt - 1 : 0;
+                if (g_pendingKey == VK_UP) {
+                    if (g_worldActSel > 0) g_worldActSel--;
+                    if (g_worldActSel < g_worldActScroll) g_worldActScroll = g_worldActSel;
+                } else if (g_pendingKey == VK_DOWN) {
+                    if (g_worldActSel < cnt - 1) g_worldActSel++;
+                    if (g_worldActSel >= g_worldActScroll + ACT_MAX_VIS)
+                        g_worldActScroll = g_worldActSel - ACT_MAX_VIS + 1;
+                } else if (g_pendingKey == VK_LEFT) {
+                    g_worldActPage = (g_worldActPage + ACT_PAGE_COUNT - 1) % ACT_PAGE_COUNT;
+                    g_worldActSel = 0; g_worldActScroll = 0;
+                    if (g_worldActPage < g_worldActTabOff)
+                        g_worldActTabOff = g_worldActPage;
+                    else if (g_worldActPage == ACT_PAGE_COUNT - 1) /* wrapped */ {
+                        g_worldActTabOff = 0;
+                        while (tabLastVisible(g_worldActTabOff) < g_worldActPage)
+                            g_worldActTabOff++;
+                    }
+                } else if (g_pendingKey == VK_RIGHT) {
+                    g_worldActPage = (g_worldActPage + 1) % ACT_PAGE_COUNT;
+                    g_worldActSel = 0; g_worldActScroll = 0;
+                    if (g_worldActPage == 0) /* wrapped */ g_worldActTabOff = 0;
+                    else while (g_worldActPage > tabLastVisible(g_worldActTabOff) &&
+                                g_worldActTabOff < g_worldActPage)
+                        g_worldActTabOff++;
+                } else if (g_pendingKey == 'F' && cnt > 0) {
+                    toggleFavoured(filtered[g_worldActSel]);
+                } else if (g_pendingKey == 'S' && cnt > 0) {
+                    toggleSuppressed(filtered[g_worldActSel]);
+                }
             /* P is a global hotkey — opens domain tree from world */
             } else if (g_pendingKey == 'P' && (state == STATE_WORLD || state == STATE_DOMAINS)) {
                 state = (state == STATE_DOMAINS) ? STATE_WORLD : STATE_DOMAINS;
@@ -528,9 +694,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             case STATE_WORLD:
                 renderWorld();
                 if (g_worldActPanel) {
-                    uint8_t pool[ACTION_MAX]; int cnt = buildActionPool(pool, ACT_CAT_ANY);
+                    uint8_t pool[ACTION_MAX]; int poolCnt = buildActionPool(pool, ACT_CAT_ANY);
+                    uint8_t filtered[ACTION_MAX]; int cnt = filterActionPool(pool, poolCnt, g_worldActPage, filtered);
                     if (g_worldActSel >= cnt) g_worldActSel = cnt > 0 ? cnt - 1 : 0;
-                    renderActionPanel("Your Actions", pool, cnt, g_worldActSel);
+                    if (g_worldActScroll > 0 && g_worldActScroll + ACT_MAX_VIS > cnt)
+                        g_worldActScroll = cnt > ACT_MAX_VIS ? cnt - ACT_MAX_VIS : 0;
+                    renderWorldActionPanel(filtered, cnt, g_worldActSel, g_worldActScroll);
                 }
                 break;
             case STATE_ENCOUNTER:  renderEncounter();  break;
