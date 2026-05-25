@@ -44,6 +44,8 @@ typedef struct {
     uint8_t suppressCount;
     /* Investigation clue state — one bit per clue ID (up to 64 clues) */
     uint8_t clueFound[8];
+    /* World flags — one bit per flag (up to 128 flags, 0-127) */
+    uint8_t worldFlags[16];
 } PlayerData;
 
 extern PlayerData player;
@@ -56,3 +58,7 @@ int  isActionFavoured(uint8_t id);
 int  isActionSuppressed(uint8_t id);
 void toggleFavoured(uint8_t id);
 void toggleSuppressed(uint8_t id);
+
+int  worldFlagGet(uint8_t flagId);
+void worldFlagSet(uint8_t flagId);
+void worldFlagClear(uint8_t flagId);

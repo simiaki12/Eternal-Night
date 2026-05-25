@@ -16,6 +16,7 @@
 #include "world_enemies.h"
 #include "npcs.h"
 #include "investigations.h"
+#include "env_encounter.h"
 
 EncounterState encounter;
 
@@ -346,6 +347,13 @@ static void performPlayerAction(void) {
         investigationDoAction((uint8_t)ia->type);
         if (encounter.phase == ENCOUNTER_PHASE_ACTIVE)
             generateActions();
+        return;
+    }
+
+    /* Environmental encounters are handled entirely in env_encounter.c */
+    if (encounter.encounterType == ENCOUNTER_ENVIRONMENTAL) {
+        Action *ea = &encounter.actions[encounter.selectedIndex];
+        envEncounterDoAction((uint8_t)ea->type);
         return;
     }
 
@@ -897,6 +905,26 @@ void renderEncounter(void) {
             return;
         }
 
+        if (encounter.encounterType == ENCOUNTER_ENVIRONMENTAL) {
+            const EnvEncounterDef *edef = envEncGetDef((uint8_t)encounter.envEncId);
+            if (encounter.phase == ENCOUNTER_PHASE_VICTORY) {
+                drawText(bx, y, "RESOLVED",  rgb(80, 220, 80),   2);  y += 28;
+            } else {
+                drawText(bx, y, "FAILED",    rgb(200, 70, 70),   2);  y += 28;
+            }
+            if (edef) {
+                drawText(bx, y, edef->name, rgb(120, 180, 120), 1);  y += 14;
+                fillRect(LP_X + 8, y, LP_W - 16, 1, bdPanel);  y += 8;
+                const EnvStateDef *st = &edef->states[encounter.envStateIdx];
+                drawText(bx, y, st->description, rgb(90, 140, 90), 1);  y += 14;
+                snprintf(buf, sizeof(buf), "Progress: %d / %d",
+                    encounter.envProgress, edef->progressGoal);
+                drawText(bx, y, buf, rgb(80, 130, 80), 1);
+            }
+            drawText(bx, LP_Y + LP_H - 20, "Enter to continue", rgb(70, 110, 70), 1);
+            return;
+        }
+
         if (encounter.encounterType == ENCOUNTER_SOCIAL) {
             /* Social outcome header */
             static const char    *labels[] = { "Exchange over.",  "Agreement reached.", "Demand made.",         "They walked away." };
@@ -963,6 +991,40 @@ void renderEncounter(void) {
         }
         goto render_log;
     }
+
+    /* ── Environmental encounter active section ─────────────────── */
+    if (encounter.encounterType == ENCOUNTER_ENVIRONMENTAL) {
+        const EnvEncounterDef *edef = envEncGetDef((uint8_t)encounter.envEncId);
+        if (edef) {
+            drawText(bx, y, edef->name, rgb(80, 200, 80), 2);  y += 22;
+            const EnvStateDef *st = &edef->states[encounter.envStateIdx];
+            drawText(bx, y, st->description, rgb(100, 160, 100), 1);  y += 14;
+            fillRect(LP_X + 8, y, LP_W - 16, 1, bdPanel);  y += 8;
+
+            /* Progress bar */
+            int goal  = edef->progressGoal > 0 ? edef->progressGoal : 1;
+            int fill  = encounter.envProgress * barW / goal;
+            if (fill > barW) fill = barW;
+            fillRect(bx, y, barW, 8, rgb(12, 35, 12));
+            if (fill > 0) fillRect(bx, y, fill, 8, rgb(50, 200, 80));
+            y += 10;
+            snprintf(buf, sizeof(buf), "Progress: %d / %d", encounter.envProgress, goal);
+            drawText(bx, y, buf, rgb(80, 150, 80), 1);  y += 14;
+
+            /* State turn budget */
+            if (st->turnBudget > 0) {
+                int left = st->turnBudget - encounter.envTurnInState;
+                uint32_t tc = left > 2 ? rgb(140, 200, 140)
+                            : left > 0 ? rgb(210, 150, 40)
+                            :            rgb(210, 60,  40);
+                snprintf(buf, sizeof(buf), "Turns in state: %d / %d", encounter.envTurnInState, st->turnBudget);
+                drawText(bx, y, buf, tc, 1);
+            }
+        }
+        goto render_log;
+    }
+
+    /* ── Environmental outcome screen ───────────────────────────── */
 
     /* ── Enemy / Social section ────────────────────────────────── */
     if (encounter.encounterType == ENCOUNTER_SOCIAL) {

@@ -72,6 +72,7 @@ All editors run in the terminal via ncurses. Run from the repo root so they can 
 
 | Command | Purpose | Data file |
 |---|---|---|
+| `make editor_hub` | Hub launcher — select and open any editor | — |
 | `make map_editor` | Tile map editor | `assets/maps/*.bin` |
 | `make npc_editor` | NPC placement and social stats | `assets/data/npcs.dat` |
 | `make dialog_editor` | NPC dialog trees and option effects | `assets/data/dialog.dat` |
@@ -79,11 +80,15 @@ All editors run in the terminal via ncurses. Run from the repo root so they can 
 | `make enemy_editor` | Enemy stats, flags, loot tables | `assets/data/enemies.dat` |
 | `make action_editor` | Combat action definitions | `assets/data/actions.dat` |
 | `make item_editor` | Items and stat bonuses | `assets/data/items.dat` |
+| `make shop_editor` | Shop definitions and stock | `assets/data/shops.dat` |
 | `make loottable_editor` | Loot table composition | `assets/data/loottables.dat` |
 | `make quest_editor` | Quest definitions and objectives | `assets/data/quests.dat` |
 | `make logmessage_editor` | Reactive combat log messages | `assets/data/log_messages.dat` |
 | `make ambient_editor` | Map-scoped ambient text | `assets/data/ambient.dat` |
 | `make player_editor` | Starting player stats | `assets/data/player.dat` |
+| `make clue_editor` | Clue definitions for investigation encounters | `assets/data/clues.dat` |
+| `make investigation_editor` | Investigation scene definitions | `assets/data/investigations.dat` |
+| `make env_encounter_editor` | Environmental encounter state graphs | `assets/data/env_encounters.dat` |
 | `make music_editor` | Software synth sequencer (ncurses) | `assets/music/*.mus` |
 | `make music_editor_gui` | Software synth sequencer (Win32 GUI) | `assets/music/*.mus` |
 | `make img_conv` | PNG → `.bin` sprite converter | `assets/sprites/*.bin` |
@@ -92,6 +97,7 @@ To reseed a data file from its defaults:
 
 ```sh
 make seed_items
+make seed_shops
 make seed_enemies
 make seed_actions
 make seed_npcs
@@ -119,6 +125,25 @@ All ncurses editors share the same controls:
 - **T** — toggle a flag (where applicable)
 
 All editors save to `assets/data/` relative to the repo root.
+
+---
+
+### editor_hub
+
+`make editor_hub` opens a menu-driven launcher for all editors. Editors are grouped by category:
+
+- **Maps & World** — map editor
+- **Characters** — NPC, dialog, social encounter editors
+- **Combat** — enemy, action, log message editors
+- **Items & Loot** — item, shop, loot table editors
+- **Story** — quest, ambient editors
+- **Investigations** — clue editor, investigation editor
+- **Environmental** — env encounter editor
+- **Audio** — music editors
+
+Up/Down to move, Enter to launch the selected editor. The hub suspends ncurses, hands control to the editor, and resumes when you quit it. The data file for each entry is shown on the right.
+
+Editors must be built before use — the hub launches whatever binary is already in `build/`. Build all at once with `make <editor_name>`, or just build the ones you need.
 
 ---
 
@@ -218,7 +243,19 @@ Each `ActionDef` (64 bytes):
 
 Edits `assets/data/items.dat`. Two screens: list and edit.
 
-Each `ItemDef` (64 bytes): name, type (weapon/armor/consumable), stat bonuses (attack, defense, intelligence, perception, stamina, hp), price, description, and up to 4 action IDs the item grants on equip (`0xFF` = empty slot).
+Each `ItemDef` (64 bytes): name, type (weapon / outfit / consumable / undergarment / accessory / relic), stat bonuses (attack, defense, intelligence, perception, stamina, hp), price, description, and up to 4 action IDs the item grants on equip (`0xFF` = empty slot).
+
+---
+
+### shop_editor
+
+Edits `assets/data/shops.dat`. Two screens: list and edit.
+
+Each `ShopDef` (48 bytes): name (up to 23 chars) and up to 16 item slots. Shops are referenced by index — shop 0 is the default shop opened by the B key in the world.
+
+In the edit screen, Enter on a stock slot opens an item picker loaded from `items.dat`. D removes the selected slot. The `(add item...)` entry at the bottom appends a new slot.
+
+To open a specific shop from code: `enterShop(shopId, returnState)`.
 
 ---
 
@@ -286,6 +323,100 @@ Each `AmbientEntry` (80 bytes) is a text snippet that appears when the player is
 Edits `assets/data/player.dat`. Single-screen editor — no list, just the one player record.
 
 Fields: maxHp, attack, defense, weaponId, armorId, 16 skill slots, level, xp, skillPoints. Use this to set starting conditions for a new game.
+
+---
+
+### clue_editor
+
+Edits `assets/data/clues.dat`. Two screens: list and edit.
+
+Clues are global — they are referenced by ID from investigation scenes. Each `ClueDef` (80 bytes):
+
+| Field | Notes |
+|---|---|
+| `text` | Log entry shown when the clue is discovered (up to 31 chars). **Enter** to edit |
+| `Item hint` | Flavour hint shown if a required item is missing (up to 31 chars). **Enter** to edit |
+| `Difficulty` | Discovery difficulty 0–255; lower is easier. **+/-** |
+| `Domain` | Domain affinity; matching domain level adds a discovery bonus. **+/-**, `0xFF` = none |
+| `Affinity[0–3]` | Up to 4 action IDs that boost discovery odds. **+/-**, `0xFF` = unused |
+| `Required item` | (Reserved, unused in current logic.) **+/-**, `0xFF` = none |
+| `Invalidates` | ID of another clue this grays out in the journal when discovered. **+/-**, `0xFF` = none |
+| `Flag: KEY` | This clue must be found for the investigation to succeed. **T** to toggle |
+| `Flag: MISLEADING` | Red herring — points toward a wrong conclusion. **T** to toggle |
+| `Flag: LINGERING` | Shown in the journal even if the investigation times out. **T** to toggle |
+
+Clue IDs are global and stable — deleting a clue shifts IDs of everything after it, so avoid deleting from the middle of a live dataset. Add new clues at the end.
+
+---
+
+### investigation_editor
+
+Edits `assets/data/investigations.dat`. Two screens: list and edit.
+
+Each `InvestigationDef` (80 bytes) is a scene: a named set of clues with a turn limit, a success condition, and optional rewards.
+
+| Field | Notes |
+|---|---|
+| `Name` | Journal group heading (up to 23 chars). **Enter** to edit |
+| `Pressure text` | Fictional reason the scene has a time limit (up to 35 chars). **Enter** to edit |
+| `Clue slot 0–7` | Global clue ID in each slot. **+/-**, `0xFF` = empty. **K** on a slot toggles whether it is a key clue |
+| `Clue count` | Number of active clue slots. Set to match filled slots; the editor shows the auto-count for reference. **+/-** |
+| `Turn limit` | How many action turns before the scene times out. **+/-** |
+| `Key mask` | Bitmask of which clue positions are mandatory for success. Managed via **K** on clue slots; can also be adjusted directly with **+/-** |
+| `Reward item` | Item ID granted on success. **+/-**, `0xFF` = none |
+| `Reward quest` | Quest index advanced on success. **+/-**, `0xFF` = none |
+| `Pressure type` | Flavour category: `Weather`, `Crowd`, `Darkness`, `Decay`. **+/-** |
+| `Flag: STAGED` | Scene contains misleading clues (sets player expectation). **T** to toggle |
+| `Flag: RETURNABLE` | Player can exit and re-enter the scene without losing progress. **T** to toggle |
+
+The key mask determines victory: the player must find all clues whose slot position has its bit set. For example, if clue slots 0 and 2 are mandatory, key mask is `0x05`.
+
+---
+
+### env_encounter_editor
+
+Edits `assets/data/env_encounters.dat`. Four screens in a drill-down hierarchy: **List -> Encounter -> State -> Edge**.
+
+**Tab** switches focus between the field panel (left) and the sub-list panel (right) on the Encounter and State screens. All other keys act on whichever panel is focused.
+
+#### Encounter screen (SCR_ENC)
+
+| Field | Notes |
+|---|---|
+| `Name` | Display name shown in the encounter panel (up to 23 chars). **Enter** to edit |
+| `Progress goal` | Total progress needed to end the encounter. **+/-** |
+| `Start state` | Index of the state the encounter begins in. **+/-** |
+| `REPEATABLE` | Player can enter this encounter again after resolution. **T** to toggle |
+| `STORY` | Marks this as a story encounter; allows up to 8 states. **T** to toggle |
+
+The right panel lists states. **N** adds a state, **D** deletes, **Enter** opens it.
+
+#### State screen (SCR_STATE)
+
+| Field | Notes |
+|---|---|
+| `Description` | Log text shown when the player enters this state (up to 23 chars). **Enter** to edit |
+| `Turn budget` | Turns before the timeout fires; `0` = no timeout. **+/-** |
+| `Timeout next` | State index to advance to when turn budget expires; `0xFF` = stay. **+/-** |
+| `Damage` | HP deducted from the player on entering this state. **+/-** |
+| `Prog gain` | Progress added each time an edge fires from this state. **+/-** |
+| `TERMINAL` | No further turns after entering; only finishing-touch edges are shown. **T** to toggle |
+| `SUCCESS` | Determines a good outcome when the encounter ends in this state. **T** to toggle |
+
+The right panel lists edges. **N** adds an edge, **D** deletes, **Enter** opens it.
+
+#### Edge screen (SCR_EDGE)
+
+An edge is a connection in the state graph: one or more actions that trigger it, where they lead, and what they grant on resolution.
+
+| Field | Notes |
+|---|---|
+| `Action ID 0–2` | Up to 3 action IDs that fire this edge. **+/-**, `0xFF` = unused |
+| `Next state` | Destination state index. `0xFF` = **RESOLVE** (end encounter here). **+/-** |
+| `Set world flag` | World flag ID (0–127) to set when this edge resolves. Only applies when `Next state` is `0xFF`. **+/-**, `0xFF` = none |
+| `Reward item` | Item ID to grant on resolve. Only applies when `Next state` is `0xFF`. **+/-**, `0xFF` = none |
+
+All numeric fields cycle through their range and wrap to/from `0xFF` (none/resolve) at the boundaries.
 
 ---
 

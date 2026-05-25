@@ -29,6 +29,7 @@
 #include "ambient.h"
 #include "log_messages.h"
 #include "investigations.h"
+#include "env_encounter.h"
 #include "cluelog.h"
 
 /* State machine */
@@ -339,6 +340,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     PakData shopData      = pakRead("assets/data/shops.dat");
     PakData clueData      = pakRead("assets/data/clues.dat");
     PakData invData       = pakRead("assets/data/investigations.dat");
+    PakData envEncData    = pakRead("assets/data/env_encounters.dat");
 
     loadItems(itemData);        /* optional — falls back to builtins if not in pak */
     loadEnemies(enemyData);     /* optional — falls back to builtins if not in pak */
@@ -353,6 +355,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadShops(shopData);               /* optional — falls back to builtin shop 0 if absent */
     loadClues(clueData);               /* optional — no investigations if absent */
     loadInvestigations(invData);       /* optional — no investigations if absent */
+    loadEnvEncounters(envEncData);     /* optional — no env encounters if absent */
     socialNewGame();            /* must run after loadNpcs + loadSocialEncounters */
     free(itemData.data);
     free(enemyData.data);
@@ -367,6 +370,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     free(shopData.data);
     free(clueData.data);
     free(invData.data);
+    free(envEncData.data);
 
     const int screenW = 640;
     const int screenH = 480;

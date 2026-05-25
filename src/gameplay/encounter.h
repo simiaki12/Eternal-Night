@@ -164,6 +164,11 @@ typedef struct {
     int         invTurns;             /* turns remaining */
     uint8_t     invFoundMask;         /* bitmask of locally-found clue positions */
     int         invSuccess;           /* 1 if all key clues were found */
+    /* Environmental encounter state */
+    int         envEncId;             /* active EnvEncounterDef ID; -1 if none */
+    int         envStateIdx;          /* current state index within the encounter */
+    int         envProgress;          /* accumulated progress (0–progressGoal) */
+    int         envTurnInState;       /* turns spent in the current state */
 } EncounterState;
 
 extern EncounterState encounter;
@@ -180,6 +185,7 @@ void encounterLog(const char *msg); /* public log push — for use from log_mess
 int  loadSocialEncounters(PakData data);
 int  loadClues(PakData data);
 int  loadInvestigations(PakData data);
+int  loadEnvEncounters(PakData data);
 void socialNewGame(void);              /* copy base standings into PlayerData; reset encounter states */
 int  socialFindActive(uint8_t npc_id); /* first non-locked, non-hidden SE for this NPC; -1 if none */
 void socialEncounterStart(int se_idx); /* begin a social encounter; transitions to STATE_ENCOUNTER */

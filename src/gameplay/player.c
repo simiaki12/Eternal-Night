@@ -24,7 +24,8 @@ void playerInit(void) {
     player.suppressCount  = 0;
     memset(player.favouredActions,   0xFF, FAVOUR_MAX);
     memset(player.suppressedActions, 0xFF, FAVOUR_MAX);
-    memset(player.clueFound, 0, sizeof(player.clueFound));
+    memset(player.clueFound,   0, sizeof(player.clueFound));
+    memset(player.worldFlags,  0, sizeof(player.worldFlags));
     for (int i = 0; i < DOMAIN_COUNT; i++)
         player.domains[i].perk_points = 10;
 }
@@ -110,4 +111,19 @@ void playerRemoveActionFromQueues(uint8_t id) {
 void enterDeath(void) {
     player.hp = player.maxHp;
     state     = STATE_DEATH;
+}
+
+int worldFlagGet(uint8_t flagId) {
+    if (flagId >= 128) return 0;
+    return (player.worldFlags[flagId / 8] >> (flagId % 8)) & 1;
+}
+
+void worldFlagSet(uint8_t flagId) {
+    if (flagId >= 128) return;
+    player.worldFlags[flagId / 8] |= (uint8_t)(1 << (flagId % 8));
+}
+
+void worldFlagClear(uint8_t flagId) {
+    if (flagId >= 128) return;
+    player.worldFlags[flagId / 8] &= (uint8_t)~(1 << (flagId % 8));
 }

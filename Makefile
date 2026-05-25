@@ -201,6 +201,33 @@ seed_actions:
 	$(CC_HOST) -std=c11 -Os tools/seed_actions.c -o build/seed_actions
 	./build/seed_actions
 
+seed_clues:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os tools/seed_clues.c -o build/seed_clues
+	./build/seed_clues
+
+seed_investigations:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os tools/seed_investigations.c -o build/seed_investigations
+	./build/seed_investigations
+
+clue_editor:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/clue_editor.c -o build/clue_editor -lncurses
+
+investigation_editor:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/investigation_editor.c -o build/investigation_editor -lncurses
+
+seed_env_encounters:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os tools/seed_env_encounters.c -o build/seed_env_encounters
+	./build/seed_env_encounters
+
+env_encounter_editor:
+	mkdir -p build
+	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/env_encounter_editor.c -o build/env_encounter_editor -lncurses
+
 music_editor:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/music_editor.c -o build/music_editor -lncurses
@@ -213,7 +240,7 @@ editor_hub:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/editor_hub.c -o build/editor_hub -lncurses
 
-tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor ambient_editor logmessage_editor social_encounter_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui editor_hub
+tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor ambient_editor logmessage_editor social_encounter_editor clue_editor investigation_editor env_encounter_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui editor_hub
 
 clean:
 	rm -rf build data.pak
