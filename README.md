@@ -39,13 +39,23 @@ The packer runs automatically as part of the build and bundles everything with a
 
 ---
 
-## Combat
+## Encounters
 
-Combat is turn-based. Each round you are offered 4 actions drawn from your available repertoire. The chance of certain actions appearing is weighted by your domain levels, your equipment, the enemy type, and your surroundings. Pick an action, pick a target, and resolve. Then enemies act in sequence.
+Eternal Night has five kinds of encounter, each with its own mechanics and its own pool of actions to draw from.
 
-Encounters support up to 1 enemy at once, multiple is planned. Each enemy will have its own action set, so groups feel distinct rather than just multiplying the same threat.
+**Combat** plays out in turns. Each round you choose from a pool of actions filtered to the moment and weighted by your domain levels, your equipment, the enemy in front of you, and your surroundings; the enemies then act in sequence. Up to three can be active at once, and each carries its own action set, so a group feels like distinct threats rather than one enemy copied three times.
 
-Outside of combat, enemies move in real time. Most are slower than Azrael, so you can choose your fights. Enemies have behaviour archetypes: some hunt you at range, some ignore you until you cross their territory, some flee and try to call allies. Breaking line of sight will eventually cause them to give up the chase.
+**Social** encounters are negotiations. Each side plays moves that push the NPC's disposition up or down, and you win by getting them friendly enough before their patience runs out. They start from dialog options and are gated behind domain requirements.
+
+**Investigation** drops Azrael into a scene full of clues with a limited number of turns to work it. Each action searches with odds weighted by his domains; some clues are essential to reaching the truth, while red herrings lead you astray. The outcome updates the journal and can award items or move a quest forward.
+
+**Environmental** encounters are scripted set-pieces — traps, ambushes, hazards. They run as a small graph of states, and your actions move you between them: some states wound you, others open up new options. Resolving one sets a world flag and can leave a reward behind.
+
+**Hunt** encounters begin when Azrael steps into a camp zone on the world map. The target group works its way through a chain of states — unaware, alert, scattered, broken — as you stalk it with hunt-specific actions like Ambush, Track, Set Trap, Blood Howl, and Massacre, picking enemies off one at a time. Run out of turns or get spotted and the hunt collapses into open combat against whoever is left.
+
+Across every encounter, actions are browsed in a single scrollable panel split into tabs — All, Combat, Social, Investigation, Environment, and Hunt — so the same interface carries you from one kind of encounter to the next.
+
+Outside of encounters, enemies move in real time. Most are slower than Azrael, so you can pick your fights. Each follows a behaviour archetype: some hunt you from range, some ignore you until you cross into their territory, some flee and call for allies. Break line of sight for long enough and pursuers give up the chase.
 
 ---
 
@@ -89,6 +99,8 @@ All editors run in the terminal via ncurses. Run from the repo root so they can 
 | `make clue_editor` | Clue definitions for investigation encounters | `assets/data/clues.dat` |
 | `make investigation_editor` | Investigation scene definitions | `assets/data/investigations.dat` |
 | `make env_encounter_editor` | Environmental encounter state graphs | `assets/data/env_encounters.dat` |
+| `make hunt_encounter_editor` | Hunt encounter state graphs | `assets/data/hunt_encounters.dat` |
+| `make camp_zone_editor` | Camp zone definitions (world-map trigger areas) | `assets/data/camp_zones.dat` |
 | `make music_editor` | Software synth sequencer (ncurses) | `assets/music/*.mus` |
 | `make music_editor_gui` | Software synth sequencer (Win32 GUI) | `assets/music/*.mus` |
 | `make img_conv` | PNG → `.bin` sprite converter | `assets/sprites/*.bin` |
@@ -132,14 +144,14 @@ All editors save to `assets/data/` relative to the repo root.
 
 `make editor_hub` opens a menu-driven launcher for all editors. Editors are grouped by category:
 
-- **Maps & World** — map editor
-- **Characters** — NPC, dialog, social encounter editors
+- **World** — map editor
 - **Combat** — enemy, action, log message editors
 - **Items & Loot** — item, shop, loot table editors
-- **Story** — quest, ambient editors
+- **NPCs & Story** — NPC, dialog, social encounter, quest, ambient editors
 - **Investigations** — clue editor, investigation editor
-- **Environmental** — env encounter editor
-- **Audio** — music editors
+- **Environmental Encounters** — env encounter, hunt encounter, camp zone editors
+- **Player** — player starting stats editor
+- **Audio** — music editor
 
 Up/Down to move, Enter to launch the selected editor. The hub suspends ncurses, hands control to the editor, and resumes when you quit it. The data file for each entry is shown on the right.
 
