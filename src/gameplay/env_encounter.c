@@ -54,9 +54,14 @@ void envEncounterStart(uint8_t encId, uint32_t mods) {
     if (st->description[0])
         encounterLog(st->description);
 
-    /* Apply any damage from entering the start state */
-    if (st->damage && (int)player.hp > st->damage)
-        player.hp -= st->damage;
+    /* Apply any damage from entering the start state — same clamp + death
+       handling as enterState() so the start state behaves identically. */
+    if (st->damage) {
+        int newHp = (int)player.hp - (int)st->damage;
+        player.hp = (uint16_t)(newHp < 0 ? 0 : newHp);
+        if (player.hp == 0)
+            encounter.phase = ENCOUNTER_PHASE_TIMEOUT;
+    }
 
     generateActions();
     state = STATE_ENCOUNTER;
@@ -120,42 +125,35 @@ void envEncounterDoAction(uint8_t actionId) {
         }
     }
 
-    if (!fired) {
-        encounterLog("The action has no effect here.");
-        encounter.envTurnInState++;
-        goto check_timeout;
-    }
-
-    /* Edge fired — add progress */
-    {
+    if (fired) {
+        /* Edge fired — add progress */
         int gain = (int)st->progressGain;
         if (gain < 1) gain = 1;
         encounter.envProgress += gain;
         if (encounter.envProgress > 255) encounter.envProgress = 255;
+
+        /* Progress fills, or terminal state → resolve here */
+        if (encounter.envProgress >= (int)def->progressGoal ||
+            (st->flags & ENV_STATE_TERMINAL)) {
+            resolveEdge(fired, st);
+            return;
+        }
+
+        /* Edge moves to another state → fresh turn budget, no carry-over */
+        if (fired->nextState != 0xFF && fired->nextState < def->stateCount &&
+            fired->nextState != (uint8_t)si) {
+            enterState(def, fired->nextState);
+            if (encounter.phase != ENCOUNTER_PHASE_ACTIVE) return;
+            generateActions();
+            return;
+        }
+        /* Stayed in this state — falls through to turn accounting below */
+    } else {
+        encounterLog("The action has no effect here.");
     }
 
-    /* Progress fills → end encounter in current state */
-    if (encounter.envProgress >= (int)def->progressGoal) {
-        resolveEdge(fired, st);
-        return;
-    }
-
-    /* Terminal state → finishing touch resolves immediately */
-    if (st->flags & ENV_STATE_TERMINAL) {
-        resolveEdge(fired, st);
-        return;
-    }
-
-    /* Non-terminal, non-progress-capping edge → transition state */
-    if (fired->nextState != 0xFF && fired->nextState < def->stateCount) {
-        enterState(def, fired->nextState);
-        if (encounter.phase != ENCOUNTER_PHASE_ACTIVE) return;
-    }
-
-    generateActions();
-    return;
-
-check_timeout:
+    /* One turn spent in the current state (a miss, or a hit with no transition).
+       Counted exactly once; check the timeout against this same state. */
     encounter.envTurnInState++;
     if (st->turnBudget > 0 && encounter.envTurnInState >= (int)st->turnBudget) {
         if (st->timeoutNext != 0xFF && st->timeoutNext < def->stateCount) {

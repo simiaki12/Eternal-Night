@@ -26,8 +26,8 @@ void playerInit(void) {
     memset(player.suppressedActions, 0xFF, FAVOUR_MAX);
     memset(player.clueFound,   0, sizeof(player.clueFound));
     memset(player.worldFlags,  0, sizeof(player.worldFlags));
-    for (int i = 0; i < DOMAIN_COUNT; i++)
-        player.domains[i].perk_points = 10;
+    /* perk_points start at 0 (already zeroed by memset above) — earned by
+       levelling domains. */
 }
 
 int favourSlots(void) {

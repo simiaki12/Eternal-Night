@@ -565,6 +565,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             /* Escape closes world action panel before opening pause menu */
             } else if (g_pendingKey == VK_ESCAPE && g_worldActPanel && state == STATE_WORLD) {
                 g_worldActPanel = 0;
+            /* Escape on an encounter result screen dismisses it (like Enter);
+               only an active fight escalates to the pause menu. */
+            } else if (g_pendingKey == VK_ESCAPE && state == STATE_ENCOUNTER &&
+                       encounter.phase != ENCOUNTER_PHASE_ACTIVE) {
+                handleEncounterInput(VK_ESCAPE);
             /* Escape opens pause from the main gameplay states */
             } else if (g_pendingKey == VK_ESCAPE &&
                        (state == STATE_WORLD || state == STATE_ENCOUNTER || state == STATE_TOWN)) {

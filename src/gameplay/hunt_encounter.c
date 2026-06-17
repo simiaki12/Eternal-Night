@@ -161,6 +161,7 @@ void huntEncounterDoAction(uint8_t actionId, uint8_t actionPower) {
 
     /* Search edges */
     int matched = 0;
+    int transitioned = 0;
     for (int ei = 0; ei < st->edgeCount && ei < HUNT_EDGE_MAX; ei++) {
         const HuntEdge *edge = &st->edges[ei];
         int found = 0;
@@ -202,23 +203,29 @@ void huntEncounterDoAction(uint8_t actionId, uint8_t actionPower) {
             huntResolve((st->flags & HUNT_STATE_SUCCESS) != 0);
             return;
         }
-        if (edge->nextState != (uint8_t)encounter.huntStateIdx)
+        if (edge->nextState != (uint8_t)encounter.huntStateIdx) {
             huntEnterState(edge->nextState);
+            transitioned = 1;
+        }
         break;
     }
 
     if (!matched)
         encounterLog("No opening found.");
 
-    encounter.huntTurnInState++;
-
-    /* Turn budget timeout */
-    if (st->turnBudget > 0 && encounter.huntTurnInState >= (int)st->turnBudget) {
-        if (st->timeoutNext == 0xFF) {
-            huntCombatFallback();
-            return;
+    /* Turn accounting + timeout apply only when we stayed in this state.
+       A transition via huntEnterState() already reset the turn counter and
+       moved us on, so `st` (the state the action was taken in) must not be
+       used to drive a timeout against the freshly-entered state. */
+    if (!transitioned) {
+        encounter.huntTurnInState++;
+        if (st->turnBudget > 0 && encounter.huntTurnInState >= (int)st->turnBudget) {
+            if (st->timeoutNext == 0xFF) {
+                huntCombatFallback();
+                return;
+            }
+            huntEnterState(st->timeoutNext);
         }
-        huntEnterState(st->timeoutNext);
     }
 
     if (encounter.phase == ENCOUNTER_PHASE_ACTIVE)

@@ -42,8 +42,9 @@ void rollLoot(uint8_t tableId, uint8_t *dropsOut, int *dropCountOut) {
         }
         /* Chance roll */
         if ((rand() % 256) >= e->chance) continue;
-        /* Drop it */
-        dropsOut[(*dropCountOut)++] = e->itemId;
-        addItem(e->itemId);
+        /* Drop it — only record on the victory screen if it actually fit in
+           the bag, so we never claim an item the player didn't receive. */
+        if (addItem(e->itemId))
+            dropsOut[(*dropCountOut)++] = e->itemId;
     }
 }

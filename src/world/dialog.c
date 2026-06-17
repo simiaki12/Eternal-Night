@@ -109,6 +109,13 @@ void handleDialogInput(int key) {
     const DialogTree *tree = &dialogTrees[dialogSt.treeId];
     const DialogNode *node = &tree->nodes[dialogSt.nodeIdx];
 
+    /* A node with no options can only be dismissed — guard the modulo below. */
+    if (node->optionCount == 0) {
+        if (key == VK_RETURN || key == VK_ESCAPE)
+            state = dialogSt.returnState;
+        return;
+    }
+
     switch (key) {
         case VK_UP:
             dialogSt.selected--;

@@ -248,7 +248,11 @@ static void fillEnemySlot(int slot, const EnemyDef *def) {
     loadEnemyImg(slot, def->imgName);
 }
 
-void encounterStartCombat(const EnemyDef *def) {
+/* Reset all combat slot/instance state for a fresh encounter on enemy `def`.
+   Does NOT set encounterType, push an opener, fire triggers, or generate the
+   action hand — the public entry points below own those so they run exactly
+   once regardless of how the encounter was started. */
+static void resetCombatState(const EnemyDef *def) {
     /* Free all enemy images and clear stale slot data */
     for (int i = 0; i < ENCOUNTER_MAX_ENEMIES; i++) {
         if (encounter.enemyImgs[i].data) { free(encounter.enemyImgs[i].data); encounter.enemyImgs[i].data = NULL; }
@@ -267,7 +271,6 @@ void encounterStartCombat(const EnemyDef *def) {
     encounter.phase           = ENCOUNTER_PHASE_ACTIVE;
     encounter.gainedGold      = 0;
     encounter.droppedCount    = 0;
-    encounter.encounterType   = ENCOUNTER_COMBAT;
     encounter.modifiers       = 0;
     encounter.logCount        = 0;
     encounter.logScroll       = 0;
@@ -275,6 +278,11 @@ void encounterStartCombat(const EnemyDef *def) {
     encounter.socialOutcome        = SOCIAL_OUTCOME_NONE;
     encounter.socialEndWillingness = 0;
     memset(encounter.gainedDomainXp, 0, sizeof(encounter.gainedDomainXp));
+}
+
+void encounterStartCombat(const EnemyDef *def) {
+    resetCombatState(def);
+    encounter.encounterType = ENCOUNTER_COMBAT;
     {
         char opening[28];
         snprintf(opening, 28, "%.12s bars your path.", encounter.enemies[0].name);
@@ -298,21 +306,27 @@ void encounterAddEnemy(const EnemyDef *def, uint8_t wx, uint8_t wy) {
 }
 
 void encounterStart(EncounterType type, const EnemyDef *def, uint32_t mods) {
-    encounterStartCombat(def);
+    resetCombatState(def);
     encounter.encounterType = type;
     encounter.modifiers     = mods;
-    encounter.logCount      = 0;
-    const char *opener;
-    switch (type) {
-        case ENCOUNTER_SOCIAL:        opener = "A tense exchange begins.";  break;
-        case ENCOUNTER_INVESTIGATION: opener = "Something demands scrutiny."; break;
-        case ENCOUNTER_HUNT:          opener = "You are on the hunt.";      break;
-        case ENCOUNTER_ENVIRONMENTAL: opener = "The environment closes in."; break;
-        default:                      opener = NULL;                         break;
+    if (type == ENCOUNTER_COMBAT) {
+        char opening[28];
+        snprintf(opening, 28, "%.12s bars your path.", encounter.enemies[0].name);
+        logPush(opening);
+    } else {
+        const char *opener;
+        switch (type) {
+            case ENCOUNTER_SOCIAL:        opener = "A tense exchange begins.";   break;
+            case ENCOUNTER_INVESTIGATION: opener = "Something demands scrutiny."; break;
+            case ENCOUNTER_HUNT:          opener = "You are on the hunt.";        break;
+            case ENCOUNTER_ENVIRONMENTAL: opener = "The environment closes in.";  break;
+            default:                      opener = NULL;                          break;
+        }
+        if (opener) logPush(opener);
     }
-    if (opener) logPush(opener);
     fireLogMessages(LOGTRIG_COMBAT_START, 0xFF, 0);
     generateActions();
+    state = STATE_ENCOUNTER;
 }
 
 /* Kill one enemy: roll loot/gold, fire quest hook, log the fall. */
@@ -756,7 +770,8 @@ void handleEncounterInput(int key) {
             generateActions();
             break;
         case VK_RETURN: performPlayerAction(); break;
-        case VK_ESCAPE: state = STATE_WORLD;  break;
+        /* ESC during active combat is handled in main.c (opens pause).
+           On the victory/timeout screen above, ESC dismisses the result. */
     }
 }
 
