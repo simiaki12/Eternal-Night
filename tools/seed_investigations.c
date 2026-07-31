@@ -26,7 +26,8 @@ typedef struct {
     uint8_t rewardQuest;
     uint8_t pressureType;
     uint8_t flags;
-    uint8_t _pad[4];
+    uint8_t caseId;
+    uint8_t _pad[3];
 } InvestigationDef;
 
 typedef char _check[(sizeof(InvestigationDef) == 80) ? 1 : -1];
@@ -48,7 +49,8 @@ static const InvestigationDef defaults[] = {
         0xFF,       /* rewardQuest: none */
         INV_PRESSURE_DECAY,
         INV_FLAG_STAGED,
-        { 0, 0, 0, 0 }
+        0,          /* caseId: The Merchant's Death */
+        { 0, 0, 0 }
     },
 };
 

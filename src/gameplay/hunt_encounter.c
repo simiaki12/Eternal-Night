@@ -2,12 +2,15 @@
 #include <windows.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "hunt_encounter.h"
 #include "encounter.h"
 #include "enemies.h"
 #include "player.h"
 #include "domains.h"
 #include "actions.h"
+#include "statuses.h"
+#include "enc_graph.h"
 #include "game.h"
 
 HuntEncounterDef huntEncDefs[HUNT_ENC_MAX];
@@ -65,169 +68,150 @@ const HuntEncounterDef *huntEncGetDef(uint8_t id) {
     return NULL;
 }
 
-static void huntEnterState(int stateIdx) {
-    const HuntEncounterDef *def = huntEncGetDef((uint8_t)encounter.huntEncId);
-    if (!def || stateIdx < 0 || stateIdx >= def->stateCount) return;
+/* -------------------------------------------------------------------- */
 
-    encounter.huntStateIdx    = stateIdx;
-    encounter.huntTurnInState = 0;
+/* Thin the group by n (0xFF = all of them). */
+static void huntKill(int n) {
+    if (n < 0) return;
+    if (n > encounter.huntEnemiesLeft) n = encounter.huntEnemiesLeft;
+    if (n == 0) return;
+    encounter.huntEnemiesLeft -= n;
 
-    const HuntStateDef *st = &def->states[stateIdx];
     char msg[28];
-    snprintf(msg, sizeof(msg), "%.27s", st->description);
+    if (encounter.huntEnemiesLeft == 0 && n > 1) snprintf(msg, 28, "All %d go down.", n);
+    else if (n > 1)                              snprintf(msg, 28, "%d enemies eliminated.", n);
+    else                                         snprintf(msg, 28, "One enemy down.");
     encounterLog(msg);
-
-    if (st->damage > 0) {
-        int dmg = st->damage;
-        player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
-        snprintf(msg, sizeof(msg), "Took %d damage.", dmg);
-        encounterLog(msg);
-        if (player.hp == 0) {
-            encounterLog("You fall unconscious.");
-            enterDeath();
-        }
-    }
 }
 
+/* Hunt-scoped effect executor: EFX_KILL is ours, the rest are generic. */
+static void applyHuntEffect(const Effect *e) {
+    if (!e || e->type == EFX_NONE || e->chance == 0) return;
+    if (e->type == EFX_KILL) {
+        if (rand() % 100 < e->chance)
+            huntKill(e->value == 0xFF ? encounter.huntEnemiesLeft : (int)e->value);
+        return;
+    }
+    applyEffect(e);
+}
+
+/* They stop reacting and come at you with whoever is left. */
 static void huntCombatFallback(void) {
     const HuntEncounterDef *def = huntEncGetDef((uint8_t)encounter.huntEncId);
     int n = encounter.huntEnemiesLeft;
     if (!def || n <= 0 || def->enemyPoolId == 0xFF) {
-        state = STATE_WORLD;
+        encounter.phase = ENCOUNTER_PHASE_TIMEOUT;
+        encounterLog("They slip away.");
         return;
     }
-    encounterLog("They fight back!");
+    encounterLog("They turn and charge!");
     encounterStartFromPoolN(def->enemyPoolId, n);
 }
 
-static void huntResolve(int success) {
-    if (success) {
-        for (int i = 0; i < campZoneCount; i++) {
-            if (campZones[i].huntEncId == (uint8_t)encounter.huntEncId &&
-                campZones[i].clearedFlag != 0xFF)
-                worldFlagSet(campZones[i].clearedFlag);
-        }
-        encounter.phase = ENCOUNTER_PHASE_VICTORY;
-        encounterLog("Hunt complete.");
-    } else {
-        const HuntEncounterDef *def = huntEncGetDef((uint8_t)encounter.huntEncId);
-        if (def && (def->states[encounter.huntStateIdx].flags & HUNT_STATE_COMBAT)) {
-            huntCombatFallback();
-        } else {
-            encounter.phase = ENCOUNTER_PHASE_TIMEOUT;
-            encounterLog("Hunt failed.");
-        }
+static void huntVictory(void) {
+    const HuntEncounterDef *def = huntEncGetDef((uint8_t)encounter.huntEncId);
+    if (def && def->setFlag != 0xFF) worldFlagSet(def->setFlag);
+    for (int i = 0; i < campZoneCount; i++) {
+        if (campZones[i].huntEncId == (uint8_t)encounter.huntEncId &&
+            campZones[i].clearedFlag != 0xFF)
+            worldFlagSet(campZones[i].clearedFlag);
     }
+    encounter.phase = ENCOUNTER_PHASE_VICTORY;
+    encounterLog("The camp is silent.");
 }
 
 void huntEncounterStart(int encId) {
     const HuntEncounterDef *def = huntEncGetDef((uint8_t)encId);
     if (!def) return;
 
-    EnemyDef dummy;
-    memset(&dummy, 0, sizeof(dummy));
-    strncpy(dummy.name, def->name, sizeof(dummy.name) - 1);
-    dummy.lootTableId = 0xFF;
+    EnemyDef group;
+    memset(&group, 0, sizeof(group));
+    strncpy(group.name, def->name, sizeof(group.name) - 1);
+    group.lootTableId = 0xFF;
+    group.stateMask   = def->stateMask;
+    group.tenacity    = def->tenacity;
 
-    encounterStart(ENCOUNTER_HUNT, &dummy, 0);
+    encounterStart(ENCOUNTER_HUNT, &group, 0);
     encounter.huntEncId        = encId;
-    encounter.huntStateIdx     = (int)def->startState;
     encounter.huntEnemiesLeft  = (int)def->enemyCount;
     encounter.huntEnemiesTotal = (int)def->enemyCount;
-    encounter.huntTurnInState  = 0;
+    encounter.huntAlert        = 0;
+    encounter.enemyState[0]    = (uint8_t)encGraphStart(ENC_IDX_HUNT);
+    encounter.potCount[0]      = 0;
 
     char msg[28];
-    snprintf(msg, sizeof(msg), "Hunt: %.19s", def->name);
+    snprintf(msg, 28, "Hunt: %.19s", def->name);
     encounterLog(msg);
-    huntEnterState(def->startState);
-    generateActions();
 }
 
-void huntEncounterDoAction(uint8_t actionId, uint8_t actionPower) {
+void huntEncounterDoAction(uint8_t actionId) {
     const HuntEncounterDef *def = huntEncGetDef((uint8_t)encounter.huntEncId);
     if (!def) return;
+    const ActionDef *adef = getActionDef(actionId);
+    char msg[28];
 
-    const HuntStateDef *st = &def->states[encounter.huntStateIdx];
+    /* Kills and other payloads fire whether or not the group's posture moves */
+    if (adef) applyHuntEffect(&adef->onPlay);
+
+    if (encounter.huntEnemiesLeft > 0) {
+        GraphResult r = encGraphResolve(0, ENC_IDX_HUNT, adef, def->stateMask,
+                                        def->tenacity, applyHuntEffect);
+
+        /* A botched approach makes noise and stirs the camp */
+        if (r == GRAPH_WHIFF || r == GRAPH_NO_TRIPLETS) {
+            encounter.huntAlert++;
+            if (def->escalateEvery > 0 &&
+                encounter.huntAlert % def->escalateEvery == 0) {
+                uint8_t cur  = encounter.enemyState[0];
+                uint8_t next = (cur < GRAPH_STATES_MAX) ? def->escalateTo[cur] : 0xFF;
+                if (next != 0xFF && next != cur &&
+                    (def->stateMask & (1u << next))) {
+                    encounter.potCount[0]   = 0;
+                    encounter.enemyState[0] = next;
+                    const StateDef *ns = encGraphState(ENC_IDX_HUNT, next);
+                    snprintf(msg, 28, "They grow %.14s!", ns ? ns->name : "?");
+                    encounterLog(msg);
+                    if (ns) applyHuntEffect(&ns->onEnter);
+                }
+            }
+        }
+    }
 
     /* Domain XP */
-    {
-        const ActionDef *adef = getActionDef(actionId);
-        if (adef && adef->domain < 14) {
-            domainAwardXp(adef->domain, 1);
-            if (encounter.gainedDomainXp[adef->domain] < 255)
-                encounter.gainedDomainXp[adef->domain]++;
+    if (adef && adef->domain < 14) {
+        domainAwardXp(adef->domain, 1);
+        if (encounter.gainedDomainXp[adef->domain] < 255)
+            encounter.gainedDomainXp[adef->domain]++;
+    }
+
+    if (encounter.huntEnemiesLeft <= 0) { huntVictory(); return; }
+
+    /* They are done reacting */
+    if (def->alertLimit > 0 && encounter.huntAlert >= def->alertLimit) {
+        huntCombatFallback();
+        return;
+    }
+
+    /* Pressure from their current posture */
+    if (encounter.extraActionPending) {
+        encounter.extraActionPending = 0;
+    } else {
+        const StateDef *st = encGraphState(ENC_IDX_HUNT, encounter.enemyState[0]);
+        int threat = (st ? st->pressure : 0) + statusThreatMod();
+        if (threat > 0) {
+            player.hp = (threat >= (int)player.hp) ? 0 : (uint16_t)(player.hp - threat);
+            snprintf(msg, 28, "Pressure: -%d HP.", threat);
+            encounterLog(msg);
         }
     }
 
-    /* Search edges */
-    int matched = 0;
-    int transitioned = 0;
-    for (int ei = 0; ei < st->edgeCount && ei < HUNT_EDGE_MAX; ei++) {
-        const HuntEdge *edge = &st->edges[ei];
-        int found = 0;
-        for (int ai = 0; ai < HUNT_ACTION_MAX; ai++) {
-            if (edge->actionIds[ai] == 0xFF) break;
-            if (edge->actionIds[ai] == actionId) { found = 1; break; }
-        }
-        if (!found) continue;
-
-        matched = 1;
-
-        int killed = (actionId == HUNT_ACTION_MASSACRE)
-                   ? encounter.huntEnemiesLeft
-                   : (int)actionPower;
-        if (killed > encounter.huntEnemiesLeft) killed = encounter.huntEnemiesLeft;
-        if (killed < 0) killed = 0;
-
-        encounter.huntEnemiesLeft -= killed;
-
-        char msg[28];
-        if (killed >= encounter.huntEnemiesTotal && killed > 1)
-            snprintf(msg, sizeof(msg), "Massacre! All %d down.", killed);
-        else if (killed > 1)
-            snprintf(msg, sizeof(msg), "%d enemies eliminated.", killed);
-        else if (killed == 1)
-            snprintf(msg, sizeof(msg), "One enemy down.");
-        else
-            snprintf(msg, sizeof(msg), "No kill this time.");
-        encounterLog(msg);
-
-        if (edge->setFlag != 0xFF) worldFlagSet(edge->setFlag);
-
-        if (encounter.huntEnemiesLeft <= 0) {
-            huntResolve(1);
-            return;
-        }
-
-        if (edge->nextState == 0xFF || (st->flags & HUNT_STATE_TERMINAL)) {
-            huntResolve((st->flags & HUNT_STATE_SUCCESS) != 0);
-            return;
-        }
-        if (edge->nextState != (uint8_t)encounter.huntStateIdx) {
-            huntEnterState(edge->nextState);
-            transitioned = 1;
-        }
-        break;
+    statusTickTurn();
+    if (player.hp == 0) {
+        encounterLog("You fall unconscious.");
+        enterDeath();
+        return;
     }
 
-    if (!matched)
-        encounterLog("No opening found.");
-
-    /* Turn accounting + timeout apply only when we stayed in this state.
-       A transition via huntEnterState() already reset the turn counter and
-       moved us on, so `st` (the state the action was taken in) must not be
-       used to drive a timeout against the freshly-entered state. */
-    if (!transitioned) {
-        encounter.huntTurnInState++;
-        if (st->turnBudget > 0 && encounter.huntTurnInState >= (int)st->turnBudget) {
-            if (st->timeoutNext == 0xFF) {
-                huntCombatFallback();
-                return;
-            }
-            huntEnterState(st->timeoutNext);
-        }
-    }
-
-    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE)
-        generateActions();
+    encounter.isFirstTurn = 0;
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE) generateActions();
 }

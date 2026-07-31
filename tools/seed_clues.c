@@ -29,18 +29,19 @@ typedef struct {
     uint8_t requiredItem;
     uint8_t invalidates;
     uint8_t flags;
-    uint8_t _pad[6];
+    uint8_t minCaseState;
+    uint8_t _pad[5];
 } ClueDef;
 
 typedef char _check[(sizeof(ClueDef) == 80) ? 1 : -1];
 
 static const ClueDef defaults[] = {
     /* id  text                             itemHint                        diff  dom           affinity                               req   inv   flags */
-    { 0,  "The blood is still warm.",       "",                             60,   DOMAIN_BLOOD,  {ACTION_BLOOD_SCENT, 0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, CLUE_FLAG_KEY,        {0} },
-    { 1,  "Drag marks lead to the door.",   "",                             80,   DOMAIN_TRICKERY,{ACTION_INSPECT, ACTION_TRACK, 0xFF, 0xFF}, 0xFF, 0xFF, 0,              {0} },
-    { 2,  "A noble crest on a torn cloth.", "",                             120,  DOMAIN_TRICKERY,{ACTION_INSPECT, 0xFF, 0xFF, 0xFF},       0xFF, 0xFF, CLUE_FLAG_KEY,   {0} },
-    { 3,  "The victim fled willingly.",      "",                             100,  DOMAIN_CHARM,   {0xFF, 0xFF, 0xFF, 0xFF},                0xFF, 1,    CLUE_FLAG_MISLEADING,{0} },
-    { 4,  "Signs of struggle near the wall.","",                            70,   DOMAIN_TRICKERY,{ACTION_INSPECT, 0xFF, 0xFF, 0xFF},       0xFF, 0xFF, 0,               {0} },
+    { 0,  "The blood is still warm.",       "",                             60,   DOMAIN_BLOOD,  {ACTION_BLOOD_SCENT, 0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, CLUE_FLAG_KEY,        0, {0} },
+    { 1,  "Drag marks lead to the door.",   "",                             80,   DOMAIN_TRICKERY,{ACTION_INSPECT, ACTION_TRACK, 0xFF, 0xFF}, 0xFF, 0xFF, 0,              0, {0} },
+    { 2,  "A noble crest on a torn cloth.", "",                             120,  DOMAIN_TRICKERY,{ACTION_INSPECT, 0xFF, 0xFF, 0xFF},       0xFF, 0xFF, CLUE_FLAG_KEY,   2, {0} },
+    { 3,  "The victim fled willingly.",      "",                             100,  DOMAIN_CHARM,   {0xFF, 0xFF, 0xFF, 0xFF},                0xFF, 1,    CLUE_FLAG_MISLEADING, 1, {0} },
+    { 4,  "Signs of struggle near the wall.","",                            70,   DOMAIN_TRICKERY,{ACTION_INSPECT, 0xFF, 0xFF, 0xFF},       0xFF, 0xFF, 0,               1, {0} },
 };
 
 int main(void) {

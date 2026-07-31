@@ -323,6 +323,8 @@ void handleWorldInput(int key) {
         buildTargets();
         questOnLocationReached(currentMapName, (uint8_t)newX, (uint8_t)newY);
         ambientCheckLocation(currentMapName, (uint8_t)newX, (uint8_t)newY);
+        statusTickStep();
+        if (player.hp == 0) { enterDeath(); return; }
 
         /* Enemies auto-trigger on step; town/dungeon/portal wait for E key. */
         const WorldEnemy *we = worldEnemyAt(newX, newY);
@@ -581,4 +583,7 @@ void renderWorld(void) {
         int tw = (int)strlen(g_ambientMsg) * 8;
         drawTextOutlined(gfxWidth / 2 - tw / 2, gfxHeight - 44, g_ambientMsg, rgb(210, 195, 155), 1);
     }
+
+    /* --- Active statuses (top-left) --- */
+    renderStatusStrip(16, 16, 1);
 }

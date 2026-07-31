@@ -30,7 +30,8 @@ typedef struct {
     uint8_t requiredItem;
     uint8_t invalidates;
     uint8_t flags;
-    uint8_t _pad[6];
+    uint8_t minCaseState;
+    uint8_t _pad[5];
 } ClueDef;
 
 typedef char _check_size[(sizeof(ClueDef) == 80) ? 1 : -1];

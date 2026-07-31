@@ -31,7 +31,10 @@
 #include "investigations.h"
 #include "env_encounter.h"
 #include "hunt_encounter.h"
+#include "enc_graph.h"
+#include "statuses.h"
 #include "cluelog.h"
+#include "cases.h"
 
 /* State machine */
 GameState state     = STATE_MAIN_MENU;
@@ -482,6 +485,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     PakData envEncData    = pakRead("assets/data/env_encounters.dat");
     PakData huntEncData   = pakRead("assets/data/hunt_encounters.dat");
     PakData campZoneData  = pakRead("assets/data/camp_zones.dat");
+    PakData caseData      = pakRead("assets/data/cases.dat");
+    PakData statesData    = pakRead("assets/data/states.dat");
+    PakData statusData    = pakRead("assets/data/statuses.dat");
 
     loadItems(itemData);        /* optional — falls back to builtins if not in pak */
     loadEnemies(enemyData);     /* optional — falls back to builtins if not in pak */
@@ -499,6 +505,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     loadEnvEncounters(envEncData);     /* optional — no env encounters if absent */
     loadHuntEncounters(huntEncData);   /* optional — no hunt encounters if absent */
     loadCampZones(campZoneData);       /* optional — no camp zones if absent */
+    loadCases(caseData);               /* optional — no cases if absent */
+    casesNewGame();                    /* must run after loadCases */
+    loadEncGraphs(statesData);         /* optional — graph engine idle if absent */
+    loadStatuses(statusData);          /* optional — no statuses if absent */
     socialNewGame();            /* must run after loadNpcs + loadSocialEncounters */
     free(itemData.data);
     free(enemyData.data);
@@ -516,6 +526,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
     free(envEncData.data);
     free(huntEncData.data);
     free(campZoneData.data);
+    free(caseData.data);
+    free(statesData.data);
+    free(statusData.data);
 
     const int screenW = 640;
     const int screenH = 480;

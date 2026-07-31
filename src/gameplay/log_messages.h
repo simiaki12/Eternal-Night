@@ -16,8 +16,8 @@ typedef enum {
 typedef enum {
     ENEMYCOND_NONE       = 0,
     ENEMYCOND_SIZE_GTE   = 1, /* any alive enemy size >= val         */
-    ENEMYCOND_HP_LTE_PCT = 2, /* any alive enemy HP% <= val          */
-    ENEMYCOND_HP_GTE_PCT = 3, /* any alive enemy HP% >= val          */
+    ENEMYCOND_STATE_IS   = 2, /* any alive enemy is in graph state val */
+    ENEMYCOND_STATE_NOT  = 3, /* no alive enemy is in graph state val  */
     ENEMYCOND_HAS_FLAG   = 4, /* any alive enemy has flag bit val    */
     ENEMYCOND_COUNT_GTE  = 5, /* alive enemy count >= val            */
 } EnemyCond;
@@ -27,8 +27,8 @@ typedef enum {
     LOGFX_ADD_MOD       = 1, /* add ENCOUNTER_MOD_* bit             */
     LOGFX_REMOVE_MOD    = 2, /* remove a modifier                   */
     LOGFX_ENEMY_FLEE    = 3, /* remove target enemy, no loot        */
-    LOGFX_ENEMY_STUN    = 4, /* target skips counter-attack         */
-    LOGFX_ENEMY_ATK_DOWN= 5, /* reduce target attack by val         */
+    LOGFX_ENEMY_TEN_DOWN= 4, /* reduce target tenacity by val (easier to move) */
+    LOGFX_ENEMY_DMG_DOWN= 5, /* reduce target damage by val         */
     LOGFX_HEAL_PLAYER   = 6, /* restore val HP                      */
     LOGFX_DAMAGE_PLAYER = 7, /* deal val damage to player           */
 } LogFxType;

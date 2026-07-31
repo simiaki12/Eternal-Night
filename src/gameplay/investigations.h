@@ -32,7 +32,10 @@ typedef struct {
     uint8_t requiredItem;       /* hard gate: 0xFF = no item needed */
     uint8_t invalidates;        /* clue ID this grays out on discovery; 0xFF = none */
     uint8_t flags;              /* CLUE_FLAG_* */
-    uint8_t _pad[6];
+    uint8_t minCaseState;       /* only findable once the case has reached this
+                                   arc state (0 = always); the "you notice more
+                                   as the case deepens" gate */
+    uint8_t _pad[5];
 } ClueDef;
 
 typedef char _check_cluedef[(sizeof(ClueDef) == 80) ? 1 : -1];
@@ -50,7 +53,8 @@ typedef struct {
     uint8_t rewardQuest;        /* 0xFF = none */
     uint8_t pressureType;       /* INV_PRESSURE_* */
     uint8_t flags;              /* INV_FLAG_* */
-    uint8_t _pad[4];
+    uint8_t caseId;             /* case this scene belongs to; 0xFF = standalone */
+    uint8_t _pad[3];
 } InvestigationDef;
 
 typedef char _check_invdef[(sizeof(InvestigationDef) == 80) ? 1 : -1];

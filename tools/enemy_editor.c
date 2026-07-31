@@ -22,17 +22,24 @@
 #define ENEMY_POOL_MAX  15
 #define ENEMY_POOL_SIZE  4
 
+typedef struct { uint8_t type, value, chance; } Effect;
+typedef struct { uint8_t stateId; Effect fx; } EnemyBehavior;
+
 typedef struct {
     char    name[16];
-    uint8_t hp, attack, defense;
+    uint8_t hp, attack, defense;   /* hp/attack/defense LEGACY */
     uint8_t size, speed, intelligence, perception;
     uint8_t flags;
     uint8_t xpReward;
     uint8_t goldDrop;
     uint8_t lootTableId;
     char    imgName[16];
-    uint8_t _pad[5];
-} EnemyDef;  /* 48 bytes */
+    uint8_t stateMask;   /* combat-graph states (bit per state S0-S4) */
+    uint8_t damage;      /* pressure added per turn */
+    uint8_t tenacity;    /* % progress scaling; 0 = 100 */
+    EnemyBehavior behaviors[2];
+    uint8_t _pad[2];
+} EnemyDef;  /* 56 bytes */
 
 typedef struct {
     uint8_t enemyIds[ENEMY_POOL_SIZE];
@@ -41,7 +48,16 @@ typedef struct {
     char    tileName[16];
 } EnemyPool;  /* 24 bytes */
 
-typedef char check_size[(sizeof(EnemyDef) == 48) ? 1 : -1];
+typedef char check_size[(sizeof(EnemyDef) == 56) ? 1 : -1];
+
+#define EFX_COUNT 9
+static const char *efxNames[EFX_COUNT] = {
+    "none", "progress", "prog_next", "heal_hp", "dmg_hp",
+    "extra_act", "status+", "status-", "meter"
+};
+static const char *cstateNames[5] = {
+    "SquaringUp", "TradingBlows", "Staggered", "Frenzied", "Broken"
+};
 /* ------------------------------------------------ */
 
 #define SCROLL_MARGIN 3
@@ -119,16 +135,39 @@ typedef enum {
     F_SIZE, F_SPEED, F_INT, F_PER,
     F_XP, F_GOLD, F_LOOT,
     F_FLAG_WEAPON, F_FLAG_EXEC, F_FLAG_BLOCK, F_FLAG_STUN,
+    F_ST_S0, F_ST_S1, F_ST_S2, F_ST_S3, F_ST_S4,
+    F_DAMAGE, F_TENACITY,
+    F_B1_STATE, F_B1_FX, F_B1_VAL, F_B1_CH,
+    F_B2_STATE, F_B2_FX, F_B2_VAL, F_B2_CH,
     F_COUNT
 } Field;
 
 static const char *fieldNames[] = {
     "Name", "Image",
-    "HP", "ATK", "DEF",
+    "HP (legacy)", "ATK (legacy)", "DEF (legacy)",
     "Size (1-5)", "Speed", "Intelligence", "Perception",
     "XP Reward", "Gold Drop", "Loot Table ID",
-    "Flag: Has Weapon", "Flag: Executable", "Flag: Blockable", "Flag: Stunnable"
+    "Flag: Has Weapon", "Flag: Executable", "Flag: Blockable", "Flag: Stunnable",
+    "State: SquaringUp", "State: TradingBlows", "State: Staggered",
+    "State: Frenzied", "State: Broken",
+    "Damage (pressure/turn)", "Tenacity (% progress)",
+    "Behavior 1: state", "Behavior 1: effect", "Behavior 1: value", "Behavior 1: chance",
+    "Behavior 2: state", "Behavior 2: effect", "Behavior 2: value", "Behavior 2: chance",
 };
+
+/* +/- editing for one behavior field; part: 0=state 1=fx 2=val 3=chance */
+static void adjustBehavior(EnemyBehavior *b, int part, int dir) {
+    switch (part) {
+        case 0: b->stateId = (uint8_t)((b->stateId + (dir > 0 ? 1 : 4)) % 5); break;
+        case 1: b->fx.type = (uint8_t)((b->fx.type + (dir > 0 ? 1 : EFX_COUNT - 1)) % EFX_COUNT); break;
+        case 2: b->fx.value  = (uint8_t)(b->fx.value + dir);                  break;
+        case 3: {
+            int nv = (int)b->fx.chance + dir * 5;
+            b->fx.chance = (uint8_t)(nv < 0 ? 0 : nv > 100 ? 100 : nv);
+            break;
+        }
+    }
+}
 
 static void renderEdit(EnemyDef *e, int sel, const char *status) {
     clear();
@@ -161,6 +200,34 @@ static void renderEdit(EnemyDef *e, int sel, const char *status) {
             case F_FLAG_EXEC:   mvprintw(row, 2, "%-18s  %s", fieldNames[i], (e->flags & EDEF_EXECUTABLE) ? "[X]" : "[ ]"); break;
             case F_FLAG_BLOCK:  mvprintw(row, 2, "%-18s  %s", fieldNames[i], (e->flags & EDEF_BLOCKABLE)  ? "[X]" : "[ ]"); break;
             case F_FLAG_STUN:   mvprintw(row, 2, "%-18s  %s", fieldNames[i], (e->flags & EDEF_STUNNABLE)  ? "[X]" : "[ ]"); break;
+            case F_ST_S0: case F_ST_S1: case F_ST_S2: case F_ST_S3: case F_ST_S4:
+                mvprintw(row, 2, "%-22s  %s", fieldNames[i],
+                         (e->stateMask & (1u << (i - F_ST_S0))) ? "[X]" : "[ ]");
+                break;
+            case F_DAMAGE:   mvprintw(row, 2, "%-22s  %d", fieldNames[i], e->damage);   break;
+            case F_TENACITY: mvprintw(row, 2, "%-22s  %d", fieldNames[i],
+                                      e->tenacity ? e->tenacity : 100);                  break;
+            case F_B1_STATE: case F_B2_STATE: {
+                const EnemyBehavior *b = (i == F_B1_STATE) ? &e->behaviors[0] : &e->behaviors[1];
+                mvprintw(row, 2, "%-22s  %s", fieldNames[i], cstateNames[b->stateId % 5]);
+                break;
+            }
+            case F_B1_FX: case F_B2_FX: {
+                const EnemyBehavior *b = (i == F_B1_FX) ? &e->behaviors[0] : &e->behaviors[1];
+                mvprintw(row, 2, "%-22s  %s", fieldNames[i],
+                         b->fx.type < EFX_COUNT ? efxNames[b->fx.type] : "?");
+                break;
+            }
+            case F_B1_VAL: case F_B2_VAL: {
+                const EnemyBehavior *b = (i == F_B1_VAL) ? &e->behaviors[0] : &e->behaviors[1];
+                mvprintw(row, 2, "%-22s  %d", fieldNames[i], b->fx.value);
+                break;
+            }
+            case F_B1_CH: case F_B2_CH: {
+                const EnemyBehavior *b = (i == F_B1_CH) ? &e->behaviors[0] : &e->behaviors[1];
+                mvprintw(row, 2, "%-22s  %d", fieldNames[i], b->fx.chance);
+                break;
+            }
         }
         if (i == sel) attroff(A_REVERSE);
     }
@@ -214,6 +281,14 @@ static void screenEdit(int idx) {
                     case F_FLAG_EXEC:   e->flags ^= EDEF_EXECUTABLE; break;
                     case F_FLAG_BLOCK:  e->flags ^= EDEF_BLOCKABLE;  break;
                     case F_FLAG_STUN:   e->flags ^= EDEF_STUNNABLE;  break;
+                    case F_ST_S0: case F_ST_S1: case F_ST_S2: case F_ST_S3: case F_ST_S4:
+                        e->stateMask ^= (uint8_t)(1u << (sel - F_ST_S0)); break;
+                    case F_DAMAGE:   if (e->damage   < 255) e->damage++;   break;
+                    case F_TENACITY: if (e->tenacity < 200) e->tenacity++; break;
+                    case F_B1_STATE: case F_B1_FX: case F_B1_VAL: case F_B1_CH:
+                        adjustBehavior(&e->behaviors[0], sel - F_B1_STATE,  1); break;
+                    case F_B2_STATE: case F_B2_FX: case F_B2_VAL: case F_B2_CH:
+                        adjustBehavior(&e->behaviors[1], sel - F_B2_STATE,  1); break;
                     default: dirty = 0; break;
                 }
                 break;
@@ -239,6 +314,14 @@ static void screenEdit(int idx) {
                     case F_FLAG_EXEC:   e->flags ^= EDEF_EXECUTABLE; break;
                     case F_FLAG_BLOCK:  e->flags ^= EDEF_BLOCKABLE;  break;
                     case F_FLAG_STUN:   e->flags ^= EDEF_STUNNABLE;  break;
+                    case F_ST_S0: case F_ST_S1: case F_ST_S2: case F_ST_S3: case F_ST_S4:
+                        e->stateMask ^= (uint8_t)(1u << (sel - F_ST_S0)); break;
+                    case F_DAMAGE:   if (e->damage   > 0) e->damage--;   break;
+                    case F_TENACITY: if (e->tenacity > 0) e->tenacity--; break;
+                    case F_B1_STATE: case F_B1_FX: case F_B1_VAL: case F_B1_CH:
+                        adjustBehavior(&e->behaviors[0], sel - F_B1_STATE, -1); break;
+                    case F_B2_STATE: case F_B2_FX: case F_B2_VAL: case F_B2_CH:
+                        adjustBehavior(&e->behaviors[1], sel - F_B2_STATE, -1); break;
                     default: dirty = 0; break;
                 }
                 break;

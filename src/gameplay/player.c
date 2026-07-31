@@ -9,6 +9,7 @@ PlayerData player;
 void playerInit(void) {
     memset(&player, 0, sizeof(player));
     memset(player.equipped, ITEM_UNEQUIPPED, EQUIP_SLOTS);
+    memset(player.statuses, 0xFF, sizeof(player.statuses));
     player.maxHp        = 100;
     player.attack       =  5;
     player.defense      =  5;
@@ -109,6 +110,7 @@ void playerRemoveActionFromQueues(uint8_t id) {
 }
 
 void enterDeath(void) {
+    statusEncounterEnd(); /* encounter buffs don't survive going down */
     player.hp = player.maxHp;
     state     = STATE_DEATH;
 }

@@ -1,8 +1,10 @@
 #pragma once
 #include <stdint.h>
 #include "pak.h"
+#include "effects.h"
 
 #define ACTION_MAX 64
+#define ACT_TRANSITIONS 3
 
 /* Context flags — conditions required for an action to appear in the draw pool */
 #define ACT_CTX_FIRST_TURN   (1<<0)
@@ -12,9 +14,11 @@
 #define ACT_CTX_PLAYER_HURT  (1<<4)
 #define ACT_CTX_REQUIRES_DARK (1<<5) /* only offered when ENCOUNTER_MOD_DARK is active */
 #define ACT_CTX_BLOCKED_HOLY  (1<<6) /* suppressed on ENCOUNTER_MOD_HOLY_GROUND */
+#define ACT_CTX_ROUTED        (1<<7) /* hunt only: group must be Terrified/Broken */
 
 /* Action flags — stored in ActionDef.actionFlags */
-#define ACT_FLAG_STARTER (1<<0)  /* in base pool without any unlock; data-controlled */
+#define ACT_FLAG_STARTER     (1<<0) /* in base pool without any unlock; data-controlled */
+#define ACT_FLAG_ALL_TARGETS (1<<1) /* combat: resolve against every living enemy */
 
 /* Encounter category bitmask — stored in ActionDef.encounterCat.
    An action may belong to multiple categories (bitwise OR them together).
@@ -75,42 +79,42 @@ typedef enum {
     ACTION_COUNT         = 37
 } ActionId;
 
-/* Bitmasks for ActionDef.effective_disp / backfire_disp.
-   Shift values (shift_effective / shift_backfire) use the Disposition enum
-   from encounter.h, or raw 0-5 / 0xFF when encounter.h is not included. */
-#define DISP_BIT_STRANGER   (1<<0)
-#define DISP_BIT_SUSPICIOUS (1<<1)
-#define DISP_BIT_FEARFUL    (1<<2)
-#define DISP_BIT_TRUSTING   (1<<3)
-#define DISP_BIT_HOSTILE    (1<<4)
-#define DISP_BIT_GREEDY     (1<<5)
-
-/* 68 bytes — pak-friendly, no pointers */
+/* 98 bytes — pak-friendly, no pointers. All resolution lives in the
+ * state-graph payload below; there is no damage/power number left. */
 typedef struct {
     uint8_t  id;
     uint8_t  contextFlags;
     uint8_t  baseWeight;
-    uint8_t  power;
     char     name[16];
     char     imgName[8];
     char     desc[32];
     uint8_t  domain;          /* DOMAIN_* constant; 0xFF = unaffiliated */
     uint8_t  encounterCat;    /* ACT_CAT_* bitmask; 0 = universal (always included) */
     uint8_t  actionFlags;     /* ACT_FLAG_* */
-    uint8_t  effective_disp;  /* DISP_BIT_* bitmask — dispositions where action lands well */
-    uint8_t  backfire_disp;   /* DISP_BIT_* bitmask — dispositions where action backfires */
-    uint8_t  shift_effective; /* Disposition to shift NPC to on effective hit; DISP_NONE = no shift */
-    uint8_t  shift_backfire;  /* Disposition to shift NPC to on backfire; DISP_NONE = no shift */
-    uint8_t  _pad;
+    /* State-graph engine */
+    Transition transitions[ACT_TRANSITIONS]; /* grouped by type, see tCounts */
+    Effect     onPlay;        /* fires every time the card is played */
+    Effect     fallback;      /* fires only on a structural whiff (wrong
+                                 from-state or target's stateMask blocks it) */
+    uint16_t   tCounts;       /* 3 bits per encounter-type index (0..4):
+                                 how many of transitions[] belong to that
+                                 type's graph, in canonical type order */
 } ActionDef;
 
-typedef char _check_actiondef_size[(sizeof(ActionDef) == 68) ? 1 : -1];
+typedef char _check_actiondef_size[(sizeof(ActionDef) == 98) ? 1 : -1];
+
+/* Per-type triplet count packed in tCounts — typeIdx is ENC_IDX_* (0..4) */
+#define ACT_TCOUNT(def, typeIdx) ((uint8_t)(((def)->tCounts >> ((typeIdx) * 3)) & 7u))
 
 extern ActionDef actionDefs[ACTION_MAX];
 extern int       actionDefCount;
 
 int              loadActions(PakData data);
 const ActionDef *getActionDef(uint8_t id);
+/* Triplets of `def` belonging to encounter type `typeIdx` (ENC_IDX_*).
+   Points *first at the group's start; returns its count (0 if none). */
+int              actionTransitionsFor(const ActionDef *def, int typeIdx,
+                                      const Transition **first);
 int              buildActionPool(uint8_t out[ACTION_MAX], uint8_t encounterCat);
 void             renderActionPanel(const char *title, const uint8_t *ids, int count, int sel);
 uint8_t          actionGetDomain(uint8_t id); /* returns DOMAIN_* or 0xFF if unaffiliated */

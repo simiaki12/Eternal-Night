@@ -9,7 +9,7 @@
 #include "world.h"
 
 #define SAVE_MAGIC   0x53415645u  /* "SAVE" */
-#define SAVE_VERSION 10  /* bumped: PlayerData gained worldFlags[16] */
+#define SAVE_VERSION 12  /* bumped: PlayerData gained caseStates[] */
 
 /* Layout (fixed, do not reorder):
  *   4  magic

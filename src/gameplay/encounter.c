@@ -7,6 +7,7 @@
 #include "actions.h"
 #include "domains.h"
 #include "log_messages.h"
+#include "enc_graph.h"
 #include "game.h"
 #include "player.h"
 #include "items.h"
@@ -18,6 +19,8 @@
 #include "investigations.h"
 #include "env_encounter.h"
 #include "hunt_encounter.h"
+#include "statuses.h"
+#include "cases.h"
 
 EncounterState encounter;
 
@@ -67,19 +70,29 @@ void socialEncounterStart(int se_idx) {
     memset(&tmp, 0, sizeof(tmp));
     strncpy(tmp.name, npc->name, sizeof(tmp.name) - 1);
     tmp.hp           = npc->base_standing;
-    tmp.defense      = npc->resistance;
-    tmp.attack       = npc->social_power;
     tmp.intelligence = npc->patience;
     tmp.lootTableId  = 0xFF;
     tmp.imgName[0]   = npc->imgName[0];
     tmp.imgName[1]   = npc->imgName[1];
 
+    /* Map the social profile onto the graph engine:
+       personality tags carve states out of the mask, social power is the
+       per-turn pushback on willingness, resistance scales progress. */
+    tmp.stateMask = (1u << SSTATE_STRANGER)   | (1u << SSTATE_SUSPICIOUS)
+                  | (1u << SSTATE_FEARFUL)    | (1u << SSTATE_TRUSTING)
+                  | (1u << SSTATE_HOSTILE)    | (1u << SSTATE_GREEDY);
+    if (npc->tags & NPC_TAG_FEARLESS) tmp.stateMask &= ~(1u << SSTATE_FEARFUL);
+    if (npc->tags & NPC_TAG_NOBLE)    tmp.stateMask &= ~(1u << SSTATE_GREEDY);
+    tmp.damage   = npc->social_power;
+    tmp.tenacity = npc->resistance >= 90 ? 10 : (uint8_t)(100 - npc->resistance);
+
     encounterStart(ENCOUNTER_SOCIAL, &tmp, 0);
-    encounter.socialNpcId            = (int)se->npc_id;
-    encounter.enemies[0].maxHp       = 100;
-    encounter.enemies[0].hp          = (int)npc->base_standing;
-    encounter.enemies[0].disposition = DISP_STRANGER;
-    player.seStates[se_idx].state    = SE_STATE_PARTIAL;
+    encounter.socialNpcId      = (int)se->npc_id;
+    encounter.enemies[0].hp    = (int)npc->base_standing; /* willingness */
+    encounter.enemyState[0]    = (se->flags & SE_FLAG_DISP_OVERRIDE)
+                               ? se->disp_start : SSTATE_STRANGER;
+    encounter.socialTurns      = 0;
+    player.seStates[se_idx].state = SE_STATE_PARTIAL;
 }
 
 
@@ -106,9 +119,16 @@ static int checkContext(const ActionDef *def) {
     if ((ctx & ACT_CTX_PLAYER_HURT)  && (int)player.hp >= getMaxHp() / 2)  return 0;
     if ((ctx & ACT_CTX_REQUIRES_DARK) && !(encounter.modifiers & ENCOUNTER_MOD_DARK))       return 0;
     if ((ctx & ACT_CTX_BLOCKED_HOLY)  && (encounter.modifiers & ENCOUNTER_MOD_HOLY_GROUND)) return 0;
+    if (ctx & ACT_CTX_ROUTED) {
+        if (encounter.encounterType != ENCOUNTER_HUNT) return 0;
+        uint8_t gs = encounter.enemyState[0];
+        if (gs != HSTATE_TERRIFIED && gs != HSTATE_BROKEN) return 0;
+    }
     if (ctx & ACT_CTX_EXECUTABLE) {
-        if (!(tgt->flags & ENEMY_EXECUTABLE))  return 0;
-        if (tgt->hp > tgt->maxHp / 3)          return 0;
+        /* finishers only open up on a staggered foe */
+        if (encounter.encounterType != ENCOUNTER_COMBAT)                     return 0;
+        if (!(tgt->flags & ENEMY_EXECUTABLE))                                return 0;
+        if (encounter.enemyState[encounter.targetIndex] != CSTATE_STAGGERED) return 0;
     }
     return 1;
 }
@@ -161,6 +181,9 @@ static int computeWeight(const ActionDef *def) {
     if (player.focusedDomain != DOMAIN_NONE && def->domain == player.focusedDomain)
         w += 20 + (int)player.domains[player.focusedDomain].level * 2;
 
+    /* Status effects (Rage etc.) pull toward their domain */
+    w += statusWeightBonus(def->domain);
+
     /* Player-marked preferences */
     if (isActionFavoured(def->id))   w += 60;
     if (isActionSuppressed(def->id)) w  = 1;
@@ -174,7 +197,7 @@ void generateActions(void) {
 
     /* Social encounters always have Demand as the first card */
     if (encounter.encounterType == ENCOUNTER_SOCIAL)
-        encounter.actions[encounter.actionCount++] = (Action){ ACTION_DEMAND, 0 };
+        encounter.actions[encounter.actionCount++] = (Action){ ACTION_DEMAND };
 
     uint8_t pool[ACTION_MAX];
     int poolSize = buildActionPool(pool, (uint8_t)encounter.encounterType);
@@ -204,7 +227,7 @@ void generateActions(void) {
             acc += candidates[i].weight;
             if (r < acc) {
                 const ActionDef *chosen = getActionDef(candidates[i].id);
-                encounter.actions[encounter.actionCount++] = (Action){ (ActionId)chosen->id, chosen->power };
+                encounter.actions[encounter.actionCount++] = (Action){ (ActionId)chosen->id };
                 candidates[i] = candidates[--candCount];
                 break;
             }
@@ -228,10 +251,8 @@ static void loadEnemyImg(int slot, const char *imgName) {
 static void fillEnemySlot(int slot, const EnemyDef *def) {
     Enemy *e = &encounter.enemies[slot];
     memcpy(e->name, def->name, 16);
-    e->hp           = def->hp;
-    e->maxHp        = def->hp;
-    e->attack       = def->attack;
-    e->defense      = def->defense;
+    e->hp           = 0;
+    e->alive        = 1;
     e->size         = def->size;
     e->speed        = def->speed;
     e->intelligence = def->intelligence;
@@ -240,6 +261,13 @@ static void fillEnemySlot(int slot, const EnemyDef *def) {
     e->xpReward     = def->xpReward;
     e->goldDrop     = def->goldDrop;
     e->lootTableId  = def->lootTableId;
+    e->stateMask    = def->stateMask;
+    e->damage       = def->damage;
+    e->tenacity     = def->tenacity;
+    e->behaviors[0] = def->behaviors[0];
+    e->behaviors[1] = def->behaviors[1];
+    encounter.enemyState[slot] = (uint8_t)encGraphStart(ENC_IDX_COMBAT);
+    encounter.potCount[slot]   = 0;
     int idx = (int)(def - enemyDefs);
     encounter.enemyDefIds[slot]    = (idx >= 0 && idx < enemyDefCount) ? (uint8_t)idx : 0xFF;
     encounter.fromWorldEnemy[slot] = 0;
@@ -257,7 +285,7 @@ static void resetCombatState(const EnemyDef *def) {
     for (int i = 0; i < ENCOUNTER_MAX_ENEMIES; i++) {
         if (encounter.enemyImgs[i].data) { free(encounter.enemyImgs[i].data); encounter.enemyImgs[i].data = NULL; }
         encounter.enemies[i].hp           = 0;
-        encounter.enemies[i].maxHp        = 0;
+        encounter.enemies[i].alive        = 0;
         encounter.fromWorldEnemy[i]       = 0;
         encounter.worldEnemyX[i]          = 0;
         encounter.worldEnemyY[i]          = 0;
@@ -267,7 +295,6 @@ static void resetCombatState(const EnemyDef *def) {
     encounter.enemyCount      = 1;
     encounter.targetIndex     = 0;
     encounter.isFirstTurn     = 1;
-    encounter.skipEnemyAttack = 0;
     encounter.phase           = ENCOUNTER_PHASE_ACTIVE;
     encounter.gainedGold      = 0;
     encounter.droppedCount    = 0;
@@ -277,6 +304,9 @@ static void resetCombatState(const EnemyDef *def) {
     encounter.socialNpcId          = -1;
     encounter.socialOutcome        = SOCIAL_OUTCOME_NONE;
     encounter.socialEndWillingness = 0;
+    encounter.progressNextMult     = 10;
+    encounter.pendingProgress      = 0;
+    encounter.extraActionPending   = 0;
     memset(encounter.gainedDomainXp, 0, sizeof(encounter.gainedDomainXp));
 }
 
@@ -347,288 +377,188 @@ static void killEnemy(int slot) {
 static void advanceTarget(void) {
     for (int i = 1; i <= encounter.enemyCount; i++) {
         int next = (encounter.targetIndex + i) % encounter.enemyCount;
-        if (encounter.enemies[next].hp > 0) { encounter.targetIndex = next; return; }
+        if (encounter.enemies[next].alive) { encounter.targetIndex = next; return; }
     }
 }
 
-/* TODO: combat.c — performPlayerAction, killEnemy, advanceTarget are self-contained
- * combat math with no render calls; good candidate for extraction once social
- * encounter resolution grows and starts crowding this file. */
-static void performPlayerAction(void) {
-    /* Investigation encounters are handled entirely in investigations.c */
-    if (encounter.encounterType == ENCOUNTER_INVESTIGATION) {
-        Action *ia = &encounter.actions[encounter.selectedIndex];
-        domainAwardXp(getActionDef(ia->type) ? getActionDef(ia->type)->domain : 0, 1);
-        investigationDoAction((uint8_t)ia->type);
-        if (encounter.phase == ENCOUNTER_PHASE_ACTIVE)
-            generateActions();
-        return;
+/* -----------------------------------------------------------------------
+ * State-graph combat
+ * ----------------------------------------------------------------------- */
+
+/* Bank `add` progress on edge from->to of enemy `slot`; returns the pot. */
+static int potAdd(int slot, uint8_t from, uint8_t to, int add) {
+    uint8_t key = (uint8_t)((from << 4) | to);
+    for (int i = 0; i < encounter.potCount[slot]; i++) {
+        if (encounter.potKey[slot][i] == key) {
+            int v = encounter.potVal[slot][i] + add;
+            if (v > 200) v = 200;
+            encounter.potVal[slot][i] = (uint8_t)v;
+            return v;
+        }
+    }
+    if (encounter.potCount[slot] < COMBAT_POT_MAX) {
+        int idx = encounter.potCount[slot]++;
+        encounter.potKey[slot][idx] = key;
+        encounter.potVal[slot][idx] = (uint8_t)(add > 200 ? 200 : add);
+        return encounter.potVal[slot][idx];
+    }
+    return add; /* table full — roll on raw progress, don't bank */
+}
+
+/* Leaving a state wipes every pot banked from it (Simon's reset rule). */
+static void potClearFrom(int slot, uint8_t from) {
+    for (int i = 0; i < encounter.potCount[slot]; ) {
+        if ((encounter.potKey[slot][i] >> 4) == from) {
+            encounter.potCount[slot]--;
+            encounter.potKey[slot][i] = encounter.potKey[slot][encounter.potCount[slot]];
+            encounter.potVal[slot][i] = encounter.potVal[slot][encounter.potCount[slot]];
+        } else {
+            i++;
+        }
+    }
+}
+
+/* Highest pot banked from the enemy's current state — the UI progress hint. */
+static int potMaxFrom(int slot, uint8_t from) {
+    int best = 0;
+    for (int i = 0; i < encounter.potCount[slot]; i++)
+        if ((encounter.potKey[slot][i] >> 4) == from &&
+            encounter.potVal[slot][i] > best)
+            best = encounter.potVal[slot][i];
+    return best > 100 ? 100 : best;
+}
+
+/* Shared graph resolution — combat, social and hunt all drive a target
+   around their type's graph with identical rules: find the first live
+   triplet (matches current state, allowed by stateMask), bank progress
+   into that edge's pot, roll d100 under the pot. Whiffs are structural
+   (wrong moment or blocked state) and spend the turn.
+   `fx` applies effects in the caller's scope (meter/kill semantics). */
+GraphResult encGraphResolve(int slot, int typeIdx, const ActionDef *adef,
+                            uint8_t stateMask, uint8_t tenacity,
+                            void (*fx)(const Effect *)) {
+    char lm[28];
+    const Transition *tr = NULL;
+    int n = adef ? actionTransitionsFor(adef, typeIdx, &tr) : 0;
+    uint8_t cur = encounter.enemyState[slot];
+
+    const Transition *live = NULL;
+    int base = 0;
+    for (int i = 0; i < n; i++) {
+        if (cur >= TRANSITION_SOURCES)          continue;
+        int p = tr[i].progress[cur];
+        if (p == 0)                             continue; /* no route from here */
+        if (!(stateMask & (1u << tr[i].to)))    continue; /* target cannot go there */
+        live = &tr[i];
+        base = p;
+        break;
     }
 
-    /* Environmental encounters are handled entirely in env_encounter.c */
-    if (encounter.encounterType == ENCOUNTER_ENVIRONMENTAL) {
-        Action *ea = &encounter.actions[encounter.selectedIndex];
-        envEncounterDoAction((uint8_t)ea->type);
-        return;
+    if (!live) {
+        if (n > 0) {
+            snprintf(lm, 28, "%.14s: no opening.", adef->name);
+            logPush(lm);
+            if (fx) fx(&adef->fallback);
+            return GRAPH_WHIFF;
+        }
+        if (adef) { snprintf(lm, 28, "%.26s.", adef->name); logPush(lm); }
+        return GRAPH_NO_TRIPLETS;
     }
 
-    /* Hunt encounters are handled entirely in hunt_encounter.c */
-    if (encounter.encounterType == ENCOUNTER_HUNT) {
-        Action *ha = &encounter.actions[encounter.selectedIndex];
-        huntEncounterDoAction((uint8_t)ha->type, ha->power);
-        return;
+    int add = base + statusProgressBonus(adef->domain)
+            + encounter.pendingProgress;
+    encounter.pendingProgress = 0;
+    add = add * encounter.progressNextMult / 10;
+    encounter.progressNextMult = 10;
+    add = add * (tenacity ? tenacity : 100) / 100;
+    if (add < 1) add = 1;
+
+    int pot = potAdd(slot, cur, live->to, add);
+    if (rand() % 100 >= pot) {
+        snprintf(lm, 28, "%.10s: builds %d%%", adef->name, pot > 100 ? 100 : pot);
+        logPush(lm);
+        return GRAPH_BUILD;
     }
 
-    /* A log effect from the previous turn may have killed the current target */
-    if (encounter.enemies[encounter.targetIndex].maxHp == 0)
+    potClearFrom(slot, cur);
+    encounter.enemyState[slot] = live->to;
+    const StateDef *ns = encGraphState(typeIdx, live->to);
+    if (typeIdx == ENC_IDX_COMBAT)
+        snprintf(lm, 28, "%.12s: %.12s!", encounter.enemies[slot].name,
+                 ns ? ns->name : "?");
+    else
+        snprintf(lm, 28, "Now: %.20s.", ns ? ns->name : "?");
+    logPush(lm);
+    if (ns && fx) fx(&ns->onEnter);
+    return GRAPH_FIRED;
+}
+
+/* Effects whose meaning belongs to the encounter engine; everything else
+   falls through to the generic executor in statuses.c. */
+void encounterApplyEffect(const Effect *e) {
+    if (!e || e->type == EFX_NONE || e->chance == 0) return;
+    switch (e->type) {
+        case EFX_PROGRESS:
+            if (rand() % 100 < e->chance) encounter.pendingProgress += e->value;
+            return;
+        case EFX_PROGRESS_NEXT:
+            if (rand() % 100 < e->chance)
+                encounter.progressNextMult = e->value ? e->value : 10;
+            return;
+        case EFX_EXTRA_ACTION:
+            if (rand() % 100 < e->chance) {
+                encounter.extraActionPending = 1;
+                encounterLog("You see another opening!");
+            }
+            return;
+        default:
+            applyEffect(e);
+    }
+}
+
+static void applyCombatEffect(const Effect *e) { encounterApplyEffect(e); }
+
+static void performCombatAction(void) {
+    /* A log effect may have beaten the current target since last turn */
+    if (!encounter.enemies[encounter.targetIndex].alive)
         advanceTarget();
 
-    Action *a   = &encounter.actions[encounter.selectedIndex];
-    Enemy  *tgt = &encounter.enemies[encounter.targetIndex];
-    encounter.skipEnemyAttack = 0;
-    int     ehpBefore  = tgt->hp;
-    int     phpBefore  = (int)player.hp;
-    uint8_t dispBefore = tgt->disposition;
-    int     socialTier = 0;
+    Action *a = &encounter.actions[encounter.selectedIndex];
+    const ActionDef *adef = getActionDef((uint8_t)a->type);
+    int    slot = encounter.targetIndex;
+    int    phpBefore = (int)player.hp;
+    char   lm[28];
 
-    switch (a->type) {
-        case ACTION_ATTACK:
-            tgt->hp -= getAttack();
-            break;
+    if (adef) applyCombatEffect(&adef->onPlay);
 
-        case ACTION_STRONG:
-            tgt->hp -= getAttack() + a->power;
-            break;
-
-        case ACTION_HEAL: {
-            int newHp = (int)player.hp + a->power;
-            int cap   = getMaxHp();
-            player.hp = (uint16_t)(newHp > cap ? cap : newHp);
-            break;
-        }
-
-        case ACTION_DEFEND:
-            break;
-
-        case ACTION_DISARM:
-            tgt->flags  &= ~ENEMY_HAS_WEAPON;
-            tgt->attack  = tgt->attack > 1 ? tgt->attack / 2 : 1;
-            break;
-
-        case ACTION_BACKSTAB:
-            tgt->hp -= getAttack() + a->power;
-            encounter.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_STUN:
-            encounter.skipEnemyAttack = 1;
-            tgt->flags &= ~ENEMY_STUNNABLE;
-            break;
-
-        case ACTION_CALM:
-            tgt->attack       = tgt->attack > 1 ? tgt->attack / 2 : 1;
-            tgt->intelligence = 0;
-            break;
-
-        case ACTION_HIDE:
-            encounter.skipEnemyAttack = (player.agility > tgt->perception);
-            break;
-
-        case ACTION_EXECUTE:
-            tgt->hp -= getAttack() * 2 + a->power;
-            break;
-
-        /* ── Domain: Combat ─────────────────────────────────────── */
-        case ACTION_INTIMIDATE:
-            /* Unnerve the foe; small preemptive hit, incoming damage halved */
-            tgt->hp -= a->power;
-            break;
-
-        case ACTION_COUNTER:
-            /* Break through their guard, deal bonus damage */
-            tgt->defense = 0;
-            tgt->hp -= a->power;
-            break;
-
-        case ACTION_WAR_CRY:
-            /* Fierce cry staggers the foe; counter-strike and skip retaliation */
-            tgt->hp -= getAttack() + a->power;
-            encounter.skipEnemyAttack = 1;
-            break;
-
-        /* ── Domain: Trickery ───────────────────────────────────── */
-        case ACTION_THREATEN:
-            /* Strip focus, skip counter */
-            tgt->perception = 0;
-            encounter.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_AMBUSH:
-            /* Strike from cover; bonus damage and skip counter */
-            tgt->hp -= getAttack() + a->power;
-            encounter.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_VANISH:
-            /* Disappear; strike and skip enemy retaliation */
-            tgt->hp -= getAttack() + a->power;
-            encounter.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_POISON_BLADE: {
-            /* Coat the blade; skip all counters, weaken every enemy */
-            encounter.skipEnemyAttack = 1;
-            for (int i = 0; i < encounter.enemyCount; i++)
-                if (encounter.enemies[i].perception > 1) encounter.enemies[i].perception--;
-            break;
-        }
-
-        case ACTION_SET_TRAP:
-            /* Lay a trap; exploit positioning for bonus damage */
-            tgt->hp -= getAttack() + a->power;
-            break;
-
-        /* ── Domain: Blood ──────────────────────────────────────── */
-        case ACTION_DECEIVE: {
-            /* Spin a web of lies; drain resolve, restore HP */
-            int dmg = getAttack() + a->power;
-            tgt->hp -= dmg;
-            int newHp = (int)player.hp + a->power;
-            int cap   = getMaxHp();
-            player.hp = (uint16_t)(newHp > cap ? cap : newHp);
-            tgt->flags &= ~ENEMY_STUNNABLE;
-            encounter.skipEnemyAttack = 1;
-            break;
-        }
-
-        case ACTION_PICKPOCKET: {
-            /* Hit every distracted enemy while lifting valuables */
-            int totalDealt = 0;
-            for (int i = 0; i < encounter.enemyCount; i++) {
-                if (encounter.enemies[i].hp > 0 && encounter.enemies[i].maxHp > 0) {
-                    int d = a->power < encounter.enemies[i].hp ? a->power : encounter.enemies[i].hp;
-                    encounter.enemies[i].hp -= a->power;
-                    totalDealt += d;
-                }
-            }
-            char aoeMsg[28];
-            snprintf(aoeMsg, sizeof(aoeMsg), "Pickpocket: %d dmg.", totalDealt);
-            logPush(aoeMsg);
-            ehpBefore = tgt->hp;
-            encounter.skipEnemyAttack = 1;
-            break;
-        }
-
-        /* ── Domain: Charm ──────────────────────────────────────── */
-        case ACTION_INSPECT:
-            /* Read every enemy; halve all attacks, skip counters */
-            encounter.skipEnemyAttack = 1;
-            for (int i = 0; i < encounter.enemyCount; i++)
-                encounter.enemies[i].attack = encounter.enemies[i].attack > 1
-                    ? encounter.enemies[i].attack / 2 : 1;
-            break;
-
-        case ACTION_TRACK:
-            /* Follow the weakness; power strike, halve their attack */
-            tgt->hp -= a->power;
-            tgt->attack = tgt->attack > 1 ? tgt->attack / 2 : 1;
-            encounter.skipEnemyAttack = 1;
-            break;
-
-        case ACTION_BLOOD_DRAIN:
-            /* Open with a fierce blow and strip all defense */
-            tgt->hp -= getAttack() + a->power;
-            tgt->defense = 0;
-            break;
-
-        case ACTION_DEMAND:
-            /* Force the issue: skip any counter, end the exchange immediately */
-            encounter.skipEnemyAttack  = 1;
-            encounter.phase            = ENCOUNTER_PHASE_VICTORY;
-            encounter.socialOutcome         = SOCIAL_OUTCOME_DEMAND;
-            encounter.socialEndWillingness  = encounter.enemies[0].hp;
-            break;
-
-        default:
-            break;
-    }
-
-    /* Social: category actions affect willingness based on disposition tier */
-    if (encounter.encounterType == ENCOUNTER_SOCIAL && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
-        const ActionDef *sadef = getActionDef((uint8_t)a->type);
-        if (sadef && (sadef->encounterCat & ACT_CAT_SOCIAL) && a->type != ACTION_DEMAND) {
-            /* Determine base tier from current disposition */
-            uint8_t dispBit = (uint8_t)(1u << tgt->disposition);
-            if      (sadef->backfire_disp  & dispBit) socialTier = -1;
-            else if (sadef->effective_disp & dispBit) socialTier =  1;
-            else                                      socialTier =  0;
-
-            /* Apply personality overrides */
-            if (encounter.socialNpcId >= 0 && encounter.socialNpcId < npcDefCount) {
-                const NpcDef *npcd = &npcDefs[encounter.socialNpcId];
-                if ((npcd->tags & NPC_TAG_FEARLESS) && (sadef->effective_disp & DISP_BIT_FEARFUL))
-                    { if (socialTier > 0) socialTier = 0; }
-                if ((npcd->tags & NPC_TAG_NOBLE) && (sadef->effective_disp & DISP_BIT_GREEDY))
-                    { if (socialTier >= 0) socialTier = -1; }
-                if ((npcd->tags & NPC_TAG_CRIMINAL) && (sadef->effective_disp & DISP_BIT_SUSPICIOUS))
-                    { if (socialTier == 0) socialTier = 1; }
-                if ((npcd->tags & NPC_TAG_FEARFUL) && (sadef->effective_disp & DISP_BIT_FEARFUL))
-                    { if (socialTier == 0) socialTier = 1; }
-            }
-
-            /* Scale willingness delta by tier */
-            int base  = 10 + (int)sadef->power;
-            int delta = (socialTier > 0) ? base * 3 / 2
-                      : (socialTier < 0) ? -base
-                      :                    base * 7 / 10;
-
-            tgt->hp += delta;
-            if (tgt->hp > tgt->maxHp) tgt->hp = tgt->maxHp;
-            if (tgt->hp < 0)          tgt->hp = 0;
-
-            /* Shift disposition if specified */
-            if (socialTier > 0 && sadef->shift_effective != DISP_NONE)
-                tgt->disposition = sadef->shift_effective;
-            else if (socialTier < 0 && sadef->shift_backfire != DISP_NONE)
-                tgt->disposition = sadef->shift_backfire;
-        }
-    }
-
-    /* Log action result */
+    /* Drive the target around the combat graph; a whiff spends the turn and
+       the pressure phase below still lands. ALL_TARGETS actions sweep every
+       living enemy, each with its own state and pots — the progress buff is
+       restored per enemy so one swing lands equally on the whole line. */
     {
-        const ActionDef *adef = getActionDef((uint8_t)a->type);
-        const char *nm = adef ? adef->name : "?";
-        char lm[28];
-        if (encounter.encounterType == ENCOUNTER_SOCIAL) {
-            int wDelta = tgt->hp - ehpBefore;
-            if      (socialTier > 0) snprintf(lm, 28, "%.12s: lands (+%d)", nm, wDelta > 0 ? wDelta : 0);
-            else if (socialTier < 0) snprintf(lm, 28, "%.9s: backfires (-%d)", nm, wDelta < 0 ? -wDelta : 0);
-            else if (wDelta > 0)     snprintf(lm, 28, "%.14s: +%d", nm, wDelta);
-            else                     snprintf(lm, 28, "%.26s.", nm);
-        } else {
-            int dealt  = ehpBefore - tgt->hp;
-            int healed = (int)player.hp - phpBefore;
-            if      (dealt > 0 && healed > 0) snprintf(lm, 28, "%.10s: %d dmg+%d HP.", nm, dealt, healed);
-            else if (dealt > 0)               snprintf(lm, 28, "%.12s: %d dmg.", nm, dealt);
-            else if (healed > 0)              snprintf(lm, 28, "%.14s: +%d HP.", nm, healed);
-            else if (healed < 0)              snprintf(lm, 28, "%.8s: -%d HP.", nm, -healed);
-            else                              snprintf(lm, 28, "%.26s.", nm);
+        int aoe   = adef && (adef->actionFlags & ACT_FLAG_ALL_TARGETS);
+        int mult  = encounter.progressNextMult;
+        int bonus = encounter.pendingProgress;
+        for (int i = 0; i < encounter.enemyCount; i++) {
+            if (aoe ? !encounter.enemies[i].alive : i != slot) continue;
+            if (aoe) {
+                encounter.progressNextMult = (uint8_t)mult;
+                encounter.pendingProgress  = (uint8_t)bonus;
+            }
+            Enemy *t = &encounter.enemies[i];
+            if (encGraphResolve(i, ENC_IDX_COMBAT, adef, t->stateMask,
+                                t->tenacity, applyCombatEffect) != GRAPH_FIRED)
+                continue;
+            const StateDef *ns = encGraphState(ENC_IDX_COMBAT,
+                                               encounter.enemyState[i]);
+            if (ns && (ns->flags & GSTATE_TERMINAL)) {
+                killEnemy(i);
+                t->alive = 0;
+            }
         }
-        logPush(lm);
     }
 
-    /* Log disposition shift so the player can read the room */
-    if (encounter.encounterType == ENCOUNTER_SOCIAL && tgt->disposition != dispBefore) {
-        static const char *dnames[] = {
-            "Stranger","Suspicious","Fearful","Trusting","Hostile","Greedy"
-        };
-        char sm[28];
-        uint8_t d = tgt->disposition;
-        snprintf(sm, 28, "Now: %.19s.", d < DISP_COUNT ? dnames[d] : "?");
-        logPush(sm);
-    }
-
-    fireLogMessages(LOGTRIG_ACTION, (uint8_t)a->type, encounter.targetIndex);
+    fireLogMessages(LOGTRIG_ACTION, (uint8_t)a->type, slot);
 
     /* Domain XP for the action used */
     {
@@ -640,81 +570,41 @@ static void performPlayerAction(void) {
         }
     }
 
-    /* Social: win threshold — NPC becomes willing */
-    if (encounter.encounterType == ENCOUNTER_SOCIAL && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
-        if (encounter.enemies[0].hp >= 80) {
-            logPush("They come around.");
-            encounter.phase          = ENCOUNTER_PHASE_VICTORY;
-            encounter.skipEnemyAttack = 1;
-            encounter.socialOutcome         = SOCIAL_OUTCOME_WIN;
-            encounter.socialEndWillingness  = encounter.enemies[0].hp;
-        }
-    }
-
-    /* Non-social, non-combat encounters resolve on any action */
-    if (encounter.encounterType != ENCOUNTER_COMBAT &&
-        encounter.encounterType != ENCOUNTER_SOCIAL &&
-        encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
-        encounter.phase = ENCOUNTER_PHASE_VICTORY;
-        encounter.skipEnemyAttack = 1;
-    }
-
-    /* Kill any enemies that reached 0 HP; check for full victory (combat only) */
-    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE && encounter.encounterType != ENCOUNTER_SOCIAL) {
+    /* Victory: every enemy driven to Broken */
+    {
         int allDead = 1;
-        for (int i = 0; i < encounter.enemyCount; i++) {
-            if (encounter.enemies[i].hp <= 0 && encounter.enemies[i].maxHp > 0) {
-                encounter.enemies[i].hp = 0;
-                killEnemy(i);
-                encounter.enemies[i].maxHp = 0; /* marks slot as processed */
-            }
-            if (encounter.enemies[i].maxHp > 0) allDead = 0;
-        }
-        if (allDead) {
-            encounter.phase = ENCOUNTER_PHASE_VICTORY;
-            encounter.skipEnemyAttack = 1;
-        } else if (encounter.enemies[encounter.targetIndex].maxHp == 0) {
+        for (int i = 0; i < encounter.enemyCount; i++)
+            if (encounter.enemies[i].alive) { allDead = 0; break; }
+        if (allDead) encounter.phase = ENCOUNTER_PHASE_VICTORY;
+        else if (!encounter.enemies[encounter.targetIndex].alive)
             advanceTarget();
-        }
     }
 
-    if (player.hp == 0) {
-        logPush("You fall unconscious.");
-        enterDeath();
-        return;
-    }
-
-    /* Each surviving enemy counter-attacks (or pushes back in social) */
-    if (!encounter.skipEnemyAttack && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
-        for (int i = 0; i < encounter.enemyCount; i++) {
-            if (encounter.enemies[i].maxHp == 0) continue;
-            if (encounter.encounterType == ENCOUNTER_SOCIAL) {
-                int pushback = encounter.enemies[i].attack > 0 ? encounter.enemies[i].attack : 5;
-                encounter.enemies[i].hp -= pushback;
-                if (encounter.enemies[i].hp < 0) encounter.enemies[i].hp = 0;
-                char cm[28];
-                snprintf(cm, 28, "%.10s: pushes back.", encounter.enemies[i].name);
-                logPush(cm);
-            } else {
-                int dmg = encounter.enemies[i].attack;
-                if (a->type == ACTION_DEFEND || a->type == ACTION_INTIMIDATE) dmg = dmg / 2 + 1;
-                player.hp = (dmg >= (int)player.hp) ? 0 : (uint16_t)(player.hp - dmg);
-                char cm[28];
-                snprintf(cm, 28, "%.10s: %d dmg.", encounter.enemies[i].name, dmg);
-                logPush(cm);
-                if (player.hp == 0) break;
+    /* Pressure phase: every alive enemy's state flows against Azrael,
+       plus its damage stat; state-keyed behaviors fire here too. */
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+        if (encounter.extraActionPending) {
+            encounter.extraActionPending = 0; /* free action — no pressure */
+        } else {
+            int threat = 0;
+            for (int i = 0; i < encounter.enemyCount; i++) {
+                Enemy *e = &encounter.enemies[i];
+                if (!e->alive) continue;
+                const StateDef *st = encGraphState(ENC_IDX_COMBAT,
+                                                   encounter.enemyState[i]);
+                threat += (st ? st->pressure : 0) + e->damage;
+                for (int b = 0; b < 2; b++)
+                    if (e->behaviors[b].fx.type != EFX_NONE &&
+                        e->behaviors[b].stateId == encounter.enemyState[i])
+                        applyCombatEffect(&e->behaviors[b].fx);
             }
-        }
-    }
-
-    /* Social: loss threshold — NPC ends the conversation */
-    if (encounter.encounterType == ENCOUNTER_SOCIAL && encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
-        if (encounter.enemies[0].hp <= 0) {
-            encounter.enemies[0].hp  = 0;
-            logPush("They end the conversation.");
-            encounter.phase         = ENCOUNTER_PHASE_VICTORY;
-            encounter.socialOutcome        = SOCIAL_OUTCOME_LOSS;
-            encounter.socialEndWillingness = 0;
+            threat += statusThreatMod();
+            if (threat > 0) {
+                player.hp = (threat >= (int)player.hp)
+                          ? 0 : (uint16_t)(player.hp - threat);
+                snprintf(lm, 28, "Pressure: -%d HP.", threat);
+                logPush(lm);
+            }
         }
     }
 
@@ -733,8 +623,157 @@ static void performPlayerAction(void) {
         fireLogMessages(LOGTRIG_TURN_END, 0xFF, -1);
     }
 
+    statusTickTurn();
+    if (player.hp == 0) {
+        logPush("You fall unconscious.");
+        enterDeath();
+        return;
+    }
+
     encounter.isFirstTurn = 0;
-    generateActions();
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE)
+        generateActions();
+}
+
+/* -----------------------------------------------------------------------
+ * State-graph social — the NPC walks the disposition graph; willingness
+ * (enemies[0].hp, 0-100) flows from the occupied state's pressure minus
+ * the NPC's pushback. Only EFX_METER moves the bar directly.
+ * ----------------------------------------------------------------------- */
+
+static void socialEnd(SocialOutcome outcome, const char *msg) {
+    encounter.phase                = ENCOUNTER_PHASE_VICTORY;
+    encounter.socialOutcome        = outcome;
+    encounter.socialEndWillingness = encounter.enemies[0].hp;
+    if (msg) logPush(msg);
+}
+
+static void applySocialEffect(const Effect *e) {
+    if (!e || e->type == EFX_NONE || e->chance == 0) return;
+    if (e->type == EFX_METER) {
+        if (rand() % 100 < e->chance) {
+            int w = encounter.enemies[0].hp + (int8_t)e->value;
+            encounter.enemies[0].hp = w < 0 ? 0 : w > 100 ? 100 : w;
+        }
+        return;
+    }
+    encounterApplyEffect(e);
+}
+
+static void performSocialAction(void) {
+    Action *a = &encounter.actions[encounter.selectedIndex];
+    const ActionDef *adef = getActionDef((uint8_t)a->type);
+    Enemy *npc = &encounter.enemies[0];
+    char   lm[28];
+
+    /* Demand force-ends the exchange at the current willingness */
+    if (a->type == ACTION_DEMAND) {
+        socialEnd(SOCIAL_OUTCOME_DEMAND, "You force the issue.");
+        return;
+    }
+
+    if (adef) applySocialEffect(&adef->onPlay);
+
+    /* Steer the disposition graph — same resolution as combat */
+    encGraphResolve(0, ENC_IDX_SOCIAL, adef, npc->stateMask,
+                    npc->tenacity, applySocialEffect);
+
+    fireLogMessages(LOGTRIG_ACTION, (uint8_t)a->type, 0);
+
+    /* Domain XP */
+    {
+        uint8_t dom = actionGetDomain((uint8_t)a->type);
+        if (dom != 0xFF) {
+            domainAwardXp(dom, 1);
+            if (encounter.gainedDomainXp[dom] < 255)
+                encounter.gainedDomainXp[dom]++;
+        }
+    }
+
+    /* Willingness flow: state pressure vs. NPC pushback */
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+        if (encounter.extraActionPending) {
+            encounter.extraActionPending = 0;
+        } else {
+            const StateDef *st = encGraphState(ENC_IDX_SOCIAL,
+                                               encounter.enemyState[0]);
+            int flow = (st ? st->pressure : 0) - npc->damage;
+            if (flow != 0) {
+                int w = npc->hp + flow;
+                npc->hp = w < 0 ? 0 : w > 100 ? 100 : w;
+                snprintf(lm, 28, flow > 0 ? "Warming (+%d)." : "Pushback (%d).", flow);
+                logPush(lm);
+            }
+            encounter.socialTurns++;
+        }
+    }
+
+    /* Resolution thresholds + patience */
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE) {
+        if (npc->hp >= 100) {
+            socialEnd(SOCIAL_OUTCOME_WIN, "They come around.");
+        } else if (npc->hp <= 0) {
+            socialEnd(SOCIAL_OUTCOME_LOSS, "They end the conversation.");
+        } else if (npc->intelligence > 0 &&
+                   encounter.socialTurns >= (int)npc->intelligence) {
+            socialEnd(SOCIAL_OUTCOME_LOSS, "Their patience runs out.");
+        }
+    }
+
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE)
+        fireLogMessages(LOGTRIG_TURN_END, 0xFF, -1);
+
+    statusTickTurn();
+    if (player.hp == 0) { logPush("You fall unconscious."); enterDeath(); return; }
+
+    encounter.isFirstTurn = 0;
+    if (encounter.phase == ENCOUNTER_PHASE_ACTIVE)
+        generateActions();
+}
+
+/* TODO: combat.c — performCombatAction, killEnemy, advanceTarget are
+ * self-contained combat math with no render calls; good candidate for
+ * extraction once the social port grows and starts crowding this file. */
+static void performPlayerAction(void) {
+    /* Combat runs on the state-graph engine */
+    if (encounter.encounterType == ENCOUNTER_COMBAT) {
+        performCombatAction();
+        return;
+    }
+    /* Investigation encounters are handled entirely in investigations.c */
+    if (encounter.encounterType == ENCOUNTER_INVESTIGATION) {
+        Action *ia = &encounter.actions[encounter.selectedIndex];
+        const ActionDef *iadef = getActionDef(ia->type);
+        domainAwardXp(iadef ? iadef->domain : 0, 1);
+        if (iadef) applyEffect(&iadef->onPlay);
+        investigationDoAction((uint8_t)ia->type);
+        statusTickTurn();
+        if (player.hp == 0) { logPush("You fall unconscious."); enterDeath(); return; }
+        if (encounter.phase == ENCOUNTER_PHASE_ACTIVE)
+            generateActions();
+        return;
+    }
+
+    /* Environmental encounters are handled entirely in env_encounter.c */
+    if (encounter.encounterType == ENCOUNTER_ENVIRONMENTAL) {
+        Action *ea = &encounter.actions[encounter.selectedIndex];
+        const ActionDef *eadef = getActionDef(ea->type);
+        if (eadef) applyEffect(&eadef->onPlay);
+        envEncounterDoAction((uint8_t)ea->type);
+        statusTickTurn();
+        if (player.hp == 0) { logPush("You fall unconscious."); enterDeath(); }
+        return;
+    }
+
+    /* Hunt runs the shared graph on the group's morale (hunt_encounter.c),
+       which owns its own onPlay/status handling. */
+    if (encounter.encounterType == ENCOUNTER_HUNT) {
+        huntEncounterDoAction((uint8_t)encounter.actions[encounter.selectedIndex].type);
+        return;
+    }
+
+    /* Social runs on the state-graph engine */
+    performSocialAction();
 }
 
 void handleEncounterInput(int key) {
@@ -744,6 +783,7 @@ void handleEncounterInput(int key) {
             for (int i = 0; i < encounter.enemyCount; i++)
                 if (encounter.fromWorldEnemy[i])
                     worldEnemyRemoveAt(encounter.worldEnemyX[i], encounter.worldEnemyY[i]);
+            statusEncounterEnd(); /* sweep DUR_TURNS buffs */
             state = STATE_WORLD;
         }
         return;
@@ -822,17 +862,6 @@ static const char *willingnessTag(int w) {
     return "Openly opposes";
 }
 
-static const char *dispositionLabel(uint8_t d) {
-    switch (d) {
-        case DISP_STRANGER:   return "Stranger";
-        case DISP_SUSPICIOUS: return "Suspicious";
-        case DISP_FEARFUL:    return "Fearful";
-        case DISP_TRUSTING:   return "Trusting";
-        case DISP_HOSTILE:    return "Hostile";
-        case DISP_GREEDY:     return "Greedy";
-        default:              return "Unknown";
-    }
-}
 
 void renderEncounter(void) {
     /* ── Layout ─────────────────────────────────────────────────── */
@@ -962,6 +991,8 @@ void renderEncounter(void) {
                 snprintf(buf, sizeof(buf), "Eliminated: %d / %d",
                     killed, encounter.huntEnemiesTotal);
                 drawText(bx, y, buf, rgb(160, 130, 50), 1);  y += 14;
+                const StateDef *hst = encGraphState(ENC_IDX_HUNT, encounter.enemyState[0]);
+                if (hst) { drawText(bx, y, hst->name, rgb(140, 115, 45), 1); y += 14; }
             }
             for (int i = 0; i < 4; i++) {
                 if (encounter.gainedDomainXp[i] == 0) continue;
@@ -1022,6 +1053,21 @@ void renderEncounter(void) {
         const InvestigationDef *inv = invGetDef((uint8_t)encounter.invId);
         if (inv) {
             drawText(bx, y, inv->name, rgb(200, 180, 80), 2);  y += 22;
+
+            /* The case arc this scene feeds — persists between visits */
+            if (encounter.invCaseId != 0xFF) {
+                const CaseDef  *cd = caseGetDef(encounter.invCaseId);
+                const StateDef *ast = encGraphState(ENC_IDX_INVESTIGATION,
+                                                    encounter.enemyState[0]);
+                if (cd) { drawText(bx, y, cd->name, rgb(190, 170, 90), 1); y += 12; }
+                if (ast) {
+                    drawText(bx, y, ast->name, rgb(230, 205, 110), 1);  y += 11;
+                    int fill = potMaxFrom(0, encounter.enemyState[0]) * barW / 100;
+                    fillRect(bx, y, barW, 4, rgb(40, 34, 12));
+                    if (fill > 0) fillRect(bx, y, fill, 4, rgb(215, 190, 80));
+                    y += 8;
+                }
+            }
             snprintf(buf, sizeof(buf), "Turns: %d", encounter.invTurns);
             uint32_t tc = encounter.invTurns > 3 ? rgb(180, 160, 80)
                         : encounter.invTurns > 1 ? rgb(210, 130, 40)
@@ -1044,8 +1090,21 @@ void renderEncounter(void) {
         const HuntEncounterDef *hdef = huntEncGetDef((uint8_t)encounter.huntEncId);
         if (hdef) {
             drawText(bx, y, hdef->name, rgb(220, 170, 40), 2);  y += 22;
-            const HuntStateDef *st = &hdef->states[encounter.huntStateIdx];
-            drawText(bx, y, st->description, rgb(170, 135, 50), 1);  y += 14;
+
+            /* Group morale — the hunt graph state */
+            const StateDef *st = encGraphState(ENC_IDX_HUNT, encounter.enemyState[0]);
+            if (st) {
+                uint32_t sc = st->pressure >= 8 ? rgb(235, 80,  50)
+                            : st->pressure >= 3 ? rgb(215, 150, 50)
+                            :                     rgb(150, 170, 120);
+                drawText(bx, y, st->name, sc, 1);  y += 12;
+
+                /* Banked progress out of the current posture */
+                int pfill = potMaxFrom(0, encounter.enemyState[0]) * barW / 100;
+                fillRect(bx, y, barW, 4, rgb(35, 25, 15));
+                if (pfill > 0) fillRect(bx, y, pfill, 4, rgb(200, 170, 70));
+                y += 8;
+            }
             fillRect(LP_X + 8, y, LP_W - 16, 1, bdPanel);  y += 8;
 
             /* Enemy count bar */
@@ -1059,15 +1118,16 @@ void renderEncounter(void) {
             snprintf(buf, sizeof(buf), "Enemies: %d remaining", left);
             drawText(bx, y, buf, rgb(180, 120, 40), 1);  y += 14;
 
-            /* State turn budget */
-            if (st->turnBudget > 0) {
-                int budget_left = st->turnBudget - encounter.huntTurnInState;
-                uint32_t tc = budget_left > 2 ? rgb(200, 170, 60)
-                            : budget_left > 0 ? rgb(210, 120, 30)
-                            :                   rgb(210, 60,  40);
-                snprintf(buf, sizeof(buf), "Turns: %d / %d",
-                    encounter.huntTurnInState, st->turnBudget);
-                drawText(bx, y, buf, tc, 1);
+            /* Noise raised so far — they attack when it fills */
+            if (hdef->alertLimit > 0) {
+                int room = hdef->alertLimit - encounter.huntAlert;
+                if (room < 0) room = 0;
+                uint32_t ac = room > 2 ? rgb(150, 140, 90)
+                            : room > 0 ? rgb(215, 140, 40)
+                            :            rgb(220, 60, 40);
+                snprintf(buf, sizeof(buf), "Alert: %d / %d",
+                         encounter.huntAlert, hdef->alertLimit);
+                drawText(bx, y, buf, ac, 1);
             }
         }
         goto render_log;
@@ -1112,20 +1172,51 @@ void renderEncounter(void) {
         const Enemy *e = &encounter.enemies[0];
         drawText(bx, y, e->name, rgb(140, 165, 230), 1);  y += 12;
 
-        const char *dlabel = dispositionLabel(e->disposition);
-        drawText(bx, y, dlabel, rgb(100, 120, 200), 1);  y += 11;
+        /* Disposition = social graph state; colored by willingness flow */
+        const StateDef *st = encGraphState(ENC_IDX_SOCIAL, encounter.enemyState[0]);
+        if (st) {
+            int flow = st->pressure - e->damage;
+            uint32_t dcol = flow > 0 ? rgb(90, 190, 110)
+                          : flow < 0 ? rgb(210, 100, 80)
+                          :            rgb(100, 120, 200);
+            drawText(bx, y, st->name, dcol, 1);  y += 11;
+        }
 
+        /* Willingness bar (0-100) */
         int w = e->hp;
         const char *wtag = willingnessTag(w);
         uint32_t wcol = w >= 70 ? rgb(50, 190, 80) : w >= 50 ? rgb(190, 170, 40) : rgb(190, 55, 55);
-        drawText(bx, y, wtag, wcol, 1);  y += 14;
+        fillRect(bx, y, barW, 6, rgb(12, 15, 40));
+        int wfill = w * barW / 100;
+        if (wfill > 0) fillRect(bx, y, wfill, 6, wcol);
+        y += 9;
+        drawText(bx, y, wtag, wcol, 1);  y += 12;
+
+        /* Banked progress out of the current disposition */
+        {
+            int fill = potMaxFrom(0, encounter.enemyState[0]) * barW / 100;
+            fillRect(bx, y, barW, 4, rgb(20, 22, 45));
+            if (fill > 0) fillRect(bx, y, fill, 4, rgb(150, 160, 220));
+            y += 7;
+        }
+
+        /* Patience clock */
+        if (e->intelligence > 0) {
+            int left = (int)e->intelligence - encounter.socialTurns;
+            if (left < 0) left = 0;
+            uint32_t tc = left > 3 ? rgb(110, 125, 190)
+                        : left > 1 ? rgb(200, 150, 60)
+                        :            rgb(210, 70, 50);
+            snprintf(buf, sizeof(buf), "Patience: %d", left);
+            drawText(bx, y, buf, tc, 1);  y += 12;
+        }
 
     } else {
         drawText(bx, y, "ENEMIES", rgb(100, 50, 50), 1);  y += 12;
         for (int ei = 0; ei < encounter.enemyCount; ei++) {
             const Enemy *e  = &encounter.enemies[ei];
             int          sel  = (ei == encounter.targetIndex);
-            int          dead = (e->maxHp == 0);
+            int          dead = !e->alive;
             uint32_t     nameCol = dead ? rgb(60, 50, 50)
                                  : sel  ? rgb(255, 210, 80)
                                  :        rgb(200, 90, 90);
@@ -1135,15 +1226,26 @@ void renderEncounter(void) {
             for (int c = 0; c < nl && c < 17; c++) nbuf[2 + c] = e->name[c];
             nbuf[2 + (nl < 17 ? nl : 17)] = '\0';
             drawText(bx, y, nbuf, nameCol, 1);  y += 11;
-            if (!dead && e->maxHp > 0) {
-                int fill = e->hp * barW / e->maxHp;
-                if (fill < 0) fill = 0;
-                fillRect(bx, y, barW, 6, rgb(40, 12, 12));
-                if (fill > 0) fillRect(bx, y, fill, 6, sel ? rgb(220, 160, 40) : rgb(180, 50, 50));
-            } else {
-                fillRect(bx, y, barW, 6, rgb(28, 18, 18));
+
+            /* Current graph state + banked progress out of it */
+            const StateDef *st = dead ? NULL
+                : encGraphState(ENC_IDX_COMBAT, encounter.enemyState[ei]);
+            if (dead) {
+                drawText(bx + 8, y, "Broken", rgb(70, 60, 60), 1);  y += 11;
+                fillRect(bx, y, barW, 4, rgb(28, 18, 18));
+            } else if (st) {
+                int t = st->pressure + e->damage;
+                uint32_t stCol = t >= 10 ? rgb(230, 90, 60)
+                               : t >= 5  ? rgb(210, 150, 60)
+                               : t >  0  ? rgb(190, 170, 90)
+                               :           rgb(140, 150, 170);
+                drawText(bx + 8, y, st->name, stCol, 1);  y += 11;
+                int fill = potMaxFrom(ei, encounter.enemyState[ei]) * barW / 100;
+                fillRect(bx, y, barW, 4, rgb(35, 25, 15));
+                if (fill > 0)
+                    fillRect(bx, y, fill, 4, sel ? rgb(220, 190, 60) : rgb(150, 120, 50));
             }
-            y += 10;
+            y += 8;
         }
     }
 
@@ -1171,6 +1273,10 @@ void renderEncounter(void) {
     drawText(bx + 90, y, buf, rgb(90, 140, 210), 1);  y += 16;
 
 render_log:
+    /* ── Active statuses ────────────────────────────────────────── */
+    if (renderStatusStrip(bx, y, 0) > 0)
+        y += 12;
+
     /* ── Encounter log ──────────────────────────────────────────── */
     if (encounter.logCount > 0) {
         fillRect(LP_X + 8, y + 4, LP_W - 16, 1, rgb(45, 30, 30));  y += 12;

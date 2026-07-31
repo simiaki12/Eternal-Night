@@ -39,6 +39,7 @@ static const Entry entries[] = {
     { ENTRY_EDITOR, "Enemy Editor",             "build/enemy_editor",             "assets/data/enemies.dat" },
     { ENTRY_EDITOR, "Action Editor",            "build/action_editor",            "assets/data/actions.dat" },
     { ENTRY_EDITOR, "Log Message Editor",       "build/logmessage_editor",        "assets/data/log_messages.dat" },
+    { ENTRY_EDITOR, "Status Editor",            "build/status_editor",            "assets/data/statuses.dat" },
 
     { ENTRY_HEADER, "-- Items & Loot ----------------------------------------", NULL, NULL },
     { ENTRY_EDITOR, "Item Editor",              "build/item_editor",              "assets/data/items.dat" },
@@ -55,6 +56,7 @@ static const Entry entries[] = {
     { ENTRY_HEADER, "-- Investigations --------------------------------------", NULL, NULL },
     { ENTRY_EDITOR, "Clue Editor",              "build/clue_editor",              "assets/data/clues.dat" },
     { ENTRY_EDITOR, "Investigation Editor",     "build/investigation_editor",     "assets/data/investigations.dat" },
+    { ENTRY_EDITOR, "Case Editor",              "build/case_editor",              "assets/data/cases.dat" },
 
     { ENTRY_HEADER, "-- Environmental Encounters ----------------------------", NULL, NULL },
     { ENTRY_EDITOR, "Env Encounter Editor",     "build/env_encounter_editor",     "assets/data/env_encounters.dat" },

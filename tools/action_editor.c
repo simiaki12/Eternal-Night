@@ -20,6 +20,7 @@
 #define ACT_CTX_PLAYER_HURT   (1<<4)
 #define ACT_CTX_REQUIRES_DARK (1<<5)
 #define ACT_CTX_BLOCKED_HOLY  (1<<6)
+#define ACT_CTX_ROUTED        (1<<7)
 
 #define ACT_CAT_COMBAT        (1<<0)
 #define ACT_CAT_SOCIAL        (1<<1)
@@ -33,51 +34,75 @@
 #define DOMAIN_CHARM    3
 #define DOMAIN_NONE     0xFF
 
-#define ACT_FLAG_STARTER (1<<0)
-
-/* Disposition bitmasks */
-#define DISP_BIT_STRANGER   (1<<0)
-#define DISP_BIT_SUSPICIOUS (1<<1)
-#define DISP_BIT_FEARFUL    (1<<2)
-#define DISP_BIT_TRUSTING   (1<<3)
-#define DISP_BIT_HOSTILE    (1<<4)
-#define DISP_BIT_GREEDY     (1<<5)
-
-/* Disposition shift values */
-#define DISP_STRANGER   0
-#define DISP_SUSPICIOUS 1
-#define DISP_FEARFUL    2
-#define DISP_TRUSTING   3
-#define DISP_HOSTILE    4
-#define DISP_GREEDY     5
-#define DISP_NONE       0xFF
-#define DISP_COUNT      6
-
-static const char *dispNames[DISP_COUNT + 1] = {
-    "Stranger", "Suspicious", "Fearful", "Trusting", "Hostile", "Greedy", "None"
-};
+#define ACT_FLAG_STARTER     (1<<0)
+#define ACT_FLAG_ALL_TARGETS (1<<1)
 
 #define ACTION_MAX 64
+
+typedef struct { uint8_t type, value, chance; } Effect;
+#define TRANSITION_SOURCES 8
+typedef struct { uint8_t to; uint8_t progress[TRANSITION_SOURCES]; } Transition;
+
+#define ACT_TRANSITIONS 3
+#define ENC_TYPE_COUNT  5
+#define EFX_COUNT       10
 
 typedef struct {
     uint8_t  id;
     uint8_t  contextFlags;
     uint8_t  baseWeight;
-    uint8_t  power;
     char     name[16];
     char     imgName[8];
     char     desc[32];
     uint8_t  domain;
     uint8_t  encounterCat;
     uint8_t  actionFlags;
-    uint8_t  effective_disp;
-    uint8_t  backfire_disp;
-    uint8_t  shift_effective;
-    uint8_t  shift_backfire;
-    uint8_t  _pad;
-} ActionDef; /* 68 bytes */
+    Transition transitions[ACT_TRANSITIONS];
+    Effect     onPlay;
+    Effect     fallback;
+    uint16_t   tCounts;       /* 3 bits per encounter-type index (0..4) */
+} ActionDef; /* 98 bytes */
 
-typedef char _check_size[(sizeof(ActionDef) == 68) ? 1 : -1];
+typedef char _check_size[(sizeof(ActionDef) == 98) ? 1 : -1];
+
+static const char *encTypeNames[ENC_TYPE_COUNT] = {
+    "combat", "social", "invest", "hunt", "env"
+};
+
+/* State names per graph — mirror of tools/seed_states.c */
+static const char *stateNames[ENC_TYPE_COUNT][TRANSITION_SOURCES] = {
+    { "Squaring Up", "Trading", "Staggered", "Frenzied", "Broken", 0, 0, 0 },
+    { "Stranger", "Suspicious", "Fearful", "Trusting", "Hostile", "Greedy", 0, 0 },
+    { "Cold Trail", "Familiarizing", "Connecting", "Breakthrough", "Unraveled", 0, 0, 0 },
+    { "Organized", "Disturbed", "Alerted", "Terrified", "Broken", "Preparing", 0, 0 },
+    { "Stable", "Escalating", "Critical", "Resolved", "Disaster", 0, 0, 0 },
+};
+
+static const char *stateName(int graph, uint8_t s) {
+    if (graph < 0 || graph >= ENC_TYPE_COUNT || s >= TRANSITION_SOURCES) return "?";
+    return stateNames[graph][s] ? stateNames[graph][s] : "-";
+}
+
+static const char *efxNames[EFX_COUNT] = {
+    "none", "progress", "prog_next", "heal_hp", "dmg_hp",
+    "extra_act", "status+", "status-", "meter", "kill"
+};
+
+#define TCOUNT(a, t)  ((uint8_t)(((a)->tCounts >> ((t) * 3)) & 7u))
+
+static void setTCount(ActionDef *a, int t, uint8_t v) {
+    a->tCounts = (uint16_t)((a->tCounts & ~(7u << (t * 3))) | ((v & 7u) << (t * 3)));
+}
+
+/* Graph a triplet slot belongs to, by prefix sums of tCounts; -1 = unassigned */
+static int slotGraph(const ActionDef *a, int slot) {
+    int acc = 0;
+    for (int t = 0; t < ENC_TYPE_COUNT; t++) {
+        acc += TCOUNT(a, t);
+        if (slot < acc) return t;
+    }
+    return -1;
+}
 /* ----------------------------------------------------------------------- */
 
 #define SCROLL_MARGIN 3
@@ -153,10 +178,10 @@ typedef enum {
     F_DESC,
     F_IMG,
     F_WEIGHT,
-    F_POWER,
     F_DOMAIN,
     F_ENCOUNTER_CAT,
     F_STARTER,
+    F_ALL_TARGETS,
     F_CTX_FIRST_TURN,
     F_CTX_ENEMY_WEAPON,
     F_CTX_EXECUTABLE,
@@ -164,20 +189,7 @@ typedef enum {
     F_CTX_PLAYER_HURT,
     F_CTX_REQUIRES_DARK,
     F_CTX_BLOCKED_HOLY,
-    F_EFF_STRANGER,
-    F_EFF_SUSPICIOUS,
-    F_EFF_FEARFUL,
-    F_EFF_TRUSTING,
-    F_EFF_HOSTILE,
-    F_EFF_GREEDY,
-    F_BACK_STRANGER,
-    F_BACK_SUSPICIOUS,
-    F_BACK_FEARFUL,
-    F_BACK_TRUSTING,
-    F_BACK_HOSTILE,
-    F_BACK_GREEDY,
-    F_SHIFT_EFFECTIVE,
-    F_SHIFT_BACKFIRE,
+    F_CTX_ROUTED,
     F_COUNT
 } Field;
 
@@ -187,10 +199,10 @@ static const char *fieldNames[] = {
     "Description",
     "Image (sprite base)",
     "Base weight",
-    "Power",
     "Domain (0=Combat 1=Trickery 2=Blood 3=Charm FF=none)",
     "Encounter cat (bit: 1=combat 2=social 4=invest 8=hunt 10=env)",
     "Starter (available without any domain unlock)",
+    "Hits every enemy (combat)",
     "Ctx: first turn only",
     "Ctx: enemy has weapon",
     "Ctx: enemy executable",
@@ -198,26 +210,13 @@ static const char *fieldNames[] = {
     "Ctx: player hurt (<50%)",
     "Ctx: requires darkness",
     "Ctx: blocked on holy ground",
-    "Effective in: Stranger",
-    "Effective in: Suspicious",
-    "Effective in: Fearful",
-    "Effective in: Trusting",
-    "Effective in: Hostile",
-    "Effective in: Greedy",
-    "Backfire in: Stranger",
-    "Backfire in: Suspicious",
-    "Backfire in: Fearful",
-    "Backfire in: Trusting",
-    "Backfire in: Hostile",
-    "Backfire in: Greedy",
-    "Shift on effective hit",
-    "Shift on backfire",
+    "Ctx: hunt group routed (Terrified/Broken)",
 };
 
 static void renderEdit(ActionDef *a, int sel, const char *status) {
     clear();
     mvprintw(0, 0, "ACTION EDITOR — %s (id %d)", a->name[0] ? a->name : "(unnamed)", a->id);
-    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=edit text  Bksp=back  S=save");
+    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=edit text  T=transitions  Bksp=back  S=save");
     if (status) mvprintw(2, 0, "%s", status);
 
     for (int i = 0; i < F_COUNT; i++) {
@@ -229,7 +228,6 @@ static void renderEdit(ActionDef *a, int sel, const char *status) {
             case F_DESC:   mvprintw(row, 2, "%-42s  %s",  fieldNames[i], a->desc);       break;
             case F_IMG:    mvprintw(row, 2, "%-42s  %s",  fieldNames[i], a->imgName);    break;
             case F_WEIGHT: mvprintw(row, 2, "%-42s  %d",  fieldNames[i], a->baseWeight); break;
-            case F_POWER:  mvprintw(row, 2, "%-42s  %d",  fieldNames[i], a->power);      break;
             case F_DOMAIN:
                 if (a->domain == DOMAIN_NONE)
                     mvprintw(row, 2, "%-42s  none (FF)", fieldNames[i]);
@@ -249,6 +247,8 @@ static void renderEdit(ActionDef *a, int sel, const char *status) {
             }
             case F_STARTER:
                 mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->actionFlags & ACT_FLAG_STARTER) ? "[X]" : "[ ]"); break;
+            case F_ALL_TARGETS:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->actionFlags & ACT_FLAG_ALL_TARGETS) ? "[X]" : "[ ]"); break;
             case F_CTX_FIRST_TURN:
                 mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_FIRST_TURN)   ? "[X]" : "[ ]"); break;
             case F_CTX_ENEMY_WEAPON:
@@ -263,44 +263,147 @@ static void renderEdit(ActionDef *a, int sel, const char *status) {
                 mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_REQUIRES_DARK) ? "[X]" : "[ ]"); break;
             case F_CTX_BLOCKED_HOLY:
                 mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_BLOCKED_HOLY)  ? "[X]" : "[ ]"); break;
-            case F_EFF_STRANGER:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_STRANGER)   ? "[X]" : "[ ]"); break;
-            case F_EFF_SUSPICIOUS:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_SUSPICIOUS) ? "[X]" : "[ ]"); break;
-            case F_EFF_FEARFUL:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_FEARFUL)    ? "[X]" : "[ ]"); break;
-            case F_EFF_TRUSTING:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_TRUSTING)   ? "[X]" : "[ ]"); break;
-            case F_EFF_HOSTILE:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_HOSTILE)    ? "[X]" : "[ ]"); break;
-            case F_EFF_GREEDY:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->effective_disp & DISP_BIT_GREEDY)     ? "[X]" : "[ ]"); break;
-            case F_BACK_STRANGER:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_STRANGER)    ? "[X]" : "[ ]"); break;
-            case F_BACK_SUSPICIOUS:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_SUSPICIOUS)  ? "[X]" : "[ ]"); break;
-            case F_BACK_FEARFUL:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_FEARFUL)     ? "[X]" : "[ ]"); break;
-            case F_BACK_TRUSTING:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_TRUSTING)    ? "[X]" : "[ ]"); break;
-            case F_BACK_HOSTILE:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_HOSTILE)     ? "[X]" : "[ ]"); break;
-            case F_BACK_GREEDY:
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->backfire_disp & DISP_BIT_GREEDY)      ? "[X]" : "[ ]"); break;
-            case F_SHIFT_EFFECTIVE: {
-                uint8_t s = a->shift_effective;
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], dispNames[s < DISP_COUNT ? s : DISP_COUNT]);
-                break;
-            }
-            case F_SHIFT_BACKFIRE: {
-                uint8_t s = a->shift_backfire;
-                mvprintw(row, 2, "%-42s  %s", fieldNames[i], dispNames[s < DISP_COUNT ? s : DISP_COUNT]);
-                break;
-            }
+            case F_CTX_ROUTED:
+                mvprintw(row, 2, "%-42s  %s", fieldNames[i], (a->contextFlags & ACT_CTX_ROUTED)        ? "[X]" : "[ ]"); break;
         }
         if (i == sel) attroff(A_REVERSE);
     }
     refresh();
+}
+
+/* ---- transitions / effects sub-screen ---- */
+
+typedef enum {
+    T_CNT0 = 0, T_CNT1, T_CNT2, T_CNT3, T_CNT4,   /* transitions per type */
+    T_S0_DEST, T_S0_SRC, T_S0_VAL,
+    T_S1_DEST, T_S1_SRC, T_S1_VAL,
+    T_S2_DEST, T_S2_SRC, T_S2_VAL,
+    T_OP_TYPE, T_OP_VAL, T_OP_CHANCE,             /* onPlay   */
+    T_FB_TYPE, T_FB_VAL, T_FB_CHANCE,             /* fallback */
+    T_COUNT
+} TField;
+
+/* Which source state each slot is currently being tuned for */
+static uint8_t srcSel[ACT_TRANSITIONS];
+
+static void renderTransitions(ActionDef *a, int sel) {
+    clear();
+    mvprintw(0, 0, "TRANSITIONS - %s (id %d)", a->name[0] ? a->name : "(unnamed)", a->id);
+    mvprintw(1, 0, "Up/Down=field  +/-=change  PgUp/PgDn=+-10  Bksp=back  S=save");
+    mvprintw(2, 0, "Each transition is one destination + the progress it banks from each source.");
+
+    int total = 0;
+    for (int t = 0; t < ENC_TYPE_COUNT; t++) total += TCOUNT(a, t);
+
+    for (int i = 0; i < T_COUNT; i++) {
+        int row = i + 4 + (i >= T_S0_DEST) + (i >= T_OP_TYPE) + (i >= T_FB_TYPE);
+        if (i == sel) attron(A_REVERSE);
+        if (i <= T_CNT4) {
+            mvprintw(row, 2, "Transitions: %-35s  %d", encTypeNames[i], TCOUNT(a, i));
+        } else if (i < T_OP_TYPE) {
+            int slot = (i - T_S0_DEST) / 3, part = (i - T_S0_DEST) % 3;
+            int g    = slotGraph(a, slot);
+            Transition *tr = &a->transitions[slot];
+            char label[52];
+            if (part == 0) {
+                snprintf(label, sizeof(label), "T%d (%s) destination", slot,
+                         g >= 0 ? encTypeNames[g] : "unused");
+                mvprintw(row, 2, "%-50s  %s", label, stateName(g, tr->to));
+            } else if (part == 1) {
+                snprintf(label, sizeof(label), "T%d tuning source", slot);
+                mvprintw(row, 2, "%-50s  %s", label, stateName(g, srcSel[slot]));
+            } else {
+                snprintf(label, sizeof(label), "T%d progress from %s", slot,
+                         stateName(g, srcSel[slot]));
+                mvprintw(row, 2, "%-50s  %d", label, tr->progress[srcSel[slot]]);
+            }
+        } else {
+            Effect *e = i < T_FB_TYPE ? &a->onPlay : &a->fallback;
+            int part  = (i - T_OP_TYPE) % 3;
+            const char *who = i < T_FB_TYPE ? "onPlay" : "fallback";
+            if (part == 0)
+                mvprintw(row, 2, "%s %-43s  %s", who, "effect",
+                         e->type < EFX_COUNT ? efxNames[e->type] : "?");
+            else if (part == 1)
+                mvprintw(row, 2, "%s %-43s  %d", who, "value",  e->value);
+            else
+                mvprintw(row, 2, "%s %-43s  %d", who, "chance", e->chance);
+        }
+        if (i == sel) attroff(A_REVERSE);
+    }
+
+    /* Whole vector at a glance, so tuning one source keeps the rest visible */
+    int row = T_COUNT + 8;
+    for (int slot = 0; slot < ACT_TRANSITIONS; slot++) {
+        int g = slotGraph(a, slot);
+        if (g < 0) continue;
+        char line[160];
+        int  n = snprintf(line, sizeof(line), "T%d -> %-13s :", slot,
+                          stateName(g, a->transitions[slot].to));
+        for (int src = 0; src < TRANSITION_SOURCES; src++) {
+            uint8_t v = a->transitions[slot].progress[src];
+            if (!v) continue;
+            n += snprintf(line + n, sizeof(line) - n, "  %s %d", stateName(g, src), v);
+        }
+        mvprintw(row++, 2, "%s", line);
+    }
+    mvprintw(row + 1, 2, "Slots used: %d / %d%s", total, ACT_TRANSITIONS,
+             total > ACT_TRANSITIONS ? "  !! OVER" : "");
+    refresh();
+}
+
+static void tfieldAdjust(ActionDef *a, int sel, int dir, int big) {
+    int step = big ? 10 : 1;
+    dirty = 1;
+    if (sel <= T_CNT4) {
+        int total = 0;
+        for (int t = 0; t < ENC_TYPE_COUNT; t++) total += TCOUNT(a, t);
+        uint8_t c = TCOUNT(a, sel);
+        if (dir > 0 && c < ACT_TRANSITIONS && total < ACT_TRANSITIONS) setTCount(a, sel, c + 1);
+        if (dir < 0 && c > 0)                                          setTCount(a, sel, c - 1);
+    } else if (sel < T_OP_TYPE) {
+        int slot = (sel - T_S0_DEST) / 3, part = (sel - T_S0_DEST) % 3;
+        Transition *tr = &a->transitions[slot];
+        if (part == 0) {
+            int v = (int)tr->to + dir;
+            tr->to = (uint8_t)(v < 0 ? TRANSITION_SOURCES - 1 : v % TRANSITION_SOURCES);
+        } else if (part == 1) {
+            int v = (int)srcSel[slot] + dir;
+            srcSel[slot] = (uint8_t)(v < 0 ? TRANSITION_SOURCES - 1 : v % TRANSITION_SOURCES);
+        } else {
+            int nv = (int)tr->progress[srcSel[slot]] + dir * step;
+            tr->progress[srcSel[slot]] = (uint8_t)(nv < 0 ? 0 : nv > 100 ? 100 : nv);
+        }
+    } else {
+        Effect *e   = sel < T_FB_TYPE ? &a->onPlay : &a->fallback;
+        int     part = (sel - T_OP_TYPE) % 3;
+        if (part == 0) {
+            e->type = (uint8_t)((e->type + (dir > 0 ? 1 : EFX_COUNT - 1)) % EFX_COUNT);
+        } else {
+            uint8_t *v  = part == 1 ? &e->value : &e->chance;
+            int      hi = part == 1 ? 255 : 100;
+            int nv = (int)*v + dir * step;
+            *v = (uint8_t)(nv < 0 ? 0 : nv > hi ? hi : nv);
+        }
+    }
+}
+
+static void screenTransitions(ActionDef *a) {
+    int sel = 0;
+    while (1) {
+        renderTransitions(a, sel);
+        int ch = getch();
+        switch (ch) {
+            case KEY_UP:        if (sel > 0) sel--;           break;
+            case KEY_DOWN:      if (sel < T_COUNT - 1) sel++; break;
+            case '+': case '=': tfieldAdjust(a, sel,  1, 0);  break;
+            case '-':           tfieldAdjust(a, sel, -1, 0);  break;
+            case KEY_NPAGE:     tfieldAdjust(a, sel, -1, 1);  break;
+            case KEY_PPAGE:     tfieldAdjust(a, sel,  1, 1);  break;
+            case 's': case 'S': save();                       break;
+            case KEY_BACKSPACE: case 127: return;
+        }
+    }
 }
 
 static void screenEdit(int idx) {
@@ -321,6 +424,8 @@ static void screenEdit(int idx) {
 
             case 's': case 'S': save(); status = "Saved."; break;
 
+            case 't': case 'T': screenTransitions(a); break;
+
             case '\n': case KEY_ENTER:
                 if (sel == F_NAME) {
                     if (editString(sel + 4, 28, a->name, 16)) dirty = 1;
@@ -336,11 +441,11 @@ static void screenEdit(int idx) {
                 switch (sel) {
                     case F_ID:              if (a->id           < 255) a->id++;           break;
                     case F_WEIGHT:          if (a->baseWeight   < 255) a->baseWeight++;   break;
-                    case F_POWER:           if (a->power        < 255) a->power++;        break;
                     case F_DOMAIN:          if (a->domain       < 254) a->domain++;
                                             else a->domain = DOMAIN_NONE;                 break;
                     case F_ENCOUNTER_CAT:   if (a->encounterCat < 255) a->encounterCat++; break;
                     case F_STARTER:           a->actionFlags  ^= ACT_FLAG_STARTER;         break;
+                    case F_ALL_TARGETS:       a->actionFlags  ^= ACT_FLAG_ALL_TARGETS;     break;
                     case F_CTX_FIRST_TURN:    a->contextFlags ^= ACT_CTX_FIRST_TURN;      break;
                     case F_CTX_ENEMY_WEAPON:  a->contextFlags ^= ACT_CTX_ENEMY_WEAPON;    break;
                     case F_CTX_EXECUTABLE:    a->contextFlags ^= ACT_CTX_EXECUTABLE;      break;
@@ -348,28 +453,6 @@ static void screenEdit(int idx) {
                     case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;     break;
                     case F_CTX_REQUIRES_DARK: a->contextFlags ^= ACT_CTX_REQUIRES_DARK;   break;
                     case F_CTX_BLOCKED_HOLY:  a->contextFlags ^= ACT_CTX_BLOCKED_HOLY;    break;
-                    case F_EFF_STRANGER:   a->effective_disp ^= DISP_BIT_STRANGER;   break;
-                    case F_EFF_SUSPICIOUS: a->effective_disp ^= DISP_BIT_SUSPICIOUS; break;
-                    case F_EFF_FEARFUL:    a->effective_disp ^= DISP_BIT_FEARFUL;    break;
-                    case F_EFF_TRUSTING:   a->effective_disp ^= DISP_BIT_TRUSTING;   break;
-                    case F_EFF_HOSTILE:    a->effective_disp ^= DISP_BIT_HOSTILE;    break;
-                    case F_EFF_GREEDY:     a->effective_disp ^= DISP_BIT_GREEDY;     break;
-                    case F_BACK_STRANGER:  a->backfire_disp  ^= DISP_BIT_STRANGER;   break;
-                    case F_BACK_SUSPICIOUS:a->backfire_disp  ^= DISP_BIT_SUSPICIOUS; break;
-                    case F_BACK_FEARFUL:   a->backfire_disp  ^= DISP_BIT_FEARFUL;    break;
-                    case F_BACK_TRUSTING:  a->backfire_disp  ^= DISP_BIT_TRUSTING;   break;
-                    case F_BACK_HOSTILE:   a->backfire_disp  ^= DISP_BIT_HOSTILE;    break;
-                    case F_BACK_GREEDY:    a->backfire_disp  ^= DISP_BIT_GREEDY;     break;
-                    case F_SHIFT_EFFECTIVE:
-                        a->shift_effective = (a->shift_effective == DISP_NONE) ? 0
-                                           : (a->shift_effective < DISP_COUNT - 1) ? a->shift_effective + 1
-                                           : DISP_NONE;
-                        break;
-                    case F_SHIFT_BACKFIRE:
-                        a->shift_backfire  = (a->shift_backfire == DISP_NONE) ? 0
-                                           : (a->shift_backfire < DISP_COUNT - 1) ? a->shift_backfire + 1
-                                           : DISP_NONE;
-                        break;
                     default: dirty = 0; break;
                 }
                 break;
@@ -379,7 +462,6 @@ static void screenEdit(int idx) {
                 switch (sel) {
                     case F_ID:              if (a->id         > 0) a->id--;           break;
                     case F_WEIGHT:          if (a->baseWeight > 1) a->baseWeight--;   break;
-                    case F_POWER:           if (a->power      > 0) a->power--;        break;
                     case F_DOMAIN:          if (a->domain     > 0 && a->domain != DOMAIN_NONE) a->domain--;
                                             else a->domain = DOMAIN_NONE;             break;
                     case F_ENCOUNTER_CAT:   if (a->encounterCat > 0) a->encounterCat--; break;
@@ -391,28 +473,7 @@ static void screenEdit(int idx) {
                     case F_CTX_PLAYER_HURT:   a->contextFlags ^= ACT_CTX_PLAYER_HURT;   break;
                     case F_CTX_REQUIRES_DARK: a->contextFlags ^= ACT_CTX_REQUIRES_DARK; break;
                     case F_CTX_BLOCKED_HOLY:  a->contextFlags ^= ACT_CTX_BLOCKED_HOLY;  break;
-                    case F_EFF_STRANGER:   a->effective_disp ^= DISP_BIT_STRANGER;   break;
-                    case F_EFF_SUSPICIOUS: a->effective_disp ^= DISP_BIT_SUSPICIOUS; break;
-                    case F_EFF_FEARFUL:    a->effective_disp ^= DISP_BIT_FEARFUL;    break;
-                    case F_EFF_TRUSTING:   a->effective_disp ^= DISP_BIT_TRUSTING;   break;
-                    case F_EFF_HOSTILE:    a->effective_disp ^= DISP_BIT_HOSTILE;    break;
-                    case F_EFF_GREEDY:     a->effective_disp ^= DISP_BIT_GREEDY;     break;
-                    case F_BACK_STRANGER:  a->backfire_disp  ^= DISP_BIT_STRANGER;   break;
-                    case F_BACK_SUSPICIOUS:a->backfire_disp  ^= DISP_BIT_SUSPICIOUS; break;
-                    case F_BACK_FEARFUL:   a->backfire_disp  ^= DISP_BIT_FEARFUL;    break;
-                    case F_BACK_TRUSTING:  a->backfire_disp  ^= DISP_BIT_TRUSTING;   break;
-                    case F_BACK_HOSTILE:   a->backfire_disp  ^= DISP_BIT_HOSTILE;    break;
-                    case F_BACK_GREEDY:    a->backfire_disp  ^= DISP_BIT_GREEDY;     break;
-                    case F_SHIFT_EFFECTIVE:
-                        a->shift_effective = (a->shift_effective == DISP_NONE) ? DISP_COUNT - 1
-                                           : (a->shift_effective > 0) ? a->shift_effective - 1
-                                           : DISP_NONE;
-                        break;
-                    case F_SHIFT_BACKFIRE:
-                        a->shift_backfire  = (a->shift_backfire == DISP_NONE) ? DISP_COUNT - 1
-                                           : (a->shift_backfire > 0) ? a->shift_backfire - 1
-                                           : DISP_NONE;
-                        break;
+                    case F_CTX_ROUTED:        a->contextFlags ^= ACT_CTX_ROUTED;        break;
                     default: dirty = 0; break;
                 }
                 break;
@@ -444,12 +505,14 @@ static void renderList(int sel, int scroll, const char *status) {
         if (actions[i].encounterCat & ACT_CAT_INVESTIGATION) cat[2] = 'I';
         if (actions[i].encounterCat & ACT_CAT_HUNT)          cat[3] = 'H';
         if (actions[i].encounterCat & ACT_CAT_ENVIRONMENTAL) cat[4] = 'E';
-        mvprintw((i - scroll) + 4, 2, "%2d  id:%-3d  %-16s  wt:%-3d  pow:%-3d  ctx:[%s]  cat:[%s]  img:%s",
+        int trips = 0;
+        for (int t = 0; t < ENC_TYPE_COUNT; t++) trips += TCOUNT(&actions[i], t);
+        mvprintw((i - scroll) + 4, 2, "%2d  id:%-3d  %-16s  wt:%-3d  tr:%-2d  ctx:[%s]  cat:[%s]  img:%s",
             i,
             actions[i].id,
             actions[i].name[0] ? actions[i].name : "(unnamed)",
             actions[i].baseWeight,
-            actions[i].power,
+            trips,
             ctx,
             cat,
             actions[i].imgName[0] ? actions[i].imgName : "--");

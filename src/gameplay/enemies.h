@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include "pak.h"
+#include "effects.h"
 
 /* Enemy capability flags — same bits as ENEMY_* in encounter.h */
 #define EDEF_HAS_WEAPON  (1<<0)
@@ -12,12 +13,19 @@
 #define ENEMY_POOL_MAX   15
 #define ENEMY_POOL_SIZE   4
 
-/* 48 bytes — fixed stats, no per-level scaling */
+/* State-keyed enemy behavior: while the enemy occupies stateId, fx is
+   applied to the player each turn (chance rolled inside applyEffect). */
+typedef struct {
+    uint8_t stateId;
+    Effect  fx;
+} EnemyBehavior; /* 4 bytes */
+
+/* 56 bytes — fixed stats, no per-level scaling */
 typedef struct {
     char    name[16];
-    uint8_t hp;
-    uint8_t attack;
-    uint8_t defense;
+    uint8_t hp;             /* LEGACY — combat runs on the state graph  */
+    uint8_t attack;         /* LEGACY — combat pressure uses damage      */
+    uint8_t defense;        /* LEGACY */
     uint8_t size;           /* 1=tiny .. 5=huge */
     uint8_t speed;
     uint8_t intelligence;
@@ -27,8 +35,14 @@ typedef struct {
     uint8_t goldDrop;        /* max gold dropped; actual = rand(1..goldDrop) */
     uint8_t lootTableId;     /* index into lootTables[]; 0xFF = no loot table */
     char    imgName[16];     /* base name of .bin sprite, e.g. "goblin" → assets/sprites/goblin.bin */
-    uint8_t _pad[5];
-} EnemyDef;                  /* 48 bytes */
+    uint8_t stateMask;       /* bit per combat-graph state the enemy can enter */
+    uint8_t damage;          /* added to its state's pressure each turn */
+    uint8_t tenacity;        /* % scaling of progress banked against it; 0 = 100 */
+    EnemyBehavior behaviors[2]; /* state-keyed effects on the player */
+    uint8_t _pad[2];
+} EnemyDef;                  /* 56 bytes */
+
+typedef char _check_enemydef_size[(sizeof(EnemyDef) == 56) ? 1 : -1];
 
 /* 24 bytes — maps a pool ID (loc tile value 0x01-0x0F) to a set of enemy types */
 typedef struct {

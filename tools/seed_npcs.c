@@ -40,7 +40,7 @@ typedef char check_size[(sizeof(NpcDef) == 40) ? 1 : -1];
 static NpcDef defs[] = {
     /*  name            img  tree  x   y  mapId    res  pat  pow  mov  tags               stand  flags  pad */
     { "Village Elder", "op",  1,   1,  1, "map1",   40,  0,   1, NPC_MOVE_DISMISS, NPC_TAG_NOBLE,  60,  0, {0} },
-    { "Merchant",      "sh",  0,   3,  3, "map1",   30,  3,   0,  0,  NPC_TAG_CRIMINAL,  50,  0, {0} },
+    { "Merchant",      "sh",  0,   3,  3, "map1",   30, 14,   2,  0,  NPC_TAG_CRIMINAL,  50,  0, {0} },
 };
 
 int main(void) {

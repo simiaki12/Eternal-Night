@@ -3,6 +3,8 @@
 #include "domains.h"
 #include "encounter.h"
 #include "npcs.h"
+#include "cases.h"
+#include "statuses.h"
 
 #define EQUIP_SLOTS  8
 #define FAVOUR_MAX   8
@@ -44,8 +46,12 @@ typedef struct {
     uint8_t suppressCount;
     /* Investigation clue state — one bit per clue ID (up to 64 clues) */
     uint8_t clueFound[8];
+    /* Case arc positions — investigation's graph lives across encounters */
+    CaseSaveState caseStates[CASE_DEF_MAX];
     /* World flags — one bit per flag (up to 128 flags, 0-127) */
     uint8_t worldFlags[16];
+    /* Active statuses — statusId 0xFF = empty slot */
+    PlayerStatus statuses[PLAYER_STATUS_MAX];
 } PlayerData;
 
 extern PlayerData player;

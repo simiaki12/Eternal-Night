@@ -9,6 +9,10 @@
 #include "player.h"
 #include "domains.h"
 #include "game.h"
+#include "cases.h"
+#include "enc_graph.h"
+#include "statuses.h"
+#include <stdio.h>
 
 ClueDef         clueDefs[CLUE_DEF_MAX];
 int             clueDefCount = 0;
@@ -88,6 +92,26 @@ void investigationStart(uint8_t invId, uint32_t mods) {
     encounter.logScroll      = 0;
     encounter.selectedIndex  = 0;
     encounter.enemyCount     = 0;
+    encounter.progressNextMult   = 10;
+    encounter.extraActionPending = 0;
+
+    /* The scene is a window onto a case: pull the case's persistent arc
+       position into slot 0 so the shared resolver can move it. */
+    encounter.invCaseId = inv->caseId;
+    if (inv->caseId != 0xFF) {
+        caseLoadIntoSlot(inv->caseId);
+        const CaseDef  *cd = caseGetDef(inv->caseId);
+        const StateDef *st = encGraphState(ENC_IDX_INVESTIGATION,
+                                           encounter.enemyState[0]);
+        if (cd && st) {
+            char msg[28];
+            snprintf(msg, sizeof(msg), "%.14s: %.11s", cd->name, st->name);
+            encounterLog(msg);
+        }
+    } else {
+        encounter.enemyState[0] = (uint8_t)encGraphStart(ENC_IDX_INVESTIGATION);
+        encounter.potCount[0]   = 0;
+    }
 
     /* Restore already-found clues from persistent state */
     encounter.invFoundMask = 0;
@@ -100,6 +124,16 @@ void investigationStart(uint8_t invId, uint32_t mods) {
     state = STATE_ENCOUNTER;
 }
 
+/* Case reached its terminal state — bank the payoff once. */
+static void caseResolve(uint8_t caseId) {
+    const CaseDef *cd = caseGetDef(caseId);
+    if (!cd) return;
+    /* rewardQuest is reserved — quests are driven by world flags and the
+       questOn* hooks, so a solved case signals through its flag. */
+    if (cd->setFlag != 0xFF) worldFlagSet(cd->setFlag);
+    encounterLog("The case comes together.");
+}
+
 /* ----------------------------------------------------------------------- */
 
 void investigationDoAction(uint8_t actionId) {
@@ -107,15 +141,37 @@ void investigationDoAction(uint8_t actionId) {
     if (!inv) return;
     const ActionDef *act = getActionDef(actionId);
 
+    /* Push the case arc — the scene is only where the work happens. A whiff
+       here is an approach that tells you nothing about the bigger picture. */
+    if (encounter.invCaseId != 0xFF) {
+        if (encGraphResolve(0, ENC_IDX_INVESTIGATION, act, 0xFF, 100,
+                            applyEffect) == GRAPH_FIRED) {
+            caseStoreFromSlot(encounter.invCaseId);
+            const StateDef *ns = encGraphState(ENC_IDX_INVESTIGATION,
+                                               encounter.enemyState[0]);
+            if (ns && (ns->flags & GSTATE_TERMINAL)) {
+                caseResolve(encounter.invCaseId);
+                encounter.invSuccess = 1;
+                encounter.phase      = ENCOUNTER_PHASE_VICTORY;
+                return;
+            }
+        }
+        caseStoreFromSlot(encounter.invCaseId);
+    }
+
     /* Build weighted candidate list of unfound clues */
     typedef struct { int localIdx; int weight; } Candidate;
     Candidate candidates[INV_CLUE_SLOTS];
     int candCount = 0;
+    uint8_t arc = (encounter.invCaseId != 0xFF)
+                ? encounter.enemyState[0] : 0xFF;
 
     for (int i = 0; i < inv->clueCount; i++) {
         if (encounter.invFoundMask & (1 << i)) continue;
         const ClueDef *c = clueGetDef(inv->clueIds[i]);
         if (!c) continue;
+        /* Material you are not yet ready to see */
+        if (arc != 0xFF && c->minCaseState > arc) continue;
 
         int w = 200 - (int)c->difficulty;
         for (int j = 0; j < 4; j++)
@@ -130,8 +186,9 @@ void investigationDoAction(uint8_t actionId) {
     }
 
     if (candCount == 0) {
-        encounterLog("You have uncovered everything this scene has to offer.");
+        encounterLog("Nothing more here - for now.");
         encounter.invTurns--;
+        if (encounter.invTurns <= 0) encounter.phase = ENCOUNTER_PHASE_TIMEOUT;
         return;
     }
 

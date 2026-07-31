@@ -104,10 +104,8 @@ typedef enum {
 /* Live encounter instance — separate from EnemyDef (the template in enemies.h) */
 typedef struct {
     char    name[16];
-    int     hp;
-    int     maxHp;
-    uint8_t attack;
-    uint8_t defense;
+    int     hp;           /* social/hunt meter (willingness); unused in combat */
+    uint8_t alive;        /* slot in play; cleared when the target is finished */
     uint8_t size;
     uint8_t speed;
     uint8_t intelligence;
@@ -116,10 +114,14 @@ typedef struct {
     uint8_t xpReward;
     uint8_t goldDrop;
     uint8_t lootTableId;
-    uint8_t disposition;  /* Disposition enum; only meaningful in ENCOUNTER_SOCIAL */
+    /* State-graph combat */
+    uint8_t stateMask;    /* combat-graph states this enemy can enter */
+    uint8_t damage;       /* added to its state's pressure each turn  */
+    uint8_t tenacity;     /* % scaling of progress banked; 0 = 100    */
+    EnemyBehavior behaviors[2];
 } Enemy;
 
-typedef struct { ActionId type; uint8_t power; } Action;
+typedef struct { ActionId type; } Action;
 
 typedef enum { ENCOUNTER_PHASE_ACTIVE, ENCOUNTER_PHASE_VICTORY, ENCOUNTER_PHASE_TIMEOUT } EncounterPhase;
 
@@ -131,6 +133,7 @@ typedef enum {
 } SocialOutcome;
 
 #define ENCOUNTER_MAX_ENEMIES 3
+#define COMBAT_POT_MAX        12 /* tracked edges per enemy */
 
 typedef struct {
     Enemy       enemies[ENCOUNTER_MAX_ENEMIES];
@@ -141,7 +144,6 @@ typedef struct {
     int         actionCount;
     int         selectedIndex;
     int         isFirstTurn;
-    int         skipEnemyAttack;
     EncounterPhase phase;
     int         gainedGold;
     uint8_t     gainedDomainXp[14]; /* indexed by DOMAIN_* — XP earned this fight */
@@ -163,21 +165,48 @@ typedef struct {
     int         invId;                /* active InvestigationDef ID; -1 if none */
     int         invTurns;             /* turns remaining */
     uint8_t     invFoundMask;         /* bitmask of locally-found clue positions */
+    uint8_t     invCaseId;            /* case this scene belongs to; 0xFF = none */
     int         invSuccess;           /* 1 if all key clues were found */
     /* Environmental encounter state */
     int         envEncId;             /* active EnvEncounterDef ID; -1 if none */
     int         envStateIdx;          /* current state index within the encounter */
     int         envProgress;          /* accumulated progress (0–progressGoal) */
     int         envTurnInState;       /* turns spent in the current state */
-    /* Hunt encounter state */
+    /* Hunt encounter state — group posture lives in enemyState[0] */
     int         huntEncId;            /* active HuntEncounterDef ID; -1 if none */
-    int         huntStateIdx;         /* current state index */
     int         huntEnemiesLeft;      /* enemies remaining in the group */
     int         huntEnemiesTotal;     /* initial enemy count */
-    int         huntTurnInState;      /* turns spent in the current state */
+    int         huntAlert;            /* noise raised by botched actions */
+    /* State-graph combat: per-enemy graph position and edge pots.
+       Pot key = (from<<4)|to; pots whose from-state is exited are cleared. */
+    uint8_t     enemyState[ENCOUNTER_MAX_ENEMIES];
+    uint8_t     potKey[ENCOUNTER_MAX_ENEMIES][COMBAT_POT_MAX];
+    uint8_t     potVal[ENCOUNTER_MAX_ENEMIES][COMBAT_POT_MAX];
+    uint8_t     potCount[ENCOUNTER_MAX_ENEMIES];
+    uint8_t     progressNextMult;     /* ×10; 10 = normal, set by EFX_PROGRESS_NEXT */
+    uint8_t     pendingProgress;      /* flat bonus banked by EFX_PROGRESS      */
+    uint8_t     extraActionPending;   /* set by EFX_EXTRA_ACTION: skip next pressure phase */
+    int         socialTurns;          /* turns spent; NPC patience is the limit (0 = none) */
 } EncounterState;
 
 extern EncounterState encounter;
+
+/* Outcome of one graph resolution attempt (see encGraphResolve) */
+typedef enum {
+    GRAPH_NO_TRIPLETS = 0, /* action has no triplets for this graph at all */
+    GRAPH_WHIFF       = 1, /* structural miss — wrong state or blocked      */
+    GRAPH_BUILD       = 2, /* progress banked, roll failed                  */
+    GRAPH_FIRED       = 3, /* transition fired; enemyState[slot] updated    */
+} GraphResult;
+
+GraphResult encGraphResolve(int slot, int typeIdx, const ActionDef *adef,
+                            uint8_t stateMask, uint8_t tenacity,
+                            void (*fx)(const Effect *));
+
+/* Effects whose meaning belongs to the encounter engine (progress, extra
+   action); anything else falls through to applyEffect() in statuses.c.
+   Per-type scopes wrap this to add their own verbs (METER, KILL). */
+void encounterApplyEffect(const Effect *e);
 
 void generateActions(void);
 void encounterStartCombat(const EnemyDef *def);

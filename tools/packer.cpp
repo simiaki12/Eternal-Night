@@ -58,6 +58,9 @@ int main() {
     specs.push_back({ "assets/data/env_encounters.dat",    false });
     specs.push_back({ "assets/data/hunt_encounters.dat",   false });
     specs.push_back({ "assets/data/camp_zones.dat",        false });
+    specs.push_back({ "assets/data/cases.dat",             false });
+    specs.push_back({ "assets/data/states.dat",            false });
+    specs.push_back({ "assets/data/statuses.dat",          false });
 
     /* Resolve which files are present */
     std::vector<std::string> files;

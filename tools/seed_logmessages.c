@@ -18,8 +18,8 @@
 
 #define ENEMYCOND_NONE        0
 #define ENEMYCOND_SIZE_GTE    1
-#define ENEMYCOND_HP_LTE_PCT  2
-#define ENEMYCOND_HP_GTE_PCT  3
+#define ENEMYCOND_STATE_IS    2
+#define ENEMYCOND_STATE_NOT   3
 #define ENEMYCOND_HAS_FLAG    4
 #define ENEMYCOND_COUNT_GTE   5
 
@@ -27,8 +27,8 @@
 #define LOGFX_ADD_MOD         1
 #define LOGFX_REMOVE_MOD      2
 #define LOGFX_ENEMY_FLEE      3
-#define LOGFX_ENEMY_STUN      4
-#define LOGFX_ENEMY_ATK_DOWN  5
+#define LOGFX_ENEMY_TEN_DOWN  4
+#define LOGFX_ENEMY_DMG_DOWN  5
 #define LOGFX_HEAL_PLAYER     6
 #define LOGFX_DAMAGE_PLAYER   7
 
@@ -80,8 +80,8 @@ static LogMessage msgs[] = {
     MSG("The dark closes in.",       LOGTRIG_COMBAT_START, 0xFF, 0xFF, 0xFF,   0,   30, ENEMYCOND_NONE,      0,       LOGFX_ADD_MOD,        LOGFX_TARGET_FOCUSED, ENCOUNTER_MOD_DARK),
     MSG("You feel the ground shake.",LOGTRIG_COMBAT_START, 0xFF, 0xFF, 0xFF,   0,   80, ENEMYCOND_SIZE_GTE,  4,       LOGFX_NONE,           LOGFX_TARGET_FOCUSED, 0),
     MSG("Your vision narrows.",      LOGTRIG_PLAYER_LOW_HP,0xFF, 0xFF, 0xFF,   0,   60, ENEMYCOND_NONE,      0,       LOGFX_NONE,           LOGFX_TARGET_FOCUSED, 0),
-    MSG("It hesitates.",             LOGTRIG_TURN_END,     0xFF, 0xFF, 0xFF,   0,   40, ENEMYCOND_HP_LTE_PCT,25,      LOGFX_ENEMY_ATK_DOWN, LOGFX_TARGET_WEAKEST, 1),
-    MSG("Their nerve breaks.",       LOGTRIG_ENEMY_KILLED, 0xFF, 0xFF, 0xFF,   0,   40, ENEMYCOND_COUNT_GTE, 1,       LOGFX_ENEMY_ATK_DOWN, LOGFX_TARGET_ALL,     1),
+    MSG("It hesitates.",             LOGTRIG_TURN_END,     0xFF, 0xFF, 0xFF,   0,   40, ENEMYCOND_STATE_IS,  2,       LOGFX_ENEMY_DMG_DOWN, LOGFX_TARGET_WEAKEST, 1),
+    MSG("Their nerve breaks.",       LOGTRIG_ENEMY_KILLED, 0xFF, 0xFF, 0xFF,   0,   40, ENEMYCOND_COUNT_GTE, 1,       LOGFX_ENEMY_DMG_DOWN, LOGFX_TARGET_ALL,     1),
     MSG("The crowd stirs.",          LOGTRIG_PLAYER_HURT,  0xFF, 0xFF, 0xFF,   ENCOUNTER_MOD_CROWDED, 40, ENEMYCOND_NONE, 0, LOGFX_NONE,  LOGFX_TARGET_FOCUSED, 0),
     MSG("Your howl echoes.",         LOGTRIG_ACTION,       24,   0xFF, 0xFF,   0,   50, ENEMYCOND_NONE,      0,       LOGFX_NONE,           LOGFX_TARGET_FOCUSED, 0),
     MSG("One of them flees!",        LOGTRIG_PLAYER_LOW_HP,0xFF, 0xFF, 0xFF,   0,   20, ENEMYCOND_COUNT_GTE, 2,       LOGFX_ENEMY_FLEE,     LOGFX_TARGET_WEAKEST, 0),

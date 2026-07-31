@@ -1,4 +1,12 @@
-/* tools/seed_hunt_encounters.c — writes the initial assets/data/hunt_encounters.dat
+/* tools/seed_hunt_encounters.c — writes assets/data/hunt_encounters.dat
+ * and assets/data/camp_zones.dat.
+ *
+ * Hunts run on the shared hunt morale graph (see seed_states.c):
+ *   0 Organized  1 Disturbed  2 Alerted  3 Terrified  4 Broken  5 Preparing
+ * The group is thinned by action/state EFX_KILL effects; the hunt is won
+ * when the counter empties. Botched actions raise alert, which escalates
+ * their posture along escalateTo[] and eventually makes them charge.
+ *
  * Run once: make seed_hunt_encounters
  * After that, edit with make hunt_encounter_editor. */
 
@@ -6,193 +14,91 @@
 #include <string.h>
 #include <stdint.h>
 
-#define HUNT_ENC_MAX    16
-#define HUNT_STATE_MAX   8
-#define HUNT_EDGE_MAX    4
-#define HUNT_ACTION_MAX  3
-
-#define HUNT_STATE_TERMINAL (1<<0)
-#define HUNT_STATE_SUCCESS  (1<<1)
-#define HUNT_STATE_COMBAT   (1<<2)
-
+#define GRAPH_STATES_MAX 8
 #define HUNT_FLAG_REPEATABLE (1<<0)
+#define CAMP_FLAG_REPEATABLE (1<<0)
 
-/* Action IDs — must match actions.dat */
-#define ACTION_AMBUSH       14
-#define ACTION_TRACK        21
-#define ACTION_SET_TRAP     17
-#define ACTION_BLOOD_SCENT  26
-#define ACTION_BLOOD_HOWL   24
-#define ACTION_MASSACRE     36
+/* Hunt graph states */
+#define HS_ORGANIZED 0
+#define HS_DISTURBED 1
+#define HS_ALERTED   2
+#define HS_TERRIFIED 3
+#define HS_BROKEN    4
+#define HS_PREPARING 5
+
+#define MASK_ALL 0x3F  /* all six postures */
+#define NONE     0xFF
 
 typedef struct {
-    uint8_t actionIds[HUNT_ACTION_MAX];
-    uint8_t nextState;
+    uint8_t id;
+    char    name[24];
+    uint8_t enemyPoolId;
+    uint8_t enemyCount;
+    uint8_t stateMask;
+    uint8_t tenacity;
+    uint8_t escalateEvery;
+    uint8_t alertLimit;
+    uint8_t escalateTo[GRAPH_STATES_MAX];
+    uint8_t flags;
     uint8_t setFlag;
     uint8_t _pad[3];
-} HuntEdge;
-
-typedef char _check_edge[(sizeof(HuntEdge) == 8) ? 1 : -1];
-
-typedef struct {
-    char     description[24];
-    HuntEdge edges[HUNT_EDGE_MAX];
-    uint8_t  edgeCount;
-    uint8_t  turnBudget;
-    uint8_t  timeoutNext;
-    uint8_t  damage;
-    uint8_t  flags;
-    uint8_t  _pad[3];
-} HuntStateDef;
-
-typedef char _check_state[(sizeof(HuntStateDef) == 64) ? 1 : -1];
-
-typedef struct {
-    uint8_t      id;
-    char         name[24];
-    uint8_t      enemyPoolId;
-    uint8_t      enemyCount;
-    uint8_t      stateCount;
-    uint8_t      startState;
-    uint8_t      flags;
-    uint8_t      _pad[2];
-    HuntStateDef states[HUNT_STATE_MAX];
 } HuntEncounterDef;
 
-typedef char _check_enc[(sizeof(HuntEncounterDef) == 544) ? 1 : -1];
+typedef char _chk[(sizeof(HuntEncounterDef) == 44) ? 1 : -1];
 
-/* Hunt Encounter 0: Gate Patrol
- *
- * A squad of 6 soldiers guards the city gate.  Azrael can pick them off
- * one by one from the rooftops and shadows.
- *
- * States:
- *   0 UNAWARE    — squad oblivious; Ambush or Track for stealth kills
- *                  timeout 3 turns -> ALERT
- *   1 ALERT      — squad on edge; Track or Set Trap
- *                  timeout 2 turns -> FIGHTING BACK (combat)
- *   2 SCATTERED  — squad in disarray; any hunt action
- *                  timeout 0 (no timeout)
- *                  Blood Howl -> BROKEN
- *   3 BROKEN     — squad completely demoralised; Massacre available
- *                  success terminal
- *   4 FIGHT BACK — combat fallback terminal
- */
-static const HuntEncounterDef defaults[] = {
-    {
-        /* id */ 0,
-        /* name */ "Gate Patrol",
-        /* enemyPoolId */ 1,          /* pool 1 — standard soldiers */
-        /* enemyCount  */ 6,
-        /* stateCount  */ 5,
-        /* startState  */ 0,
-        /* flags       */ 0,
-        /* _pad        */ { 0, 0 },
-        /* states */ {
-            /* [0] UNAWARE */
-            {
-                "They haven't seen you.",
-                {
-                    /* Ambush -> UNAWARE (kill 1, stay hidden) */
-                    { {ACTION_AMBUSH,     0xFF, 0xFF}, 0,    0xFF, {0,0,0} },
-                    /* Track -> SCATTERED (careful pursuit) */
-                    { {ACTION_TRACK,      0xFF, 0xFF}, 2,    0xFF, {0,0,0} },
-                    /* Blood Scent -> UNAWARE (locate prey) */
-                    { {ACTION_BLOOD_SCENT,0xFF, 0xFF}, 0,    0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                },
-                /* edgeCount  */ 3,
-                /* turnBudget */ 3,
-                /* timeoutNext*/ 1,    /* -> ALERT */
-                /* damage     */ 0,
-                /* flags      */ 0,
-                { 0, 0, 0 }
-            },
-            /* [1] ALERT */
-            {
-                "They sense something.",
-                {
-                    /* Track -> ALERT (precision kill, maintain alert) */
-                    { {ACTION_TRACK,    0xFF, 0xFF}, 1,    0xFF, {0,0,0} },
-                    /* Set Trap -> SCATTERED */
-                    { {ACTION_SET_TRAP, 0xFF, 0xFF}, 2,    0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                },
-                /* edgeCount  */ 2,
-                /* turnBudget */ 2,
-                /* timeoutNext*/ 0xFF, /* -> combat fallback */
-                /* damage     */ 0,
-                /* flags      */ HUNT_STATE_COMBAT,
-                { 0, 0, 0 }
-            },
-            /* [2] SCATTERED */
-            {
-                "They scramble.",
-                {
-                    /* Ambush / Track / Set Trap -> SCATTERED (keep killing) */
-                    { {ACTION_AMBUSH,     ACTION_TRACK, ACTION_SET_TRAP}, 2, 0xFF, {0,0,0} },
-                    /* Blood Howl -> BROKEN */
-                    { {ACTION_BLOOD_HOWL, 0xFF,         0xFF},            3, 0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                },
-                /* edgeCount  */ 2,
-                /* turnBudget */ 0,    /* no timeout */
-                /* timeoutNext*/ 0xFF,
-                /* damage     */ 0,
-                /* flags      */ 0,
-                { 0, 0, 0 }
-            },
-            /* [3] BROKEN — terminal success; Massacre finishes them */
-            {
-                "They flee or cower.",
-                {
-                    /* Massacre -> success terminal */
-                    { {ACTION_MASSACRE, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                },
-                /* edgeCount  */ 1,
-                /* turnBudget */ 0,
-                /* timeoutNext*/ 0xFF,
-                /* damage     */ 0,
-                /* flags      */ HUNT_STATE_TERMINAL | HUNT_STATE_SUCCESS,
-                { 0, 0, 0 }
-            },
-            /* [4] FIGHT BACK — combat fallback terminal */
-            {
-                "They rally and charge!",
-                {
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                    { {0xFF, 0xFF, 0xFF}, 0xFF, 0xFF, {0,0,0} },
-                },
-                /* edgeCount  */ 0,
-                /* turnBudget */ 0,
-                /* timeoutNext*/ 0xFF,
-                /* damage     */ 0,
-                /* flags      */ HUNT_STATE_TERMINAL | HUNT_STATE_COMBAT,
-                { 0, 0, 0 }
-            },
-            /* [5-7] unused */
-            { {0}, {{0}}, 0,0,0,0,0,{0} },
-            { {0}, {{0}}, 0,0,0,0,0,{0} },
-            { {0}, {{0}}, 0,0,0,0,0,{0} },
-        }
-    },
+typedef struct {
+    char    mapId[8];
+    uint8_t leftX, rightX, topY, bottomY;
+    uint8_t huntEncId;
+    uint8_t clearedFlag;
+    uint8_t flags;
+    uint8_t _pad[1];
+} CampZone;
+
+typedef char _chk2[(sizeof(CampZone) == 16) ? 1 : -1];
+
+/* Escalation ladders. Panic recovers toward Alerted — let them catch their
+   breath and the rout you built is gone. */
+#define LADDER_STANDARD { HS_DISTURBED, HS_ALERTED, HS_PREPARING, HS_ALERTED, NONE, NONE, NONE, NONE }
+/* Disciplined troops skip straight to forming up */
+#define LADDER_DRILLED  { HS_ALERTED, HS_PREPARING, HS_PREPARING, HS_ALERTED, NONE, NONE, NONE, NONE }
+
+static const HuntEncounterDef defs[] = {
+    /* Bandits: undisciplined — they break easily, but they are quick to notice */
+    { 0, "Bandit Camp", 1, 5, MASK_ALL, 100, 2, 6,
+      LADDER_STANDARD, 0, NONE, {0,0,0} },
+
+    /* Wolf pack: hard to rattle (tenacity), never "prepares" — beasts either
+       hold or bolt, so Preparing is carved out of the mask */
+    { 1, "Wolf Pack", 0, 4, MASK_ALL & ~(1u << HS_PREPARING), 75, 3, 7,
+      LADDER_STANDARD, 0, NONE, {0,0,0} },
+
+    /* Cult circle: drilled and fearless — they cannot be Terrified, only
+       broken outright, and they form up fast */
+    { 2, "Cult Circle", 3, 6, MASK_ALL & ~(1u << HS_TERRIFIED), 60, 2, 5,
+      LADDER_DRILLED, 0, NONE, {0,0,0} },
+};
+
+static const CampZone zones[] = {
+    { "map1", 12, 15, 10, 13, 0, 40, 0, {0} },
+    { "map1", 20, 23,  4,  7, 1, 41, 0, {0} },
 };
 
 int main(void) {
     FILE *f = fopen("assets/data/hunt_encounters.dat", "wb");
-    if (!f) { fprintf(stderr, "Cannot open assets/data/hunt_encounters.dat\n"); return 1; }
-    uint8_t n = (uint8_t)(sizeof(defaults) / sizeof(defaults[0]));
+    if (!f) { fprintf(stderr, "Cannot write hunt_encounters.dat\n"); return 1; }
+    uint8_t n = (uint8_t)(sizeof(defs) / sizeof(defs[0]));
     fwrite(&n, 1, 1, f);
-    fwrite(defaults, sizeof(HuntEncounterDef), n, f);
+    fwrite(defs, sizeof(HuntEncounterDef), n, f);
     fclose(f);
-    printf("Wrote %d hunt encounter(s) to assets/data/hunt_encounters.dat (%zu bytes each)\n",
-        n, sizeof(HuntEncounterDef));
+
+    f = fopen("assets/data/camp_zones.dat", "wb");
+    if (!f) { fprintf(stderr, "Cannot write camp_zones.dat\n"); return 1; }
+    uint8_t m = (uint8_t)(sizeof(zones) / sizeof(zones[0]));
+    fwrite(&m, 1, 1, f);
+    fwrite(zones, sizeof(CampZone), m, f);
+    fclose(f);
+
+    printf("Wrote %d hunt encounters, %d camp zones\n", n, m);
     return 0;
 }
