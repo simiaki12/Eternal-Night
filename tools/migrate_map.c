@@ -1,7 +1,15 @@
-/* tools/migrate_map.c — convert old two-layer map format to new sparse-event format.
+/* tools/migrate_map.c — convert v1 maps (global tile enum) to v2 (per-map palette).
  *
- * Old: [w][h][w*h gfx][w*h loc][spawnX][spawnY][transition\0][portalCount][pid,sx,sy,dest\0]...
- * New: [w][h][spawnX][spawnY][w*h gfx][eventCount][eventCount × MapEvent(40 bytes)]
+ * v1: [w][h][spawnX][spawnY][w*h gfx][eventCount][events × 40]
+ * v2: ["TMP2"][w][h][spawnX][spawnY][nameCount][names × 24]
+ *     [palCount][palette × 16][w*h tile][eventCount][events × 40]
+ *
+ * The emitted palette reproduces the hardcoded table the engine used to carry,
+ * so migrated maps render identically: grass keeps its 3-variant pool and
+ * random rotation, road keeps its rotation, and town/dungeon/portal events keep
+ * their special sprites as per-event tile overrides.
+ *
+ * Files already in v2 are left alone, so re-running this is harmless.
  *
  * Usage: migrate_map <mapfile> [mapfile2 ...]
  */
@@ -11,25 +19,62 @@
 #include <stdint.h>
 #include <string.h>
 
-#define MAX_PORTALS     16
-#define LOC_PORTAL_BASE 0xE0
-#define MAX_MAP_EVENTS  255
+#include "../src/world/map_format.h"
 
-typedef enum {
-    MAP_EV_ENEMY   = 0,
-    MAP_EV_TOWN    = 1,
-    MAP_EV_DUNGEON = 2,
-    MAP_EV_PORTAL  = 3,
-} MapEventType;
+/* The v1 global tile ids, in order. */
+enum {
+    GFX_GRASS = 0, GFX_WALL, GFX_TREE, GFX_RIVER, GFX_BRIDGE, GFX_ROAD,
+    GFX_BUILDING_FLOOR, GFX_HILLS, GFX_MOUNTAINS, GFX_CAVE_FLOOR,
+    GFX_CAVE_WALL, GFX_TAVERN_WALL, GFX_COUNT
+};
 
+/* Stock palette: one entry per v1 tile id, listing the assets the engine used
+ * to hardcode. Names are resolved into the map's name table on the fly. */
 typedef struct {
-    uint8_t x, y;
-    uint8_t type;
-    uint8_t id;
-    uint8_t destX, destY;
-    char    destMap[32];
-    uint8_t _pad[2];
-} MapEvent; /* 40 bytes */
+    const char *names[MAP_TILE_NAMES];
+    uint8_t     nameCount;
+    uint8_t     flags;
+    uint8_t     glyph, color;
+} StockTile;
+
+static const StockTile STOCK[GFX_COUNT] = {
+    /* GRASS          */ { {"grass.til", "grass_1.til", "grass_2.til"}, 3,
+                           TF_PASSABLE | TF_ROT_RANDOM, '.', 5 },
+    /* WALL           */ { {"map_wall.til"},     1, 0,           '#', 1 },
+    /* TREE           */ { {"tree.bin"},         1, 0,           '^', 5 | MAP_COLOR_BOLD },
+    /* RIVER          */ { {"water.til"},        1, 0,           '~', 7 },
+    /* BRIDGE         */ { {"bridge.til"},       1, TF_PASSABLE, '=', 3 },
+    /* ROAD           */ { {"road.til"},         1, TF_PASSABLE | TF_ROT_RANDOM, ':', 1 },
+    /* BUILDING_FLOOR */ { {"bldg_floor.bin"},   1, TF_PASSABLE, '+', 6 },
+    /* HILLS          */ { {"hills.til"},        1, TF_PASSABLE, 'n', 5 },
+    /* MOUNTAINS      */ { {"mountain.til"},     1, 0,           'M', 1 | MAP_COLOR_BOLD },
+    /* CAVE_FLOOR     */ { {"cave.til"},         1, TF_PASSABLE, ',', 4 },
+    /* CAVE_WALL      */ { {"cave_wall.til"},    1, 0,           '%', 4 | MAP_COLOR_BOLD },
+    /* TAVERN_WALL    */ { {"tavern_wall.til"},  1, 0,           '|', 3 | MAP_COLOR_BOLD },
+};
+
+/* Sprites the engine used to substitute for non-enemy events. */
+static const char *EVENT_TILE[4] = {
+    NULL,                   /* ENEMY   — icon drawn over terrain, no override */
+    "house.til",            /* TOWN    */
+    "grass_dungeon.bin",    /* DUNGEON */
+    "portal.til",           /* PORTAL  */
+};
+
+/* --- name table ---------------------------------------------------- */
+
+static char names[MAP_NAMES_MAX][MAP_NAME_LEN];
+static int  nameCount = 0;
+
+static uint8_t nameIntern(const char *n) {
+    for (int i = 0; i < nameCount; i++)
+        if (strcmp(names[i], n) == 0) return (uint8_t)i;
+    if (nameCount >= MAP_NAMES_MAX) return MAP_NAME_NONE;
+    snprintf(names[nameCount], MAP_NAME_LEN, "%s", n);
+    return (uint8_t)nameCount++;
+}
+
+/* --- migration ----------------------------------------------------- */
 
 static int migrateFile(const char *path) {
     FILE *f = fopen(path, "rb");
@@ -38,130 +83,110 @@ static int migrateFile(const char *path) {
     long sz = ftell(f);
     rewind(f);
 
-    if (sz < 2) { fprintf(stderr, "%s: too small\n", path); fclose(f); return 1; }
+    if (sz < 5) { fprintf(stderr, "%s: too small\n", path); fclose(f); return 1; }
     uint8_t *buf = malloc((size_t)sz);
     if (!buf) { fclose(f); return 1; }
-    (void)fread(buf, 1, (size_t)sz, f);
+    if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
+        fprintf(stderr, "%s: short read\n", path);
+        free(buf); fclose(f); return 1;
+    }
     fclose(f);
 
+    if (memcmp(buf, MAP_MAGIC, 4) == 0) {
+        printf("%s: already v2, skipped\n", path);
+        free(buf);
+        return 0;
+    }
+
     int w = buf[0], h = buf[1];
+    int spawnX = buf[2], spawnY = buf[3];
     int n = w * h;
-    if (sz < 2 + n + n) {
-        fprintf(stderr, "%s: truncated (need %d bytes, got %ld)\n", path, 2 + n + n, sz);
+    if (sz < 4 + n + 1) {
+        fprintf(stderr, "%s: truncated (need %d bytes, got %ld)\n", path, 4 + n + 1, sz);
         free(buf);
         return 1;
     }
 
-    uint8_t *gfxLayer = buf + 2;
-    uint8_t *locLayer = buf + 2 + n;
+    uint8_t *tiles = buf + 4;
 
-    /* Parse optional tail: spawnX, spawnY, transition\0, portalCount, portals */
-    uint8_t spawnX = 2, spawnY = 2;
-    char    transTarget[64] = {0};
-    char    portalTargets[MAX_PORTALS][64] = {{0}};
-    uint8_t portalSpawnX[MAX_PORTALS]      = {0};
-    uint8_t portalSpawnY[MAX_PORTALS]      = {0};
-
-    long tailOffset = 2 + n + n;
-    if (sz > tailOffset + 1) {
-        spawnX = buf[tailOffset];
-        spawnY = buf[tailOffset + 1];
-        long i = tailOffset + 2;
-        int ti = 0;
-        while (i < sz && buf[i] != 0 && ti < 63)
-            transTarget[ti++] = (char)buf[i++];
-        transTarget[ti] = '\0';
-        if (i < sz) i++; /* skip null terminator */
-
-        if (i < sz) {
-            int pc = buf[i++];
-            for (int p = 0; p < pc && i < sz; p++) {
-                int pid = buf[i++];
-                int sx  = (i < sz) ? buf[i++] : 0;
-                int sy  = (i < sz) ? buf[i++] : 0;
-                int di = 0;
-                char dest[64] = {0};
-                while (i < sz && buf[i] != 0 && di < 63)
-                    dest[di++] = (char)buf[i++];
-                dest[di] = '\0';
-                if (i < sz) i++;
-                if (pid >= 0 && pid < MAX_PORTALS) {
-                    strncpy(portalTargets[pid], dest, 63);
-                    portalSpawnX[pid] = (uint8_t)sx;
-                    portalSpawnY[pid] = (uint8_t)sy;
-                }
-            }
-        }
-    }
-
-    /* Build event list from loc layer */
+    int      evCount = buf[4 + n];
     MapEvent events[MAX_MAP_EVENTS];
-    int      eventCount = 0;
-
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            uint8_t loc = locLayer[y * w + x];
-            if (loc == 0) continue;
-            if (eventCount >= MAX_MAP_EVENTS) {
-                fprintf(stderr, "%s: too many events (max %d)\n", path, MAX_MAP_EVENTS);
-                break;
-            }
-
-            MapEvent *ev = &events[eventCount++];
-            memset(ev, 0, sizeof(*ev));
-            ev->x = (uint8_t)x;
-            ev->y = (uint8_t)y;
-
-            if (loc >= 1 && loc <= 15) {
-                ev->type = MAP_EV_ENEMY;
-                ev->id   = loc;
-            } else if (loc == 0xFE) {
-                ev->type = MAP_EV_TOWN;
-                /* carry dungeon transition target if set */
-                if (transTarget[0])
-                    strncpy(ev->destMap, transTarget, 31);
-            } else if (loc == 0xFF) {
-                ev->type = MAP_EV_DUNGEON;
-                if (transTarget[0])
-                    strncpy(ev->destMap, transTarget, 31);
-            } else if (loc >= LOC_PORTAL_BASE && loc < (uint8_t)(LOC_PORTAL_BASE + MAX_PORTALS)) {
-                int pid = loc - LOC_PORTAL_BASE;
-                ev->type  = MAP_EV_PORTAL;
-                ev->destX = portalSpawnX[pid];
-                ev->destY = portalSpawnY[pid];
-                if (portalTargets[pid][0])
-                    strncpy(ev->destMap, portalTargets[pid], 31);
-            } else {
-                eventCount--; /* unknown loc — skip */
-            }
-        }
+    memset(events, 0, sizeof(events));
+    if (evCount > MAX_MAP_EVENTS) evCount = MAX_MAP_EVENTS;
+    if (sz < 4 + n + 1 + evCount * (long)sizeof(MapEvent)) {
+        fprintf(stderr, "%s: event block truncated, dropping events\n", path);
+        evCount = 0;
+    } else {
+        memcpy(events, buf + 4 + n + 1, (size_t)evCount * sizeof(MapEvent));
     }
 
-    /* Write new format */
-    f = fopen(path, "wb");
-    if (!f) { fprintf(stderr, "Cannot write: %s\n", path); free(buf); return 1; }
+    /* Build the name table and palette from the tiles this map actually uses.
+       Palette indices stay equal to the old gfx ids so tile bytes need no
+       remapping, and unused stock entries are dropped from the tail only. */
+    nameCount = 0;
+    int highest = -1;
+    for (int i = 0; i < n; i++)
+        if (tiles[i] < GFX_COUNT && tiles[i] > highest) highest = tiles[i];
+    int palCount = highest + 1;
 
-    uint8_t hdr[4] = { (uint8_t)w, (uint8_t)h, spawnX, spawnY };
-    fwrite(hdr, 1, 4, f);
-    fwrite(gfxLayer, 1, (size_t)n, f);
-    uint8_t ec = (uint8_t)eventCount;
-    fwrite(&ec, 1, 1, f);
-    fwrite(events, sizeof(MapEvent), (size_t)eventCount, f);
-    fclose(f);
+    MapTile palette[MAP_PAL_MAX];
+    memset(palette, 0, sizeof(palette));
+    for (int i = 0; i < palCount; i++) {
+        const StockTile *st = &STOCK[i];
+        MapTile *mt = &palette[i];
+        for (int k = 0; k < st->nameCount; k++)
+            mt->name[k] = nameIntern(st->names[k]);
+        mt->nameCount = st->nameCount;
+        mt->flags     = st->flags;
+        mt->family    = 0;
+        mt->glyph     = st->glyph;
+        mt->color     = st->color;
+    }
+
+    /* Out-of-range tile bytes become empty rather than silently grass. */
+    int stray = 0;
+    for (int i = 0; i < n; i++)
+        if (tiles[i] >= palCount) { tiles[i] = MAP_TILE_EMPTY; stray++; }
+
+    /* Per-event tile overrides replace the old hardcoded substitutions. */
+    for (int i = 0; i < evCount; i++) {
+        events[i]._pad = 0;
+        const char *tn = (events[i].type < 4) ? EVENT_TILE[events[i].type] : NULL;
+        events[i].tileName = tn ? nameIntern(tn) : MAP_NAME_NONE;
+    }
+
+    FILE *o = fopen(path, "wb");
+    if (!o) { fprintf(stderr, "Cannot write: %s\n", path); free(buf); return 1; }
+
+    uint8_t hdr[8] = { 'T','M','P','2',
+                       (uint8_t)w, (uint8_t)h, (uint8_t)spawnX, (uint8_t)spawnY };
+    fwrite(hdr, 1, 8, o);
+    uint8_t nc = (uint8_t)nameCount;
+    fwrite(&nc, 1, 1, o);
+    fwrite(names, MAP_NAME_LEN, (size_t)nameCount, o);
+    uint8_t pc = (uint8_t)palCount;
+    fwrite(&pc, 1, 1, o);
+    fwrite(palette, sizeof(MapTile), (size_t)palCount, o);
+    fwrite(tiles, 1, (size_t)n, o);
+    uint8_t ec = (uint8_t)evCount;
+    fwrite(&ec, 1, 1, o);
+    fwrite(events, sizeof(MapEvent), (size_t)evCount, o);
+    fclose(o);
+
+    printf("%s: %dx%d, %d names, %d palette slots, %d events%s\n",
+           path, w, h, nameCount, palCount, evCount,
+           stray ? " (stray tiles cleared)" : "");
     free(buf);
-
-    printf("%s: %dx%d, spawn(%d,%d), %d event(s) migrated\n",
-           path, w, h, spawnX, spawnY, eventCount);
     return 0;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char *argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: migrate_map <mapfile> [mapfile2 ...]\n");
+        fprintf(stderr, "Usage: %s <mapfile> [mapfile2 ...]\n", argv[0]);
         return 1;
     }
-    int ret = 0;
+    int rc = 0;
     for (int i = 1; i < argc; i++)
-        ret |= migrateFile(argv[i]);
-    return ret;
+        rc |= migrateFile(argv[i]);
+    return rc;
 }

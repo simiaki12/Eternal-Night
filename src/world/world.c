@@ -18,58 +18,39 @@
 #include "world_enemies.h"
 #include "hunt_encounter.h"
 
-/* ── iso tile images, lazy-loaded on first render ── */
-#define TIMG_GRASS       0
-#define TIMG_GRASS_1     1
-#define TIMG_GRASS_2     2
-#define TIMG_GRASS_ENEMY 3
-#define TIMG_GRASS_TOWN  4
-#define TIMG_GRASS_DUNG  5
-#define TIMG_GRASS_PORT  6
-#define TIMG_RIVER       7
-#define TIMG_ROAD        8
-#define TIMG_BRIDGE      9
-#define TIMG_BLDG_FLOOR  10
-#define TIMG_CAVE_FLOOR  11
-#define TIMG_HILLS       12
-#define TIMG_WALL        13
-#define TIMG_CAVE_WALL   14
-#define TIMG_MOUNTAINS   15
-#define TIMG_TREE        16
-#define TIMG_TAVERN_WALL 17
-#define N_TILE_IMGS      18
+/* ── per-map tile images, loaded from the map's name table ── */
+static char    g_tileNames[MAP_NAMES_MAX][MAP_NAME_LEN];
+static PakData g_nameImgs[MAP_NAMES_MAX];
+static int     g_tileNameCount = 0;
 
-static PakData g_tileImgs[N_TILE_IMGS];
-static int     g_tilesLoaded = 0;
+/* Fallback drawn when an enemy pool names no tile of its own. */
+static PakData g_enemyTile;
+static int     g_enemyTileLoaded = 0;
 
 /* Per-pool world map tiles — loaded lazily on first draw */
 static PakData g_poolTiles[ENEMY_POOL_MAX];
 static int     g_poolTileLoaded[ENEMY_POOL_MAX];
 
+/* Release the previous map's tile images before loading the next map's. */
+static void freeTileImgs(void) {
+    for (int i = 0; i < g_tileNameCount; i++) {
+        free(g_nameImgs[i].data);
+        g_nameImgs[i].data = NULL;
+        g_nameImgs[i].size = 0;
+    }
+    g_tileNameCount = 0;
+}
+
 static void loadTileImgs(void) {
-    static const char *paths[N_TILE_IMGS] = {
-        "assets/tiles/grass.til",
-        "assets/tiles/grass_1.til",
-        "assets/tiles/grass_2.til",
-        "assets/tiles/enemy.til",
-        "assets/tiles/house.til",
-        "assets/tiles/grass_dungeon.bin",
-        "assets/tiles/portal.til",
-        "assets/tiles/water.til",
-        "assets/tiles/road.til",
-        "assets/tiles/bridge.til",
-        "assets/tiles/bldg_floor.bin",
-        "assets/tiles/cave.til",
-        "assets/tiles/hills.til",
-        "assets/tiles/map_wall.til",
-        "assets/tiles/cave_wall.til",
-        "assets/tiles/mountain.til",
-        "assets/tiles/tree.bin",
-        "assets/tiles/tavern_wall.til",
-    };
-    for (int i = 0; i < N_TILE_IMGS; i++)
-        g_tileImgs[i] = pakRead(paths[i]);
-    g_tilesLoaded = 1;
+    for (int i = 0; i < g_tileNameCount; i++) {
+        char path[16 + MAP_NAME_LEN];
+        snprintf(path, sizeof(path), "assets/tiles/%s", g_tileNames[i]);
+        g_nameImgs[i] = pakRead(path);
+    }
+    if (!g_enemyTileLoaded) {
+        g_enemyTile       = pakRead("assets/tiles/enemy.til");
+        g_enemyTileLoaded = 1;
+    }
 }
 
 static int tileHash(int x, int y, int n) {
@@ -139,10 +120,12 @@ int     camX         = 0;
 int     camY         = 0;
 int     mapWidth     = 0;
 int     mapHeight    = 0;
-uint8_t mapGfx[MAX_MAP_TILES];
+uint8_t mapTiles[MAX_MAP_TILES];
 MapEvent mapEvents[MAX_MAP_EVENTS];
 int      mapEventCount = 0;
 char    currentMapName[64] = {0};
+MapTile mapPalette[MAP_PAL_MAX];
+int     mapPaletteCount = 0;
 
 static const MapEvent *findEvent(int x, int y) {
     for (int i = 0; i < mapEventCount; i++)
@@ -151,29 +134,108 @@ static const MapEvent *findEvent(int x, int y) {
     return NULL;
 }
 
+int tilePassable(uint8_t tile) {
+    if (tile >= (uint8_t)mapPaletteCount) return 0;   /* empty / unmapped */
+    return (mapPalette[tile].flags & TF_PASSABLE) != 0;
+}
+
+/* True when (x,y) holds a tile of the given autotile family. */
+static int connectsTo(int x, int y, uint8_t family) {
+    if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return 0;
+    uint8_t t = mapTiles[y * mapWidth + x];
+    if (t >= (uint8_t)mapPaletteCount) return 0;
+    return mapPalette[t].family == family;
+}
+
+/* Resolve the sprite for a map tile: returns a name-table index, or
+ * MAP_NAME_NONE when nothing should be drawn. Sets *rotate to a 90° step. */
+static uint8_t tileSprite(int tx, int ty, int *rotate) {
+    *rotate = 0;
+
+    const MapEvent *ev = findEvent(tx, ty);
+    if (ev && ev->type != MAP_EV_ENEMY && ev->tileName < g_tileNameCount)
+        return ev->tileName;
+
+    uint8_t t = mapTiles[ty * mapWidth + tx];
+    if (t >= (uint8_t)mapPaletteCount) return MAP_NAME_NONE;
+
+    const MapTile *mt = &mapPalette[t];
+    if (mt->nameCount == 0) return MAP_NAME_NONE;
+
+    int pick = 0;
+    if (mt->flags & TF_AUTOTILE) {
+        int mask = 0;
+        if (mt->family) {
+            if (connectsTo(tx,     ty - 1, mt->family)) mask |= MAP_CONN_N;
+            if (connectsTo(tx + 1, ty,     mt->family)) mask |= MAP_CONN_E;
+            if (connectsTo(tx,     ty + 1, mt->family)) mask |= MAP_CONN_S;
+            if (connectsTo(tx - 1, ty,     mt->family)) mask |= MAP_CONN_W;
+        }
+        MapAutoTile at = mapAutoTile(mask);
+        pick    = at.shape;
+        *rotate = at.rot;
+        if (pick >= mt->nameCount) pick = 0;
+    } else {
+        if (mt->nameCount > 1) pick = tileHash(tx, ty, mt->nameCount);
+        if (mt->flags & TF_ROT_RANDOM)
+            *rotate = tileHash(tx * 7 + 1, ty * 13 + 1, 4);
+    }
+
+    uint8_t ni = mt->name[pick];
+    return (ni < g_tileNameCount) ? ni : MAP_NAME_NONE;
+}
+
 void worldUpdateCamera(void) {
     camX = (worldPlayerX - worldPlayerY) * (TILE_W / 2);
     camY = (worldPlayerX + worldPlayerY) * (TILE_H / 2);
 }
 
 static int loadMap(PakData data) {
-    if (data.size < 5) return 0;
-    mapWidth  = data.data[0];
-    mapHeight = data.data[1];
-    int spawnX = data.data[2];
-    int spawnY = data.data[3];
-    int n = mapWidth * mapHeight;
-    if ((int)data.size < 4 + n + 1) return 0;
+    const uint8_t *p   = data.data;
+    int            sz  = (int)data.size;
+    int            off = 0;
 
-    memcpy(mapGfx, data.data + 4, n);
+    /* Header: magic + dimensions. */
+    if (sz < 9 || memcmp(p, MAP_MAGIC, 4) != 0) return 0;
+    mapWidth   = p[4];
+    mapHeight  = p[5];
+    int spawnX = p[6];
+    int spawnY = p[7];
+    off = 8;
 
-    mapEventCount = data.data[4 + n];
-    int evBytes = mapEventCount * (int)sizeof(MapEvent);
-    if ((int)data.size < 4 + n + 1 + evBytes) {
-        mapEventCount = 0;
-    } else {
-        memcpy(mapEvents, data.data + 4 + n + 1, evBytes);
+    /* Name table. */
+    int nameCount = p[off++];
+    if (nameCount > MAP_NAMES_MAX) return 0;
+    if (sz < off + nameCount * MAP_NAME_LEN + 1) return 0;
+    freeTileImgs();
+    for (int i = 0; i < nameCount; i++) {
+        memcpy(g_tileNames[i], p + off, MAP_NAME_LEN);
+        g_tileNames[i][MAP_NAME_LEN - 1] = '\0';
+        off += MAP_NAME_LEN;
     }
+    g_tileNameCount = nameCount;
+
+    /* Palette. */
+    mapPaletteCount = p[off++];
+    if (mapPaletteCount > MAP_PAL_MAX) mapPaletteCount = MAP_PAL_MAX;
+    int palBytes = mapPaletteCount * (int)sizeof(MapTile);
+    if (sz < off + palBytes) { mapPaletteCount = 0; return 0; }
+    memcpy(mapPalette, p + off, palBytes);
+    off += palBytes;
+
+    /* Tiles. */
+    int n = mapWidth * mapHeight;
+    if (sz < off + n + 1) return 0;
+    memcpy(mapTiles, p + off, n);
+    off += n;
+
+    /* Events. */
+    mapEventCount = p[off++];
+    int evBytes = mapEventCount * (int)sizeof(MapEvent);
+    if (sz < off + evBytes) mapEventCount = 0;
+    else                    memcpy(mapEvents, p + off, evBytes);
+
+    loadTileImgs();
 
     worldPlayerX = spawnX;
     worldPlayerY = spawnY;
@@ -248,7 +310,7 @@ static void triggerMapEvent(const MapEvent *ev) {
                 int dx = ev->destX, dy = ev->destY;
                 worldLoadNamed(ev->destMap);
                 if (dx < mapWidth && dy < mapHeight &&
-                        IS_GFX_PASSABLE(mapGfx[dy * mapWidth + dx])) {
+                        tilePassable(mapTiles[dy * mapWidth + dx])) {
                     worldPlayerX = dx;
                     worldPlayerY = dy;
                     worldUpdateCamera();
@@ -299,7 +361,7 @@ void handleWorldInput(int key) {
 
     if (newX >= 0 && newX < mapWidth &&
         newY >= 0 && newY < mapHeight &&
-        IS_GFX_PASSABLE(mapGfx[newY * mapWidth + newX])) {
+        tilePassable(mapTiles[newY * mapWidth + newX])) {
         int dx       = newX - worldPlayerX;
         int dy       = newY - worldPlayerY;
         int oldCamX  = camX;
@@ -345,8 +407,6 @@ void returnToTown(void) {
 }
 
 void renderWorld(void) {
-    if (!g_tilesLoaded) loadTileImgs();
-
     uint32_t now  = (uint32_t)GetTickCount();
     int rCamX = camX + g_camSlideX;
     int rCamY = camY + g_camSlideY;
@@ -359,7 +419,7 @@ void renderWorld(void) {
 
     /* Tall tiles are deferred within each sum pass so entities drawn in the
        flat-tile pass always end up behind walls/trees at the same depth. */
-    typedef struct { int tx, ty, img_idx; } DeferredTall;
+    typedef struct { int tx, ty, img_idx, rot; } DeferredTall;
     DeferredTall deferred[128];
     int nDeferred = 0;
 
@@ -377,56 +437,16 @@ void renderWorld(void) {
             if (cx + TILE_W / 2 < 0 || cx - TILE_W / 2 > gfxWidth)  continue;
             if (cy + 96 < 0 || cy > gfxHeight + 2 * TILE_H)            continue;
 
-            uint8_t gfx = mapGfx[ty * mapWidth + tx];
-            int img_idx;
+            int     rotate  = 0;
+            uint8_t img_idx = tileSprite(tx, ty, &rotate);
 
-            switch (gfx) {
-                case GFX_WALL:           img_idx = TIMG_WALL;       break;
-                case GFX_TREE:           img_idx = TIMG_TREE;       break;
-                case GFX_RIVER:          img_idx = TIMG_RIVER;      break;
-                case GFX_BRIDGE:         img_idx = TIMG_BRIDGE;     break;
-                case GFX_ROAD:           img_idx = TIMG_ROAD;       break;
-                case GFX_BUILDING_FLOOR: img_idx = TIMG_BLDG_FLOOR; break;
-                case GFX_HILLS:          img_idx = TIMG_HILLS;       break;
-                case GFX_MOUNTAINS:      img_idx = TIMG_MOUNTAINS;  break;
-                case GFX_CAVE_FLOOR:     img_idx = TIMG_CAVE_FLOOR; break;
-                case GFX_CAVE_WALL:      img_idx = TIMG_CAVE_WALL;   break;
-                case GFX_TAVERN_WALL:    img_idx = TIMG_TAVERN_WALL; break;
-                default: {
-                    if (worldEnemyAt(tx, ty)) {
-                        /* Enemy present — draw terrain only; icon drawn after tile below */
-                        static const int g_evars[] = { TIMG_GRASS, TIMG_GRASS_1, TIMG_GRASS_2 };
-                        img_idx = g_evars[tileHash(tx, ty, 3)];
-                    } else {
-                        const MapEvent *ev = findEvent(tx, ty);
-                        if (ev && ev->type != MAP_EV_ENEMY) {
-                            switch (ev->type) {
-                                case MAP_EV_TOWN:    img_idx = TIMG_GRASS_TOWN; break;
-                                case MAP_EV_DUNGEON: img_idx = TIMG_GRASS_DUNG; break;
-                                case MAP_EV_PORTAL:  img_idx = TIMG_GRASS_PORT; break;
-                                default:             img_idx = TIMG_GRASS;      break;
-                            }
-                        } else {
-                            static const int g_vars[] = { TIMG_GRASS, TIMG_GRASS_1, TIMG_GRASS_2 };
-                            img_idx = g_vars[tileHash(tx, ty, 3)];
-                        }
-                    }
-                    break;
-                }
-            }
-
-            int rotate = 0;
-            if (img_idx == TIMG_GRASS || img_idx == TIMG_GRASS_1 || img_idx == TIMG_GRASS_2
-                    || img_idx == TIMG_ROAD)
-                rotate = tileHash(tx * 7 + 1, ty * 13 + 1, 4);
-
-            PakData *td = &g_tileImgs[img_idx];
-            if (td->data) {
+            PakData *td = (img_idx < g_tileNameCount) ? &g_nameImgs[img_idx] : NULL;
+            if (td && td->data) {
                 int tileH = (int)((const uint8_t *)td->data)[1];
                 if (tileH > TILE_H / 2) {
                     /* Tall tile — defer until after entities at this sum level. */
                     if (nDeferred < 128)
-                        deferred[nDeferred++] = (DeferredTall){tx, ty, img_idx};
+                        deferred[nDeferred++] = (DeferredTall){tx, ty, img_idx, rotate};
                 } else {
                     int draw_y = cy + TILE_H - tileH * 2 + (tileH >= TILE_H/2 ? 2 : 0);
                     drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, rotate, 255);
@@ -454,7 +474,7 @@ void renderWorld(void) {
                     if (tx != draw_tx || ty != draw_ty) continue;
 
                     /* Resolve pool tile — lazy load on first use. */
-                    PakData *etd = &g_tileImgs[TIMG_GRASS_ENEMY];
+                    PakData *etd = &g_enemyTile;
                     int pi = (int)we->pool_id - 1;
                     if (pi >= 0 && pi < enemyPoolCount) {
                         if (!g_poolTileLoaded[pi]) {
@@ -492,10 +512,11 @@ void renderWorld(void) {
             int tx = deferred[di].tx;
             int ty = deferred[di].ty;
             int img_idx = deferred[di].img_idx;
+            int trot    = deferred[di].rot;
             int cx = (tx - ty) * (TILE_W / 2) - rCamX + gfxWidth  / 2;
             int cy = (tx + ty) * (TILE_H / 2) - rCamY + gfxHeight / 2;
-            PakData *td = &g_tileImgs[img_idx];
-            if (!td->data) continue;
+            PakData *td = (img_idx < g_tileNameCount) ? &g_nameImgs[img_idx] : NULL;
+            if (!td || !td->data) continue;
             int tileH  = (int)((const uint8_t *)td->data)[1];
             int draw_y = cy + TILE_H - tileH * 2 + (tileH >= TILE_H/2 ? 2 : 0);
 
@@ -517,16 +538,16 @@ void renderWorld(void) {
             /* >= because tall tiles now render after player even at same sum level */
             if (sum >= playerSum) {
                 /* Player circle (primary) + optional enemy circle (secondary). */
-                drawBinRadial(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, 0,
+                drawBinRadial(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, trot,
                               plrScreenX, plrScreenY, PLR_RAD_INNER, PLR_RAD_OUTER,
                               ecx, ecy, ENM_RAD_INNER, ENM_RAD_OUTER);
             } else if (ecx >= 0) {
                 /* Only an enemy is behind this tile — enemy circle only. */
-                drawBinRadial(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, 0,
+                drawBinRadial(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, trot,
                               ecx, ecy, ENM_RAD_INNER, ENM_RAD_OUTER,
                               -1, 0, 0, 0);
             } else {
-                drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, 0, 255);
+                drawBin(cx - TILE_W / 2, draw_y, (const uint8_t *)td->data, 2, trot, 255);
             }
         }
 #undef PLR_RAD_INNER
