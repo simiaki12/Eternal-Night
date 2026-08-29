@@ -203,6 +203,39 @@ GraphResult encGraphResolve(int slot, int typeIdx, const ActionDef *adef,
                             uint8_t stateMask, uint8_t tenacity,
                             void (*fx)(const Effect *));
 
+/* -----------------------------------------------------------------------
+ * Action preview — the read-only projection behind the H overlay.
+ * Built from the same predicates encGraphResolve uses, so what the overlay
+ * promises and what resolution does cannot drift apart.
+ * ----------------------------------------------------------------------- */
+
+#define ENC_PREVIEW_MAX 6 /* max(GRAPH_STATES, ENV_EDGE_MAX) */
+
+typedef enum {
+    PV_LIVE = 0,  /* the edge this action would take right now       */
+    PV_SHADOWED,  /* usable, but a stronger edge is picked instead   */
+    PV_NO_ROUTE,  /* no progress authored out of the current state   */
+    PV_BLOCKED,   /* the target's stateMask forbids the destination  */
+} PreviewVerdict;
+
+typedef struct {
+    uint8_t to;      /* destination state id; 0xFF = resolves here      */
+    uint8_t verdict; /* PreviewVerdict                                  */
+    uint8_t banked;  /* % already banked on this edge                   */
+    uint8_t pot;     /* % after playing — the number the overlay bands  */
+} EdgePreview;
+
+int encGraphPreview(int slot, int typeIdx, const ActionDef *adef,
+                    uint8_t stateMask, uint8_t tenacity,
+                    EdgePreview out[ENC_PREVIEW_MAX]);
+
+/* Preview `actionId` against the live target of the active encounter.
+   Writes the graph identity needed to name states: *typeIdxOut is an
+   ENC_IDX_* index, or -1 for environmental (whose states are per-encounter
+   and named by description, not by the shared graph). Returns edge count. */
+int encPreviewCurrent(uint8_t actionId, EdgePreview out[ENC_PREVIEW_MAX],
+                      int *typeIdxOut, uint8_t *curOut);
+
 /* Effects whose meaning belongs to the encounter engine (progress, extra
    action); anything else falls through to applyEffect() in statuses.c.
    Per-type scopes wrap this to add their own verbs (METER, KILL). */

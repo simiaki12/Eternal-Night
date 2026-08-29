@@ -8,7 +8,8 @@
 ActionDef actionDefs[ACTION_MAX];
 int       actionDefCount = 0;
 
-#define ACT_NO_GRAPH {{0,{0}},{0,{0}},{0,{0}}}, {0,0,0}, {0,0,0}, 0
+/* graphMask, onPlay, fallback, mats — the fallback table has no graph data */
+#define ACT_NO_GRAPH 0, {0,0,0}, {0,0,0}, {{{{0}}}}
 
 static const ActionDef builtinDefs[] = {
     /*                                                                                                              flags                      eff  back  sh_e       sh_b */
@@ -26,16 +27,38 @@ static const ActionDef builtinDefs[] = {
 };
 #define BUILTIN_COUNT (int)(sizeof(builtinDefs)/sizeof(builtinDefs[0]))
 
-/* Format: [1 count][N × sizeof(ActionDef)] */
+/* Format: [1 count] then per action
+ *   [ACT_DISK_HEAD] header through `fallback`
+ *   [36 × popcount(graphMask)] matrices, in ascending ENC_IDX_* order
+ * Records are variable length so unused graphs cost nothing on disk; they
+ * expand into the fixed-stride actionDefs[] array here. */
 int loadActions(PakData data) {
     if (!data.data || data.size < 1) return 0;
-    uint8_t n = ((const uint8_t *)data.data)[0];
+    const uint8_t *p   = (const uint8_t *)data.data;
+    const uint8_t *end = p + data.size;
+    uint8_t n = *p++;
     if (n > ACTION_MAX) n = ACTION_MAX;
-    uint32_t expected = 1 + (uint32_t)n * sizeof(ActionDef);
-    if (data.size < expected) return 0;
-    memcpy(actionDefs, (const uint8_t *)data.data + 1, (size_t)n * sizeof(ActionDef));
-    actionDefCount = n;
-    return n;
+
+    int count = 0;
+    for (int i = 0; i < n; i++) {
+        if (p + ACT_DISK_HEAD > end) break;
+        ActionDef *def = &actionDefs[count];
+        memset(def, 0, sizeof(*def));
+        memcpy(def, p, ACT_DISK_HEAD);
+        p += ACT_DISK_HEAD;
+
+        int ok = 1;
+        for (int t = 0; t < ENC_TYPE_COUNT; t++) {
+            if (!ACT_HAS_GRAPH(def, t)) continue;
+            if (p + sizeof(TransMatrix) > end) { ok = 0; break; }
+            memcpy(&def->mats[t], p, sizeof(TransMatrix));
+            p += sizeof(TransMatrix);
+        }
+        if (!ok) break;
+        count++;
+    }
+    actionDefCount = count;
+    return count;
 }
 
 const ActionDef *getActionDef(uint8_t id) {
@@ -51,15 +74,10 @@ uint8_t actionGetDomain(uint8_t id) {
     return def ? def->domain : 0xFF;
 }
 
-int actionTransitionsFor(const ActionDef *def, int typeIdx, const Transition **first) {
-    *first = NULL;
-    if (!def || typeIdx < 0 || typeIdx >= 5) return 0;
-    int start = 0;
-    for (int t = 0; t < typeIdx; t++) start += ACT_TCOUNT(def, t);
-    int count = ACT_TCOUNT(def, typeIdx);
-    if (start + count > ACT_TRANSITIONS) return 0;
-    if (count > 0) *first = &def->transitions[start];
-    return count;
+const TransMatrix *actionMatrixFor(const ActionDef *def, int typeIdx) {
+    if (!def || typeIdx < 0 || typeIdx >= ENC_TYPE_COUNT) return NULL;
+    if (!ACT_HAS_GRAPH(def, typeIdx))                     return NULL;
+    return &def->mats[typeIdx];
 }
 
 int buildActionPool(uint8_t out[ACTION_MAX], uint8_t encounterCat) {

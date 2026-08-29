@@ -1,7 +1,7 @@
 #include <string.h>
 #include "enc_graph.h"
 
-StateDef encGraphs[ENC_TYPE_COUNT][GRAPH_STATES_MAX];
+StateDef encGraphs[ENC_TYPE_COUNT][GRAPH_STATES];
 uint8_t  encGraphCount[ENC_TYPE_COUNT];
 
 int loadEncGraphs(PakData data) {
@@ -14,7 +14,7 @@ int loadEncGraphs(PakData data) {
     for (int g = 0; g < nGraphs; g++) {
         if (p >= end) break;
         uint8_t n = *p++;
-        if (n > GRAPH_STATES_MAX) n = GRAPH_STATES_MAX;
+        if (n > GRAPH_STATES) n = GRAPH_STATES;
         if (p + (size_t)n * sizeof(StateDef) > end) break;
         memcpy(encGraphs[g], p, (size_t)n * sizeof(StateDef));
         p += (size_t)n * sizeof(StateDef);

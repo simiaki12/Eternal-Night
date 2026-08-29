@@ -21,6 +21,7 @@
 #include "hunt_encounter.h"
 #include "statuses.h"
 #include "cases.h"
+#include "actionhelp.h"
 
 EncounterState encounter;
 
@@ -63,8 +64,8 @@ int socialFindActive(uint8_t npc_id) {
 void socialEncounterStart(int se_idx) {
     if (se_idx < 0 || se_idx >= seDefCount) return;
     const SocialEncounterDef *se = &seDefs[se_idx];
-    if (se->npc_id >= (uint8_t)npcDefCount) return;
-    const NpcDef *npc = &npcDefs[se->npc_id];
+    const NpcDef *npc = npcGetDef(se->npc_id);
+    if (!npc) return;
 
     EnemyDef tmp;
     memset(&tmp, 0, sizeof(tmp));
@@ -72,6 +73,7 @@ void socialEncounterStart(int se_idx) {
     tmp.hp           = npc->base_standing;
     tmp.intelligence = npc->patience;
     tmp.lootTableId  = 0xFF;
+    tmp.id           = 0xFF;   /* synthetic def — not a real enemy */
     tmp.imgName[0]   = npc->imgName[0];
     tmp.imgName[1]   = npc->imgName[1];
 
@@ -268,8 +270,7 @@ static void fillEnemySlot(int slot, const EnemyDef *def) {
     e->behaviors[1] = def->behaviors[1];
     encounter.enemyState[slot] = (uint8_t)encGraphStart(ENC_IDX_COMBAT);
     encounter.potCount[slot]   = 0;
-    int idx = (int)(def - enemyDefs);
-    encounter.enemyDefIds[slot]    = (idx >= 0 && idx < enemyDefCount) ? (uint8_t)idx : 0xFF;
+    encounter.enemyDefIds[slot]    = def->id;
     encounter.fromWorldEnemy[slot] = 0;
     encounter.worldEnemyX[slot]    = 0;
     encounter.worldEnemyY[slot]    = 0;
@@ -418,6 +419,14 @@ static void potClearFrom(int slot, uint8_t from) {
     }
 }
 
+/* Pot banked on one specific edge — the preview's "already at" figure. */
+static int potGet(int slot, uint8_t from, uint8_t to) {
+    uint8_t key = (uint8_t)((from << 4) | to);
+    for (int i = 0; i < encounter.potCount[slot]; i++)
+        if (encounter.potKey[slot][i] == key) return encounter.potVal[slot][i];
+    return 0;
+}
+
 /* Highest pot banked from the enemy's current state — the UI progress hint. */
 static int potMaxFrom(int slot, uint8_t from) {
     int best = 0;
@@ -428,9 +437,30 @@ static int potMaxFrom(int slot, uint8_t from) {
     return best > 100 ? 100 : best;
 }
 
+/* The single predicate deciding whether the edge cur->to is usable.
+   Resolution and preview both go through it — that is what keeps the H
+   overlay honest. */
+static PreviewVerdict graphEdgeVerdict(const TransMatrix *m, uint8_t cur,
+                                       uint8_t to, uint8_t stateMask) {
+    if (cur >= GRAPH_STATES || to >= GRAPH_STATES) return PV_NO_ROUTE;
+    if (m->progress[cur][to] == 0)                 return PV_NO_ROUTE; /* no route from here */
+    if (!(stateMask & (1u << to)))                 return PV_BLOCKED;  /* target can't go there */
+    return PV_LIVE;
+}
+
+/* Progress an action banks on a live edge. Reads the pending multipliers
+   without consuming them; encGraphResolve clears them after calling. */
+static int graphAdd(const ActionDef *adef, int base, uint8_t tenacity) {
+    int add = base + statusProgressBonus(adef->domain)
+            + encounter.pendingProgress;
+    add = add * encounter.progressNextMult / 10;
+    add = add * (tenacity ? tenacity : 100) / 100;
+    return add < 1 ? 1 : add;
+}
+
 /* Shared graph resolution — combat, social and hunt all drive a target
-   around their type's graph with identical rules: find the first live
-   triplet (matches current state, allowed by stateMask), bank progress
+   around their type's graph with identical rules: take the strongest live
+   edge out of the current state (allowed by stateMask), bank its progress
    into that edge's pot, roll d100 under the pot. Whiffs are structural
    (wrong moment or blocked state) and spend the turn.
    `fx` applies effects in the caller's scope (meter/kill semantics). */
@@ -438,24 +468,22 @@ GraphResult encGraphResolve(int slot, int typeIdx, const ActionDef *adef,
                             uint8_t stateMask, uint8_t tenacity,
                             void (*fx)(const Effect *)) {
     char lm[28];
-    const Transition *tr = NULL;
-    int n = adef ? actionTransitionsFor(adef, typeIdx, &tr) : 0;
+    const TransMatrix *m = adef ? actionMatrixFor(adef, typeIdx) : NULL;
     uint8_t cur = encounter.enemyState[slot];
 
-    const Transition *live = NULL;
+    /* Dense matrices carry no authoring order, so the strongest usable
+       route wins; ties go to the lower destination id for determinism. */
+    int to   = -1;
     int base = 0;
-    for (int i = 0; i < n; i++) {
-        if (cur >= TRANSITION_SOURCES)          continue;
-        int p = tr[i].progress[cur];
-        if (p == 0)                             continue; /* no route from here */
-        if (!(stateMask & (1u << tr[i].to)))    continue; /* target cannot go there */
-        live = &tr[i];
-        base = p;
-        break;
+    if (m && cur < GRAPH_STATES) {
+        for (int d = 0; d < GRAPH_STATES; d++) {
+            if (graphEdgeVerdict(m, cur, (uint8_t)d, stateMask) != PV_LIVE) continue;
+            if (m->progress[cur][d] > base) { base = m->progress[cur][d]; to = d; }
+        }
     }
 
-    if (!live) {
-        if (n > 0) {
+    if (to < 0) {
+        if (m) {
             snprintf(lm, 28, "%.14s: no opening.", adef->name);
             logPush(lm);
             if (fx) fx(&adef->fallback);
@@ -465,15 +493,11 @@ GraphResult encGraphResolve(int slot, int typeIdx, const ActionDef *adef,
         return GRAPH_NO_TRIPLETS;
     }
 
-    int add = base + statusProgressBonus(adef->domain)
-            + encounter.pendingProgress;
-    encounter.pendingProgress = 0;
-    add = add * encounter.progressNextMult / 10;
+    int add = graphAdd(adef, base, tenacity);
+    encounter.pendingProgress  = 0;
     encounter.progressNextMult = 10;
-    add = add * (tenacity ? tenacity : 100) / 100;
-    if (add < 1) add = 1;
 
-    int pot = potAdd(slot, cur, live->to, add);
+    int pot = potAdd(slot, cur, (uint8_t)to, add);
     if (rand() % 100 >= pot) {
         snprintf(lm, 28, "%.10s: builds %d%%", adef->name, pot > 100 ? 100 : pot);
         logPush(lm);
@@ -481,8 +505,8 @@ GraphResult encGraphResolve(int slot, int typeIdx, const ActionDef *adef,
     }
 
     potClearFrom(slot, cur);
-    encounter.enemyState[slot] = live->to;
-    const StateDef *ns = encGraphState(typeIdx, live->to);
+    encounter.enemyState[slot] = (uint8_t)to;
+    const StateDef *ns = encGraphState(typeIdx, (uint8_t)to);
     if (typeIdx == ENC_IDX_COMBAT)
         snprintf(lm, 28, "%.12s: %.12s!", encounter.enemies[slot].name,
                  ns ? ns->name : "?");
@@ -491,6 +515,93 @@ GraphResult encGraphResolve(int slot, int typeIdx, const ActionDef *adef,
     logPush(lm);
     if (ns && fx) fx(&ns->onEnter);
     return GRAPH_FIRED;
+}
+
+/* Same walk as encGraphResolve, minus the dice and the mutation. Only cells
+   that carry a route are emitted — a dense matrix is mostly zeroes, and
+   listing every dead destination would bury the useful rows. */
+int encGraphPreview(int slot, int typeIdx, const ActionDef *adef,
+                    uint8_t stateMask, uint8_t tenacity,
+                    EdgePreview out[ENC_PREVIEW_MAX]) {
+    const TransMatrix *m = adef ? actionMatrixFor(adef, typeIdx) : NULL;
+    uint8_t cur = encounter.enemyState[slot];
+    if (!m || cur >= GRAPH_STATES) return 0;
+
+    int n = 0, best = -1, bestProgress = 0;
+
+    for (int d = 0; d < GRAPH_STATES && n < ENC_PREVIEW_MAX; d++) {
+        PreviewVerdict v = graphEdgeVerdict(m, cur, (uint8_t)d, stateMask);
+        if (v == PV_NO_ROUTE) continue; /* nothing authored here */
+
+        out[n].to     = (uint8_t)d;
+        out[n].banked = 0;
+        out[n].pot    = 0;
+        if (v == PV_LIVE) {
+            int banked = potGet(slot, cur, (uint8_t)d);
+            int pot    = banked + graphAdd(adef, m->progress[cur][d], tenacity);
+            out[n].banked = (uint8_t)(banked > 100 ? 100 : banked);
+            out[n].pot    = (uint8_t)(pot    > 100 ? 100 : pot);
+            if (m->progress[cur][d] > bestProgress) {
+                bestProgress = m->progress[cur][d];
+                best         = n;
+            }
+        }
+        out[n].verdict = (uint8_t)v;
+        n++;
+    }
+
+    /* Only the strongest route is actually attempted; the rest are real
+       edges that this play will not take. */
+    for (int i = 0; i < n; i++)
+        if (out[i].verdict == PV_LIVE && i != best)
+            out[i].verdict = PV_SHADOWED;
+
+    return n;
+}
+
+int encPreviewCurrent(uint8_t actionId, EdgePreview out[ENC_PREVIEW_MAX],
+                      int *typeIdxOut, uint8_t *curOut) {
+    const ActionDef *adef = getActionDef(actionId);
+    int     ti   = -1, slot = 0, ok = 1;
+    uint8_t mask = 0xFF, ten = 100;
+
+    switch (encounter.encounterType) {
+        case ENCOUNTER_COMBAT: {
+            ti   = ENC_IDX_COMBAT;
+            slot = encounter.targetIndex;
+            if (slot < 0 || slot >= encounter.enemyCount) { slot = 0; ok = 0; break; }
+            const Enemy *t = &encounter.enemies[slot];
+            mask = t->stateMask; ten = t->tenacity;
+            break;
+        }
+        case ENCOUNTER_SOCIAL: {
+            const Enemy *npc = &encounter.enemies[0];
+            ti = ENC_IDX_SOCIAL; mask = npc->stateMask; ten = npc->tenacity;
+            break;
+        }
+        case ENCOUNTER_HUNT: {
+            ti = ENC_IDX_HUNT;
+            const HuntEncounterDef *d =
+                huntEncGetDef((uint8_t)encounter.huntEncId);
+            if (!d) { ok = 0; break; }
+            mask = d->stateMask; ten = d->tenacity;
+            break;
+        }
+        case ENCOUNTER_INVESTIGATION:
+            ti = ENC_IDX_INVESTIGATION;
+            if (encounter.invCaseId == 0xFF) ok = 0; /* no case arc to push */
+            break;
+        case ENCOUNTER_ENVIRONMENTAL:
+            if (typeIdxOut) *typeIdxOut = -1;
+            if (curOut)     *curOut     = (uint8_t)encounter.envStateIdx;
+            return envEncPreview(actionId, out);
+    }
+
+    /* Report the position even when there are no edges to show, so the
+       overlay can still name where the encounter stands. */
+    if (typeIdxOut) *typeIdxOut = ti;
+    if (curOut)     *curOut     = encounter.enemyState[slot];
+    return ok ? encGraphPreview(slot, ti, adef, mask, ten, out) : 0;
 }
 
 /* Effects whose meaning belongs to the encounter engine; everything else
@@ -779,6 +890,7 @@ static void performPlayerAction(void) {
 void handleEncounterInput(int key) {
     if (encounter.phase == ENCOUNTER_PHASE_VICTORY ||
         encounter.phase == ENCOUNTER_PHASE_TIMEOUT) {
+        actionHelpClose();
         if (key == VK_RETURN || key == VK_ESCAPE) {
             for (int i = 0; i < encounter.enemyCount; i++)
                 if (encounter.fromWorldEnemy[i])
@@ -786,6 +898,16 @@ void handleEncounterInput(int key) {
             statusEncounterEnd(); /* sweep DUR_TURNS buffs */
             state = STATE_WORLD;
         }
+        return;
+    }
+    /* The detail overlay stays open while you browse — arrows and TAB fall
+       through so it updates live — but it swallows Enter so reading about
+       an action can't commit you to it. */
+    if (actionHelpIsOpen()) {
+        if (key == 'H' || key == VK_ESCAPE) { actionHelpClose(); return; }
+        if (key == VK_RETURN)               return;
+    } else if (key == 'H') {
+        actionHelpToggle();
         return;
     }
     switch (key) {
@@ -1359,5 +1481,8 @@ render_log:
         drawText(CARD_X0, CARD_Y + CARD_H + 4,
                  "TAB: switch target", rgb(55, 55, 80), 1);
     }
-    drawText(CARD_X0, CARD_Y + CARD_H + 16, "F: favour  S: suppress", rgb(55, 55, 80), 1);
+    drawText(CARD_X0, CARD_Y + CARD_H + 16,
+             "F: favour  S: suppress  H: details", rgb(55, 55, 80), 1);
+
+    renderActionHelp(); /* last — it overlays everything above */
 }

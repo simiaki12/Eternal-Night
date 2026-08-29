@@ -1,10 +1,11 @@
 #pragma once
 #include <stdint.h>
+#include <stddef.h>
 #include "pak.h"
 #include "effects.h"
+#include "enc_graph.h"
 
-#define ACTION_MAX 64
-#define ACT_TRANSITIONS 3
+#define ACTION_MAX 128
 
 /* Context flags — conditions required for an action to appear in the draw pool */
 #define ACT_CTX_FIRST_TURN   (1<<0)
@@ -79,8 +80,12 @@ typedef enum {
     ACTION_COUNT         = 37
 } ActionId;
 
-/* 98 bytes — pak-friendly, no pointers. All resolution lives in the
- * state-graph payload below; there is no damage/power number left. */
+/* 249 bytes in memory — pak-friendly, no pointers. All resolution lives in
+ * the transition matrices below; there is no damage/power number left.
+ *
+ * On disk only the matrices named by graphMask are written, so a typical
+ * one-graph action costs 69 + 36 bytes rather than the full 249. See
+ * ACT_DISK_HEAD / loadActions(). */
 typedef struct {
     uint8_t  id;
     uint8_t  contextFlags;
@@ -91,30 +96,30 @@ typedef struct {
     uint8_t  domain;          /* DOMAIN_* constant; 0xFF = unaffiliated */
     uint8_t  encounterCat;    /* ACT_CAT_* bitmask; 0 = universal (always included) */
     uint8_t  actionFlags;     /* ACT_FLAG_* */
-    /* State-graph engine */
-    Transition transitions[ACT_TRANSITIONS]; /* grouped by type, see tCounts */
-    Effect     onPlay;        /* fires every time the card is played */
-    Effect     fallback;      /* fires only on a structural whiff (wrong
-                                 from-state or target's stateMask blocks it) */
-    uint16_t   tCounts;       /* 3 bits per encounter-type index (0..4):
-                                 how many of transitions[] belong to that
-                                 type's graph, in canonical type order */
+    uint8_t  graphMask;       /* bit per ENC_IDX_*: which mats[] are authored
+                                 (and therefore which are stored on disk) */
+    Effect   onPlay;          /* fires every time the card is played */
+    Effect   fallback;        /* fires only on a structural whiff (no live
+                                 edge, or target's stateMask blocks it) */
+    TransMatrix mats[ENC_TYPE_COUNT]; /* [type].progress[from][to] */
 } ActionDef;
 
-typedef char _check_actiondef_size[(sizeof(ActionDef) == 98) ? 1 : -1];
+typedef char _check_actiondef_size[(sizeof(ActionDef) == 249) ? 1 : -1];
 
-/* Per-type triplet count packed in tCounts — typeIdx is ENC_IDX_* (0..4) */
-#define ACT_TCOUNT(def, typeIdx) ((uint8_t)(((def)->tCounts >> ((typeIdx) * 3)) & 7u))
+/* Bytes of an ActionDef written before the matrices — everything up to
+ * and including `fallback`. */
+#define ACT_DISK_HEAD ((int)offsetof(ActionDef, mats))
+
+#define ACT_HAS_GRAPH(def, typeIdx) (((def)->graphMask >> (typeIdx)) & 1u)
 
 extern ActionDef actionDefs[ACTION_MAX];
 extern int       actionDefCount;
 
 int              loadActions(PakData data);
 const ActionDef *getActionDef(uint8_t id);
-/* Triplets of `def` belonging to encounter type `typeIdx` (ENC_IDX_*).
-   Points *first at the group's start; returns its count (0 if none). */
-int              actionTransitionsFor(const ActionDef *def, int typeIdx,
-                                      const Transition **first);
+/* The transition matrix `def` uses for encounter type `typeIdx` (ENC_IDX_*),
+   or NULL if the action does nothing in that graph. */
+const TransMatrix *actionMatrixFor(const ActionDef *def, int typeIdx);
 int              buildActionPool(uint8_t out[ACTION_MAX], uint8_t encounterCat);
 void             renderActionPanel(const char *title, const uint8_t *ids, int count, int sel);
 uint8_t          actionGetDomain(uint8_t id); /* returns DOMAIN_* or 0xFF if unaffiliated */

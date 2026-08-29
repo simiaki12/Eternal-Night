@@ -7,6 +7,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -40,8 +41,8 @@
 #define ACTION_MAX 64
 
 typedef struct { uint8_t type, value, chance; } Effect;
-#define TRANSITION_SOURCES 8
-typedef struct { uint8_t to; uint8_t progress[TRANSITION_SOURCES]; } Transition;
+#define GRAPH_STATES 6
+typedef struct { uint8_t progress[GRAPH_STATES][GRAPH_STATES]; } TransMatrix;
 
 #define ACT_TRANSITIONS 3
 #define ENC_TYPE_COUNT  5
@@ -57,30 +58,24 @@ typedef struct {
     uint8_t  domain;
     uint8_t  encounterCat;
     uint8_t  actionFlags;
-    Transition transitions[ACT_TRANSITIONS];
+    uint8_t    graphMask;     /* bit per encounter type; derived on save */
     Effect     onPlay;
     Effect     fallback;
-    uint16_t   tCounts;       /* 3 bits per encounter-type index (0..4) */
+    TransMatrix mats[ENC_TYPE_COUNT]; /* [type].progress[from][to] */
 } ActionDef; /* 98 bytes */
 
-typedef char _check_size[(sizeof(ActionDef) == 98) ? 1 : -1];
+typedef char _check_size[(sizeof(ActionDef) == 249) ? 1 : -1];
+#define ACT_DISK_HEAD 69
 
 static const char *encTypeNames[ENC_TYPE_COUNT] = {
     "combat", "social", "invest", "hunt", "env"
 };
 
-/* State names per graph — mirror of tools/seed_states.c */
-static const char *stateNames[ENC_TYPE_COUNT][TRANSITION_SOURCES] = {
-    { "Squaring Up", "Trading", "Staggered", "Frenzied", "Broken", 0, 0, 0 },
-    { "Stranger", "Suspicious", "Fearful", "Trusting", "Hostile", "Greedy", 0, 0 },
-    { "Cold Trail", "Familiarizing", "Connecting", "Breakthrough", "Unraveled", 0, 0, 0 },
-    { "Organized", "Disturbed", "Alerted", "Terrified", "Broken", "Preparing", 0, 0 },
-    { "Stable", "Escalating", "Critical", "Resolved", "Disaster", 0, 0, 0 },
-};
-
+/* Live from states.dat when the graph is known, so renamed states show up
+   here without touching this file. */
 static const char *stateName(int graph, uint8_t s) {
-    if (graph < 0 || graph >= ENC_TYPE_COUNT || s >= TRANSITION_SOURCES) return "?";
-    return stateNames[graph][s] ? stateNames[graph][s] : "-";
+    if (graph < 0 || graph >= ENC_TYPE_COUNT) return "?";
+    return refLabel((RefKind)(REF_STATE_COMBAT + graph), s);
 }
 
 static const char *efxNames[EFX_COUNT] = {
@@ -88,20 +83,21 @@ static const char *efxNames[EFX_COUNT] = {
     "extra_act", "status+", "status-", "meter", "kill"
 };
 
-#define TCOUNT(a, t)  ((uint8_t)(((a)->tCounts >> ((t) * 3)) & 7u))
-
-static void setTCount(ActionDef *a, int t, uint8_t v) {
-    a->tCounts = (uint16_t)((a->tCounts & ~(7u << (t * 3))) | ((v & 7u) << (t * 3)));
+/* A graph counts as used when any cell is non-zero — derived rather than
+   tracked, so there is no count to fall out of sync with the data. */
+static uint8_t deriveGraphMask(const ActionDef *a) {
+    uint8_t mask = 0;
+    for (int t = 0; t < ENC_TYPE_COUNT; t++)
+        for (int i = 0; i < GRAPH_STATES; i++)
+            for (int j = 0; j < GRAPH_STATES; j++)
+                if (a->mats[t].progress[i][j]) { mask |= (uint8_t)(1u << t); i = GRAPH_STATES; break; }
+    return mask;
 }
 
-/* Graph a triplet slot belongs to, by prefix sums of tCounts; -1 = unassigned */
-static int slotGraph(const ActionDef *a, int slot) {
-    int acc = 0;
-    for (int t = 0; t < ENC_TYPE_COUNT; t++) {
-        acc += TCOUNT(a, t);
-        if (slot < acc) return t;
-    }
-    return -1;
+/* States actually defined for a graph, from states.dat via refs.h. */
+static int graphStateCount(int g) {
+    int n = refGet((RefKind)(REF_STATE_COMBAT + g))->count;
+    return n > GRAPH_STATES ? GRAPH_STATES : n;
 }
 /* ----------------------------------------------------------------------- */
 
@@ -135,7 +131,19 @@ static void load(void) {
     uint8_t n;
     if (fread(&n, 1, 1, f) != 1) { fclose(f); return; }
     if (n > ACTION_MAX) n = ACTION_MAX;
-    actionCount = (int)fread(actions, sizeof(ActionDef), n, f);
+    actionCount = 0;
+    for (int i = 0; i < n; i++) {
+        ActionDef *a = &actions[actionCount];
+        memset(a, 0, sizeof(*a));
+        if (fread(a, 1, ACT_DISK_HEAD, f) != ACT_DISK_HEAD) break;
+        int ok = 1;
+        for (int t = 0; t < ENC_TYPE_COUNT; t++) {
+            if (!((a->graphMask >> t) & 1)) continue;
+            if (fread(&a->mats[t], 1, sizeof(TransMatrix), f) != sizeof(TransMatrix)) { ok = 0; break; }
+        }
+        if (!ok) break;
+        actionCount++;
+    }
     fclose(f);
     sortById();
 }
@@ -145,7 +153,14 @@ static void save(void) {
     if (!f) return;
     uint8_t n = (uint8_t)actionCount;
     fwrite(&n, 1, 1, f);
-    fwrite(actions, sizeof(ActionDef), actionCount, f);
+    for (int i = 0; i < actionCount; i++) {
+        ActionDef *a = &actions[i];
+        a->graphMask = deriveGraphMask(a);
+        fwrite(a, 1, ACT_DISK_HEAD, f);
+        for (int t = 0; t < ENC_TYPE_COUNT; t++)
+            if ((a->graphMask >> t) & 1)
+                fwrite(&a->mats[t], 1, sizeof(TransMatrix), f);
+    }
     fclose(f);
     dirty = 0;
 }
@@ -271,140 +286,154 @@ static void renderEdit(ActionDef *a, int sel, const char *status) {
     refresh();
 }
 
-/* ---- transitions / effects sub-screen ---- */
+/* ---- transitions / effects sub-screen ----------------------------------
+ * One graph at a time, shown as a from x to grid: the cell at row `from`,
+ * column `to` is the progress that edge banks. 0 means the route does not
+ * exist from that state. Tab cycles which graph you are looking at.
+ * ----------------------------------------------------------------------- */
 
-typedef enum {
-    T_CNT0 = 0, T_CNT1, T_CNT2, T_CNT3, T_CNT4,   /* transitions per type */
-    T_S0_DEST, T_S0_SRC, T_S0_VAL,
-    T_S1_DEST, T_S1_SRC, T_S1_VAL,
-    T_S2_DEST, T_S2_SRC, T_S2_VAL,
-    T_OP_TYPE, T_OP_VAL, T_OP_CHANCE,             /* onPlay   */
-    T_FB_TYPE, T_FB_VAL, T_FB_CHANCE,             /* fallback */
-    T_COUNT
-} TField;
+#define T_FX_FIELDS 6   /* onPlay type/value/chance, fallback type/value/chance */
 
-/* Which source state each slot is currently being tuned for */
-static uint8_t srcSel[ACT_TRANSITIONS];
+static int tGraph = 0;  /* graph being edited */
+static int tRow = 0, tCol = 0;
+static int tFocus = 0;  /* 0 = grid, 1 = effect fields */
+static int tFxSel = 0;
 
-static void renderTransitions(ActionDef *a, int sel) {
+static void renderTransitions(ActionDef *a, const char *status) {
     clear();
     mvprintw(0, 0, "TRANSITIONS - %s (id %d)", a->name[0] ? a->name : "(unnamed)", a->id);
-    mvprintw(1, 0, "Up/Down=field  +/-=change  PgUp/PgDn=+-10  Bksp=back  S=save");
-    mvprintw(2, 0, "Each transition is one destination + the progress it banks from each source.");
+    mvprintw(1, 0, "Arrows=move  +/-=change  PgUp/PgDn=+-10  Tab=graph  Enter=pick status  Bksp=back  S=save");
+    if (status) mvprintw(2, 0, "%s", status);
 
-    int total = 0;
-    for (int t = 0; t < ENC_TYPE_COUNT; t++) total += TCOUNT(a, t);
+    int n = graphStateCount(tGraph);
+    mvprintw(4, 2, "Graph: %-8s  (%d states)   used by this action: %s",
+             encTypeNames[tGraph], n,
+             (deriveGraphMask(a) >> tGraph) & 1 ? "yes" : "no");
 
-    for (int i = 0; i < T_COUNT; i++) {
-        int row = i + 4 + (i >= T_S0_DEST) + (i >= T_OP_TYPE) + (i >= T_FB_TYPE);
-        if (i == sel) attron(A_REVERSE);
-        if (i <= T_CNT4) {
-            mvprintw(row, 2, "Transitions: %-35s  %d", encTypeNames[i], TCOUNT(a, i));
-        } else if (i < T_OP_TYPE) {
-            int slot = (i - T_S0_DEST) / 3, part = (i - T_S0_DEST) % 3;
-            int g    = slotGraph(a, slot);
-            Transition *tr = &a->transitions[slot];
-            char label[52];
-            if (part == 0) {
-                snprintf(label, sizeof(label), "T%d (%s) destination", slot,
-                         g >= 0 ? encTypeNames[g] : "unused");
-                mvprintw(row, 2, "%-50s  %s", label, stateName(g, tr->to));
-            } else if (part == 1) {
-                snprintf(label, sizeof(label), "T%d tuning source", slot);
-                mvprintw(row, 2, "%-50s  %s", label, stateName(g, srcSel[slot]));
-            } else {
-                snprintf(label, sizeof(label), "T%d progress from %s", slot,
-                         stateName(g, srcSel[slot]));
-                mvprintw(row, 2, "%-50s  %d", label, tr->progress[srcSel[slot]]);
-            }
-        } else {
-            Effect *e = i < T_FB_TYPE ? &a->onPlay : &a->fallback;
-            int part  = (i - T_OP_TYPE) % 3;
-            const char *who = i < T_FB_TYPE ? "onPlay" : "fallback";
-            if (part == 0)
-                mvprintw(row, 2, "%s %-43s  %s", who, "effect",
-                         e->type < EFX_COUNT ? efxNames[e->type] : "?");
-            else if (part == 1)
-                mvprintw(row, 2, "%s %-43s  %d", who, "value",  e->value);
+    /* Column headings — destinations */
+    const int C0 = 16, CW = 9;
+    for (int j = 0; j < n; j++)
+        mvprintw(6, C0 + j * CW, "%-8.8s", stateName(tGraph, (uint8_t)j));
+    mvprintw(6, 2, "from \\ to");
+
+    for (int i = 0; i < n; i++) {
+        int row = 7 + i;
+        mvprintw(row, 2, "%-13.13s", stateName(tGraph, (uint8_t)i));
+        for (int j = 0; j < n; j++) {
+            int cur = (tFocus == 0 && i == tRow && j == tCol);
+            uint8_t v = a->mats[tGraph].progress[i][j];
+            if (cur) attron(A_REVERSE);
+            if (v) mvprintw(row, C0 + j * CW, "%4d", v);
+            else   mvprintw(row, C0 + j * CW, "   .");
+            if (cur) attroff(A_REVERSE);
+        }
+    }
+
+    /* Effects */
+    int erow = 7 + n + 2;
+    for (int i = 0; i < T_FX_FIELDS; i++) {
+        Effect *e   = i < 3 ? &a->onPlay : &a->fallback;
+        int     part = i % 3;
+        const char *who = i < 3 ? "onPlay  " : "fallback";
+        int cur = (tFocus == 1 && i == tFxSel);
+        if (cur) attron(A_REVERSE);
+        if (part == 0)
+            mvprintw(erow + i, 2, "%s effect   %-14s", who,
+                     e->type < EFX_COUNT ? efxNames[e->type] : "?");
+        else if (part == 1) {
+            if (e->type == 6 || e->type == 7)
+                mvprintw(erow + i, 2, "%s value    %-14s", who, refLabel(REF_STATUS, e->value));
             else
-                mvprintw(row, 2, "%s %-43s  %d", who, "chance", e->chance);
-        }
-        if (i == sel) attroff(A_REVERSE);
+                mvprintw(erow + i, 2, "%s value    %-14d", who, e->value);
+        } else
+            mvprintw(erow + i, 2, "%s chance   %-14d", who, e->chance);
+        if (cur) attroff(A_REVERSE);
     }
 
-    /* Whole vector at a glance, so tuning one source keeps the rest visible */
-    int row = T_COUNT + 8;
-    for (int slot = 0; slot < ACT_TRANSITIONS; slot++) {
-        int g = slotGraph(a, slot);
-        if (g < 0) continue;
-        char line[160];
-        int  n = snprintf(line, sizeof(line), "T%d -> %-13s :", slot,
-                          stateName(g, a->transitions[slot].to));
-        for (int src = 0; src < TRANSITION_SOURCES; src++) {
-            uint8_t v = a->transitions[slot].progress[src];
-            if (!v) continue;
-            n += snprintf(line + n, sizeof(line) - n, "  %s %d", stateName(g, src), v);
-        }
-        mvprintw(row++, 2, "%s", line);
-    }
-    mvprintw(row + 1, 2, "Slots used: %d / %d%s", total, ACT_TRANSITIONS,
-             total > ACT_TRANSITIONS ? "  !! OVER" : "");
+    mvprintw(erow + T_FX_FIELDS + 1, 2,
+             "A row reads: from this state, how much progress each destination banks.");
     refresh();
 }
 
-static void tfieldAdjust(ActionDef *a, int sel, int dir, int big) {
+static void tAdjust(ActionDef *a, int dir, int big) {
     int step = big ? 10 : 1;
     dirty = 1;
-    if (sel <= T_CNT4) {
-        int total = 0;
-        for (int t = 0; t < ENC_TYPE_COUNT; t++) total += TCOUNT(a, t);
-        uint8_t c = TCOUNT(a, sel);
-        if (dir > 0 && c < ACT_TRANSITIONS && total < ACT_TRANSITIONS) setTCount(a, sel, c + 1);
-        if (dir < 0 && c > 0)                                          setTCount(a, sel, c - 1);
-    } else if (sel < T_OP_TYPE) {
-        int slot = (sel - T_S0_DEST) / 3, part = (sel - T_S0_DEST) % 3;
-        Transition *tr = &a->transitions[slot];
-        if (part == 0) {
-            int v = (int)tr->to + dir;
-            tr->to = (uint8_t)(v < 0 ? TRANSITION_SOURCES - 1 : v % TRANSITION_SOURCES);
-        } else if (part == 1) {
-            int v = (int)srcSel[slot] + dir;
-            srcSel[slot] = (uint8_t)(v < 0 ? TRANSITION_SOURCES - 1 : v % TRANSITION_SOURCES);
-        } else {
-            int nv = (int)tr->progress[srcSel[slot]] + dir * step;
-            tr->progress[srcSel[slot]] = (uint8_t)(nv < 0 ? 0 : nv > 100 ? 100 : nv);
-        }
+    if (tFocus == 0) {
+        int nv = (int)a->mats[tGraph].progress[tRow][tCol] + dir * step;
+        a->mats[tGraph].progress[tRow][tCol] = (uint8_t)(nv < 0 ? 0 : nv > 100 ? 100 : nv);
+        return;
+    }
+    Effect *e    = tFxSel < 3 ? &a->onPlay : &a->fallback;
+    int     part = tFxSel % 3;
+    if (part == 0) {
+        e->type = (uint8_t)((e->type + (dir > 0 ? 1 : EFX_COUNT - 1)) % EFX_COUNT);
     } else {
-        Effect *e   = sel < T_FB_TYPE ? &a->onPlay : &a->fallback;
-        int     part = (sel - T_OP_TYPE) % 3;
-        if (part == 0) {
-            e->type = (uint8_t)((e->type + (dir > 0 ? 1 : EFX_COUNT - 1)) % EFX_COUNT);
-        } else {
-            uint8_t *v  = part == 1 ? &e->value : &e->chance;
-            int      hi = part == 1 ? 255 : 100;
-            int nv = (int)*v + dir * step;
-            *v = (uint8_t)(nv < 0 ? 0 : nv > hi ? hi : nv);
-        }
+        uint8_t *v  = part == 1 ? &e->value : &e->chance;
+        int      hi = part == 1 ? 255 : 100;
+        int nv = (int)*v + dir * step;
+        *v = (uint8_t)(nv < 0 ? 0 : nv > hi ? hi : nv);
     }
 }
 
 static void screenTransitions(ActionDef *a) {
-    int sel = 0;
+    const char *status = NULL;
     while (1) {
-        renderTransitions(a, sel);
+        int n = graphStateCount(tGraph);
+        if (n < 1) n = 1;
+        if (tRow >= n) tRow = n - 1;
+        if (tCol >= n) tCol = n - 1;
+
+        renderTransitions(a, status);
+        status = NULL;
         int ch = getch();
         switch (ch) {
-            case KEY_UP:        if (sel > 0) sel--;           break;
-            case KEY_DOWN:      if (sel < T_COUNT - 1) sel++; break;
-            case '+': case '=': tfieldAdjust(a, sel,  1, 0);  break;
-            case '-':           tfieldAdjust(a, sel, -1, 0);  break;
-            case KEY_NPAGE:     tfieldAdjust(a, sel, -1, 1);  break;
-            case KEY_PPAGE:     tfieldAdjust(a, sel,  1, 1);  break;
-            case 's': case 'S': save();                       break;
+            case '\t':
+                tGraph = (tGraph + 1) % ENC_TYPE_COUNT;
+                tRow = tCol = 0;
+                break;
+            case KEY_UP:
+                if (tFocus == 1) {
+                    if (tFxSel > 0) tFxSel--;
+                    else { tFocus = 0; tRow = n - 1; }
+                } else if (tRow > 0) tRow--;
+                break;
+            case KEY_DOWN:
+                if (tFocus == 0) {
+                    if (tRow < n - 1) tRow++;
+                    else { tFocus = 1; tFxSel = 0; }
+                } else if (tFxSel < T_FX_FIELDS - 1) tFxSel++;
+                break;
+            case KEY_LEFT:
+                if (tFocus == 0) { if (tCol > 0) tCol--; }
+                else tAdjust(a, -1, 0);
+                break;
+            case KEY_RIGHT:
+                if (tFocus == 0) { if (tCol < n - 1) tCol++; }
+                else tAdjust(a, 1, 0);
+                break;
+            case '\n': case KEY_ENTER: {
+                /* Enter opens the status picker on a status-valued effect */
+                if (tFocus == 1 && (tFxSel == 1 || tFxSel == 4)) {
+                    Effect *e = tFxSel == 1 ? &a->onPlay : &a->fallback;
+                    if (e->type == 6 || e->type == 7) {
+                        e->value = refPick(REF_STATUS, e->value);
+                        dirty = 1;
+                    } else {
+                        status = "That effect's value is a number, not a status.";
+                    }
+                }
+                break;
+            }
+            case '+': case '=': tAdjust(a,  1, 0); break;
+            case '-':           tAdjust(a, -1, 0); break;
+            case KEY_PPAGE:     tAdjust(a,  1, 1); break;
+            case KEY_NPAGE:     tAdjust(a, -1, 1); break;
+            case 's': case 'S': save(); status = "Saved."; break;
             case KEY_BACKSPACE: case 127: return;
         }
     }
 }
+
 
 static void screenEdit(int idx) {
     ActionDef  *a      = &actions[idx];
@@ -505,14 +534,20 @@ static void renderList(int sel, int scroll, const char *status) {
         if (actions[i].encounterCat & ACT_CAT_INVESTIGATION) cat[2] = 'I';
         if (actions[i].encounterCat & ACT_CAT_HUNT)          cat[3] = 'H';
         if (actions[i].encounterCat & ACT_CAT_ENVIRONMENTAL) cat[4] = 'E';
-        int trips = 0;
-        for (int t = 0; t < ENC_TYPE_COUNT; t++) trips += TCOUNT(&actions[i], t);
-        mvprintw((i - scroll) + 4, 2, "%2d  id:%-3d  %-16s  wt:%-3d  tr:%-2d  ctx:[%s]  cat:[%s]  img:%s",
+        /* Which graphs this action actually moves — one letter per type. */
+        uint8_t gm = deriveGraphMask(&actions[i]);
+        char gr[6] = ".....";
+        if (gm & (1<<0)) gr[0] = 'c';
+        if (gm & (1<<1)) gr[1] = 's';
+        if (gm & (1<<2)) gr[2] = 'i';
+        if (gm & (1<<3)) gr[3] = 'h';
+        if (gm & (1<<4)) gr[4] = 'e';
+        mvprintw((i - scroll) + 4, 2, "%2d  id:%-3d  %-16s  wt:%-3d  gr:[%s]  ctx:[%s]  cat:[%s]  img:%s",
             i,
             actions[i].id,
             actions[i].name[0] ? actions[i].name : "(unnamed)",
             actions[i].baseWeight,
-            trips,
+            gr,
             ctx,
             cat,
             actions[i].imgName[0] ? actions[i].imgName : "--");

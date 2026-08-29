@@ -10,6 +10,9 @@
  * ----------------------------------------------------------------------- */
 
 #define ENC_TYPE_COUNT   5
+/* Width of the hunt escalate table only — kept at 8 so HuntEncounterDef's
+   layout is untouched. Graphs themselves hold at most GRAPH_STATES states
+   (effects.h), since that is what a transition matrix can address. */
 #define GRAPH_STATES_MAX 8
 
 /* Canonical type indices = ACT_CAT_* bit positions (actions.h) */
@@ -73,7 +76,7 @@ typedef char _check_statedef_size[(sizeof(StateDef) == 24) ? 1 : -1];
  *   per graph: [1] state count, [N×24] StateDef array
  */
 
-extern StateDef encGraphs[ENC_TYPE_COUNT][GRAPH_STATES_MAX];
+extern StateDef encGraphs[ENC_TYPE_COUNT][GRAPH_STATES];
 extern uint8_t  encGraphCount[ENC_TYPE_COUNT];
 
 int             loadEncGraphs(PakData data);

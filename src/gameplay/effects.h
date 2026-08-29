@@ -31,17 +31,23 @@ typedef struct {
     uint8_t chance; /* 0-100; 0 = never fires */
 } Effect;
 
-/* Must match GRAPH_STATES_MAX in enc_graph.h (kept separate to avoid a
-   circular include). */
-#define TRANSITION_SOURCES 8
+/* Widest graph in states.dat. Every graph is addressed by a dense
+   from×to matrix, so this bounds both. (enc_graph.h keeps GRAPH_STATES_MAX
+   at 8 purely as the width of the hunt escalate table; graphs themselves
+   are clamped to GRAPH_STATES on load.) */
+#define GRAPH_STATES 6
 
-/* A transition names ONE destination state and how much progress the action
-   banks toward it from each possible source state — so a single entry tunes
-   "easy to bribe a stranger, hard to bribe someone hostile". A source whose
-   progress is 0 cannot take this route at all; an entry with no non-zero
-   source is an unused slot. Playing the action banks progress[current] on
-   the edge, then rolls d100 — the transition fires on a roll under the pot. */
+/* How much progress an action banks on every possible edge of one graph:
+   progress[from][to]. A cell of 0 means that route cannot be taken from
+   that state at all — which is how "easy to bribe a stranger, hard to
+   bribe someone hostile" is expressed. Playing the action banks the cell
+   on that edge's pot, then rolls d100; the transition fires on a roll
+   under the pot.
+
+   Dense in memory, sparse on disk: actions.dat stores only the matrices
+   an action actually uses, selected by ActionDef.graphMask. */
 typedef struct {
-    uint8_t to;
-    uint8_t progress[TRANSITION_SOURCES];
-} Transition;
+    uint8_t progress[GRAPH_STATES][GRAPH_STATES];
+} TransMatrix;
+
+typedef char _check_transmatrix_size[(sizeof(TransMatrix) == 36) ? 1 : -1];
