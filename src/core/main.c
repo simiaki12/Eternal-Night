@@ -12,6 +12,7 @@
 #include "game.h"
 #include "enemies.h"
 #include "encounter.h"
+#include "actionhelp.h"
 #include "town.h"
 #include "dialog.h"
 #include "world.h"
@@ -583,6 +584,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR cmdLine, int nCmd
             } else if (g_pendingKey == VK_ESCAPE && state == STATE_ENCOUNTER &&
                        encounter.phase != ENCOUNTER_PHASE_ACTIVE) {
                 handleEncounterInput(VK_ESCAPE);
+            /* Escape closes the action detail overlay before opening pause */
+            } else if (g_pendingKey == VK_ESCAPE && state == STATE_ENCOUNTER &&
+                       actionHelpIsOpen()) {
+                actionHelpClose();
             /* Escape opens pause from the main gameplay states */
             } else if (g_pendingKey == VK_ESCAPE &&
                        (state == STATE_WORLD || state == STATE_ENCOUNTER || state == STATE_TOWN)) {

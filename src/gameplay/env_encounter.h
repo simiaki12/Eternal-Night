@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include "pak.h"
+#include "encounter.h"
 
 #define ENV_ENC_MAX      32
 #define ENV_STATE_MAX     8   /* max states per encounter (4 typical, 8 for story) */
@@ -73,3 +74,7 @@ void envEncounterStart(uint8_t encId, uint32_t mods);
 
 /* Called from encounter.c when the player plays an action */
 void envEncounterDoAction(uint8_t actionId);
+
+/* Preview of the edges `actionId` would fire from the current state —
+   the environmental arm of encPreviewCurrent(). Returns edge count. */
+int  envEncPreview(uint8_t actionId, EdgePreview out[ENC_PREVIEW_MAX]);

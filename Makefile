@@ -281,6 +281,12 @@ editor_hub:
 	mkdir -p build
 	$(CC_HOST) -std=c11 -Os -Wno-unused-result tools/editor_hub.c -o build/editor_hub -lncurses
 
+# Regenerate every .dat from its seeder.
+# WARNING: seeders write hardcoded defaults — this DISCARDS anything
+# changed in the editors. Commit or back up assets/data/ first.
+seed_all: seed_quests seed_dialogs seed_items seed_shops seed_loottables seed_enemies seed_logmessages seed_npcs seed_social_encounters seed_actions seed_states seed_statuses seed_cases seed_clues seed_investigations seed_env_encounters seed_hunt_encounters seed_camp_zones
+	@echo "All data files reseeded from tools/seed_*.c"
+
 tools: map_editor player_editor dialog_editor quest_editor item_editor loottable_editor enemy_editor npc_editor action_editor ambient_editor logmessage_editor social_encounter_editor clue_editor investigation_editor env_encounter_editor hunt_encounter_editor camp_zone_editor status_editor img_conv img_conv_ui bw_conv rle music_editor music_editor_gui editor_hub
 
 clean:

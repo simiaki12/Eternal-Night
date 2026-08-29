@@ -105,6 +105,42 @@ static void resolveEdge(const EnvEdge *edge, const EnvStateDef *st) {
 
 /* ----------------------------------------------------------------------- */
 
+/* Environmental encounters don't run the shared graph: an edge either
+   matches the action or it doesn't, and firing is certain. Only the first
+   match resolves, so later ones are reported as shadowed. */
+int envEncPreview(uint8_t actionId, EdgePreview out[ENC_PREVIEW_MAX]) {
+    const EnvEncounterDef *def = envEncGetDef((uint8_t)encounter.envEncId);
+    if (!def) return 0;
+
+    int si = encounter.envStateIdx;
+    if (si < 0 || si >= (int)def->stateCount) return 0;
+    const EnvStateDef *st = &def->states[si];
+
+    int n = st->edgeCount > ENV_EDGE_MAX ? ENV_EDGE_MAX : st->edgeCount;
+    int count = 0;
+
+    for (int e = 0; e < n && count < ENC_PREVIEW_MAX; e++) {
+        const EnvEdge *edge = &st->edges[e];
+        int match = 0;
+        for (int a = 0; a < ENV_ACTION_MAX; a++)
+            if (edge->actionIds[a] == actionId) { match = 1; break; }
+        if (!match) continue;
+
+        /* Progress filling or a terminal state resolves the encounter here
+           rather than moving on — say so instead of naming a next state. */
+        int gain = st->progressGain < 1 ? 1 : st->progressGain;
+        int ends = (encounter.envProgress + gain >= (int)def->progressGoal) ||
+                   (st->flags & ENV_STATE_TERMINAL);
+
+        out[count].to      = ends ? 0xFF : edge->nextState;
+        out[count].verdict = (uint8_t)(count == 0 ? PV_LIVE : PV_SHADOWED);
+        out[count].banked  = 0;
+        out[count].pot     = 100; /* deterministic */
+        count++;
+    }
+    return count;
+}
+
 void envEncounterDoAction(uint8_t actionId) {
     const EnvEncounterDef *def = envEncGetDef((uint8_t)encounter.envEncId);
     if (!def) return;
