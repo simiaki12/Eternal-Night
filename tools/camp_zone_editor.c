@@ -16,6 +16,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -156,7 +157,7 @@ static void drawZone(void) {
             case 2: mvprintw(2+i, 2, "%-14s %d", fnames[i], z->rightX); break;
             case 3: mvprintw(2+i, 2, "%-14s %d", fnames[i], z->topY); break;
             case 4: mvprintw(2+i, 2, "%-14s %d", fnames[i], z->bottomY); break;
-            case 5: mvprintw(2+i, 2, "%-14s %d", fnames[i], z->huntEncId); break;
+            case 5: mvprintw(2+i, 2, "%-14s %s", fnames[i], refLabel(REF_HUNT_ENC, z->huntEncId)); break;
             case 6:
                 if (z->clearedFlag == 0xFF)
                     mvprintw(2+i, 2, "%-14s none (0xFF)", fnames[i]);
@@ -181,6 +182,13 @@ static void handleZone(int ch) {
         case KEY_DOWN: if (selField < ZONE_FIELDS-1) selField++; break;
         case '\n': case KEY_ENTER:
             if (selField == 0) { editStr(2, 16, z->mapId, 8); dirty=1; }
+            else if (selField == 5) { z->huntEncId = refPick(REF_HUNT_ENC, z->huntEncId); dirty=1; }
+            break;
+        case KEY_RIGHT:
+            if (selField == 5) { z->huntEncId = refCycle(REF_HUNT_ENC, z->huntEncId,  1); dirty=1; }
+            break;
+        case KEY_LEFT:
+            if (selField == 5) { z->huntEncId = refCycle(REF_HUNT_ENC, z->huntEncId, -1); dirty=1; }
             break;
         case '+': case '=':
             dirty=1;
@@ -189,7 +197,7 @@ static void handleZone(int ch) {
                 case 2: if (z->rightX < 255) z->rightX++; break;
                 case 3: if (z->topY   < 255) z->topY++;   break;
                 case 4: if (z->bottomY< 255) z->bottomY++;break;
-                case 5: if (z->huntEncId < 15) z->huntEncId++; break;
+                case 5: z->huntEncId = refCycle(REF_HUNT_ENC, z->huntEncId,  1); break;
                 case 6:
                     if (z->clearedFlag == 0xFF) z->clearedFlag = 0;
                     else if (z->clearedFlag < 127) z->clearedFlag++;
@@ -205,7 +213,7 @@ static void handleZone(int ch) {
                 case 2: if (z->rightX > 0) z->rightX--; break;
                 case 3: if (z->topY   > 0) z->topY--;   break;
                 case 4: if (z->bottomY> 0) z->bottomY--;break;
-                case 5: if (z->huntEncId > 0) z->huntEncId--; break;
+                case 5: z->huntEncId = refCycle(REF_HUNT_ENC, z->huntEncId, -1); break;
                 case 6:
                     if (z->clearedFlag == 0xFF) z->clearedFlag = 127;
                     else if (z->clearedFlag > 0) z->clearedFlag--;

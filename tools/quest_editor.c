@@ -12,6 +12,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -21,18 +22,20 @@
 #define MAX_QUESTS    128
 #define QUEST_MAX_OBJ   4
 
-#define OBJ_KILL       0
-#define OBJ_GET_ITEM   1
-#define OBJ_VISIT_ZONE 2
-#define OBJ_TALK_NPC   3
-#define OBJ_TYPE_COUNT 4
+#define OBJ_KILL           0
+#define OBJ_GET_ITEM       1
+#define OBJ_VISIT_ZONE     2
+#define OBJ_TALK_NPC       3
+#define OBJ_VISIT_LOCATION 4
+#define OBJ_TYPE_COUNT     5
 
-#define TRIG_ALWAYS  0
-#define TRIG_DIALOG  1
-#define TRIG_ZONE    2
-#define TRIG_ITEM    3
-#define TRIG_KILL    4
-#define TRIG_COUNT   5
+#define TRIG_ALWAYS   0
+#define TRIG_DIALOG   1
+#define TRIG_ZONE     2
+#define TRIG_ITEM     3
+#define TRIG_KILL     4
+#define TRIG_LOCATION 5
+#define TRIG_COUNT    6
 
 #define QUEST_MAIN   (1<<0)
 #define QUEST_HIDDEN (1<<1)
@@ -55,7 +58,47 @@ typedef struct {
     uint8_t        startId;
     uint8_t        _pad[2];
 } QuestDef;
+
+#define QUEST_LOCATION_MAX 64
+
+typedef struct {
+    char    mapId[8];
+    uint8_t x, y;
+    uint8_t _pad[2];
+} QuestLocation;
+
+typedef char _cq[(sizeof(QuestDef)      == 48) ? 1 : -1];
+typedef char _cl[(sizeof(QuestLocation) == 12) ? 1 : -1];
 /* ------------------------------------------------------ */
+
+/* Which file a target/start id points into, given the type beside it. The
+   editor renders and edits those ids through refs.h using this. */
+static RefKind objTargetKind(uint8_t type) {
+    switch (type) {
+        case OBJ_KILL:           return REF_ENEMY;
+        case OBJ_GET_ITEM:       return REF_ITEM;
+        case OBJ_TALK_NPC:       return REF_DIALOG;
+        case OBJ_VISIT_LOCATION: return REF_QUEST_LOC;
+        default:                 return REF_RAW;   /* VISIT_ZONE: raw map tile */
+    }
+}
+
+static RefKind startIdKind(uint8_t trig) {
+    switch (trig) {
+        case TRIG_DIALOG:   return REF_DIALOG;
+        case TRIG_ITEM:     return REF_ITEM;
+        case TRIG_KILL:     return REF_ENEMY;
+        case TRIG_LOCATION: return REF_QUEST_LOC;
+        default:            return REF_RAW;   /* ALWAYS / ZONE: unused or tile */
+    }
+}
+
+/* Changing the type reinterprets the id against a different file, so the old
+   number is meaningless — clear it rather than leave a plausible-looking
+   reference to the wrong record. */
+static uint8_t defaultForKind(RefKind k) {
+    return k == REF_RAW ? 0 : REF_NONE_VAL;
+}
 
 static const char *outfile = "assets/data/quests.dat";
 
@@ -72,14 +115,20 @@ static int      questCount = 0;
 static int      dirty      = 0;
 
 static const char *objTypeNames[OBJ_TYPE_COUNT] = {
-    "Kill", "Get Item", "Visit Zone", "Talk NPC"
+    "Kill", "Get Item", "Visit Zone", "Talk NPC", "Visit Location"
 };
 
 static const char *trigNames[TRIG_COUNT] = {
-    "Always", "Dialog", "Zone", "Item", "Kill"
+    "Always", "Dialog", "Zone", "Item", "Kill", "Location"
 };
 
 /* ---- file I/O ---- */
+
+/* quests.dat carries a second section of named locations after the quests.
+ * This editor never edits them, but it must round-trip them: writing back only
+ * the quest section would silently delete every OBJ_VISIT_LOCATION target. */
+static QuestLocation locations[QUEST_LOCATION_MAX];
+static int           locationCount = 0;
 
 static void load(void) {
     FILE *f = fopen(outfile, "rb");
@@ -91,6 +140,12 @@ static void load(void) {
 
     size_t got = fread(quests, sizeof(QuestDef), n, f);
     questCount = (int)got;
+
+    uint8_t nl = 0;
+    if (fread(&nl, 1, 1, f) == 1) {
+        if (nl > QUEST_LOCATION_MAX) nl = QUEST_LOCATION_MAX;
+        locationCount = (int)fread(locations, sizeof(QuestLocation), nl, f);
+    }
     fclose(f);
 }
 
@@ -100,8 +155,12 @@ static void save(void) {
     uint8_t n = (uint8_t)questCount;
     fwrite(&n, 1, 1, f);
     fwrite(quests, sizeof(QuestDef), (size_t)questCount, f);
+    uint8_t nl = (uint8_t)locationCount;
+    fwrite(&nl, 1, 1, f);
+    fwrite(locations, sizeof(QuestLocation), (size_t)locationCount, f);
     fclose(f);
     dirty = 0;
+    refInvalidate();   /* this editor reads locations back out of the file it just wrote */
 }
 
 /* ---- text editing ---- */
@@ -160,11 +219,12 @@ static void drawQuests(void) {
         if (q->flags & QUEST_MAIN)   strcat(flagBuf, "MAIN ");
         if (q->flags & QUEST_HIDDEN) strcat(flagBuf, "HIDE ");
 
-        char rewardBuf[16];
-        if (q->rewardItemId == 0xFF)
+        char rewardBuf[32];
+        if (q->rewardItemId == REF_NONE_VAL)
             snprintf(rewardBuf, sizeof(rewardBuf), "%dxp", q->rewardXp);
         else
-            snprintf(rewardBuf, sizeof(rewardBuf), "%dxp+item%d", q->rewardXp, q->rewardItemId);
+            snprintf(rewardBuf, sizeof(rewardBuf), "%dxp+%s",
+                     q->rewardXp, refLabel(REF_ITEM, q->rewardItemId));
 
         mvprintw((i - scrollQ) + 3, 2, "#%-3d  %-23s  %-10s  %-8s  %s  obj:%d",
             i, q->name, flagBuf, trigNames[q->startType < TRIG_COUNT ? q->startType : 0],
@@ -227,7 +287,7 @@ static void drawQuest(void) {
     int totalFields = QUEST_FIELD_COUNT + q->objectiveCount;
 
     mvprintw(0, 0, "QUEST #%d: %s  [%s]", selQ, q->name, dirty ? "unsaved" : "saved");
-    mvprintw(1, 0, "Up/Down=field  +/-=change  E=edit text  A=add obj  D=del obj  Bksp/Q=back  S=save");
+    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=pick/edit  A=add obj  D=del obj  Bksp/Q=back  S=save");
 
     const char *labels[QUEST_FIELD_COUNT] = {
         "Name", "Flags", "Reward XP", "Reward Item", "Start type", "Start ID"
@@ -257,7 +317,7 @@ static void drawQuest(void) {
                 if (q->rewardItemId == 0xFF)
                     mvprintw(row, 2, "%-12s: none (0xFF)", labels[i]);
                 else
-                    mvprintw(row, 2, "%-12s: item #%d", labels[i], q->rewardItemId);
+                    mvprintw(row, 2, "%-12s: %s", labels[i], refLabel(REF_ITEM, q->rewardItemId));
                 break;
             case 4:
                 mvprintw(row, 2, "%-12s: %s (%d)",
@@ -265,9 +325,14 @@ static void drawQuest(void) {
                     trigNames[q->startType < TRIG_COUNT ? q->startType : 0],
                     q->startType);
                 break;
-            case 5:
-                mvprintw(row, 2, "%-12s: %d", labels[i], q->startId);
+            case 5: {
+                RefKind k = startIdKind(q->startType);
+                if (q->startType == TRIG_ALWAYS)
+                    mvprintw(row, 2, "%-12s: (unused)", labels[i]);
+                else
+                    mvprintw(row, 2, "%-12s: %s", labels[i], refLabelOr(k, q->startId));
                 break;
+            }
         }
         if (i == selField) attroff(A_REVERSE);
     }
@@ -282,10 +347,10 @@ static void drawQuest(void) {
         int row  = divRow + 1 + j;
         if (fIdx == selField) attron(A_REVERSE);
         QuestObjective *o = &q->objectives[j];
-        mvprintw(row, 4, "[%d] %-10s  target:%-3d  required:%-3d",
+        mvprintw(row, 4, "[%d] %-14s  %-28s  required:%-3d",
             j,
             objTypeNames[o->type < OBJ_TYPE_COUNT ? o->type : 0],
-            o->targetId,
+            refLabelOr(objTargetKind(o->type), o->targetId),
             o->required);
         if (fIdx == selField) attroff(A_REVERSE);
     }
@@ -314,6 +379,12 @@ static void handleQuest(int ch) {
             } else if (selField == 0) {
                 editStr(3, 16, q->name, 24);
                 dirty = 1;
+            } else if (selField == 3) {
+                q->rewardItemId = refPick(REF_ITEM, q->rewardItemId);
+                dirty = 1;
+            } else if (selField == 5 && q->startType != TRIG_ALWAYS) {
+                q->startId = refPickOr(startIdKind(q->startType), q->startId);
+                dirty = 1;
             }
             break;
         case 'e': case 'E':
@@ -331,13 +402,15 @@ static void handleQuest(int ch) {
                     break;
                 case 2: if (q->rewardXp < 255) q->rewardXp++; break;
                 case 3:
-                    if (q->rewardItemId == 0xFF) q->rewardItemId = 0;
-                    else if (q->rewardItemId < 254) q->rewardItemId++;
+                    q->rewardItemId = refCycle(REF_ITEM, q->rewardItemId, 1);
                     break;
                 case 4:
                     q->startType = (uint8_t)((q->startType + 1) % TRIG_COUNT);
+                    q->startId   = defaultForKind(startIdKind(q->startType));
                     break;
-                case 5: if (q->startId < 255) q->startId++; break;
+                case 5:
+                    q->startId = refCycleOr(startIdKind(q->startType), q->startId, 1);
+                    break;
             }
             break;
         case '-':
@@ -350,20 +423,23 @@ static void handleQuest(int ch) {
                     break;
                 case 2: if (q->rewardXp > 0) q->rewardXp--; break;
                 case 3:
-                    if (q->rewardItemId == 0) q->rewardItemId = 0xFF;
-                    else if (q->rewardItemId != 0xFF) q->rewardItemId--;
+                    q->rewardItemId = refCycle(REF_ITEM, q->rewardItemId, -1);
                     break;
                 case 4:
                     q->startType = (uint8_t)((q->startType + TRIG_COUNT - 1) % TRIG_COUNT);
+                    q->startId   = defaultForKind(startIdKind(q->startType));
                     break;
-                case 5: if (q->startId > 0) q->startId--; break;
+                case 5:
+                    q->startId = refCycleOr(startIdKind(q->startType), q->startId, -1);
+                    break;
             }
             break;
         case 'a': case 'A':
             if (q->objectiveCount < QUEST_MAX_OBJ) {
                 QuestObjective *o = &q->objectives[q->objectiveCount];
                 memset(o, 0, sizeof(*o));
-                o->required = 1;
+                o->required  = 1;
+                o->targetId  = defaultForKind(objTargetKind(o->type));
                 selField = QUEST_FIELD_COUNT + q->objectiveCount;
                 q->objectiveCount++;
                 dirty = 1;
@@ -398,9 +474,10 @@ static void drawObjective(void) {
 
     mvprintw(0, 0, "OBJECTIVE #%d  quest: %s  [%s]",
         selObj, q->name, dirty ? "unsaved" : "saved");
-    mvprintw(1, 0, "Up/Down=field  +/-=change  Bksp/Q=back  S=save");
+    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=pick from list  Bksp/Q=back  S=save");
 
-    const char *labels[] = { "Type", "Target ID", "Required" };
+    const char *labels[] = { "Type", "Target", "Required" };
+    RefKind k = objTargetKind(o->type);
 
     for (int i = 0; i < 3; i++) {
         if (i == selObjField) attron(A_REVERSE);
@@ -412,7 +489,7 @@ static void drawObjective(void) {
                     o->type);
                 break;
             case 1:
-                mvprintw(3 + i, 2, "%-10s: %d", labels[i], o->targetId);
+                mvprintw(3 + i, 2, "%-10s: %s", labels[i], refLabelOr(k, o->targetId));
                 break;
             case 2:
                 mvprintw(3 + i, 2, "%-10s: %d", labels[i], o->required);
@@ -421,12 +498,19 @@ static void drawObjective(void) {
         if (i == selObjField) attroff(A_REVERSE);
     }
 
-    /* Hints per type */
-    mvprintw(7, 0, "Target ID interpretation:");
-    mvprintw(8, 2, "Kill:       index into enemies.dat (e.g. 0=Goblin, 3=Bandit)");
-    mvprintw(9, 2, "Get Item:   index into items.dat");
-    mvprintw(10, 2, "Visit Zone: map loc tile value (0x01-0x0F=enemy pool, 0xFE=town)");
-    mvprintw(11, 2, "Talk NPC:   dialog tree index in dialog.dat");
+    /* What the target means for the type currently selected */
+    static const char *targetHelp[OBJ_TYPE_COUNT] = {
+        "an enemy from enemies.dat",
+        "an item from items.dat",
+        "a raw map loc tile value (0x01-0x0F=enemy pool, 0xFE=town)",
+        "a dialog tree from dialog.dat",
+        "a named location from the quests.dat location section",
+    };
+    mvprintw(7, 0, "Target is %s.", targetHelp[o->type < OBJ_TYPE_COUNT ? o->type : 0]);
+    if (k == REF_RAW)
+        mvprintw(8, 0, "No list to browse for this type - use +/- to set the number.");
+    else
+        mvprintw(8, 0, "Changing the type clears the target, since it would point at another file.");
 }
 
 static void handleObjective(int ch) {
@@ -435,19 +519,31 @@ static void handleObjective(int ch) {
     switch (ch) {
         case KEY_UP:   if (selObjField > 0) selObjField--; break;
         case KEY_DOWN: if (selObjField < 2) selObjField++; break;
+        case '\n': case KEY_ENTER:
+            if (selObjField == 1) {
+                o->targetId = refPickOr(objTargetKind(o->type), o->targetId);
+                dirty = 1;
+            }
+            break;
         case '+': case '=':
             dirty = 1;
             switch (selObjField) {
-                case 0: o->type     = (uint8_t)((o->type + 1) % OBJ_TYPE_COUNT); break;
-                case 1: if (o->targetId < 255) o->targetId++; break;
+                case 0:
+                    o->type     = (uint8_t)((o->type + 1) % OBJ_TYPE_COUNT);
+                    o->targetId = defaultForKind(objTargetKind(o->type));
+                    break;
+                case 1: o->targetId = refCycleOr(objTargetKind(o->type), o->targetId, 1); break;
                 case 2: if (o->required < 255) o->required++; break;
             }
             break;
         case '-':
             dirty = 1;
             switch (selObjField) {
-                case 0: o->type = (uint8_t)((o->type + OBJ_TYPE_COUNT - 1) % OBJ_TYPE_COUNT); break;
-                case 1: if (o->targetId > 0) o->targetId--; break;
+                case 0:
+                    o->type     = (uint8_t)((o->type + OBJ_TYPE_COUNT - 1) % OBJ_TYPE_COUNT);
+                    o->targetId = defaultForKind(objTargetKind(o->type));
+                    break;
+                case 1: o->targetId = refCycleOr(objTargetKind(o->type), o->targetId, -1); break;
                 case 2: if (o->required > 1) o->required--; break;
             }
             break;

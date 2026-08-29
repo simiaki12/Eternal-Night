@@ -12,6 +12,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -90,13 +91,13 @@ static const char *efNames[] = { "Item ID", "Chance", "Quest ID", "Quest Status"
 static void renderEntry(LootEntry *e, int sel, int tableIdx, int entryIdx) {
     clear();
     mvprintw(0, 0, "TABLE %d  ENTRY %d", tableIdx, entryIdx);
-    mvprintw(1, 0, "Up/Down=field  +/-=change  Bksp=back  S=save");
+    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=pick from list  Bksp=back  S=save");
 
     for (int i = 0; i < EF_COUNT; i++) {
         if (i == sel) attron(A_REVERSE);
         switch (i) {
             case EF_ITEM:
-                mvprintw(i + 3, 2, "%-14s  %d", efNames[i], e->itemId);
+                mvprintw(i + 3, 2, "%-14s  %s", efNames[i], refLabel(REF_ITEM, e->itemId));
                 break;
             case EF_CHANCE:
                 mvprintw(i + 3, 2, "%-14s  %3d  (~%d%%)", efNames[i],
@@ -106,7 +107,8 @@ static void renderEntry(LootEntry *e, int sel, int tableIdx, int entryIdx) {
                 if (e->questId == 0xFF)
                     mvprintw(i + 3, 2, "%-14s  ---  (no requirement)", efNames[i]);
                 else
-                    mvprintw(i + 3, 2, "%-14s  %d", efNames[i], e->questId);
+                    mvprintw(i + 3, 2, "%-14s  %s", efNames[i],
+                        refLabel(REF_QUEST, e->questId));
                 break;
             case EF_QSTATUS:
                 if (e->questId == 0xFF)
@@ -134,10 +136,18 @@ static void screenEntry(int tableIdx, int entryIdx) {
             case KEY_BACKSPACE: case 127: return;
             case 's': case 'S': save(); break;
 
+            case '\n': case KEY_ENTER:
+                if (sel == EF_ITEM) {
+                    e->itemId = refPick(REF_ITEM, e->itemId); dirty = 1;
+                } else if (sel == EF_QUEST) {
+                    e->questId = refPick(REF_QUEST, e->questId); dirty = 1;
+                }
+                break;
+
             case '+': case '=':
                 dirty = 1;
                 switch (sel) {
-                    case EF_ITEM:    e->itemId++;   break;
+                    case EF_ITEM:    e->itemId = refCycle(REF_ITEM, e->itemId,  1); break;
                     case EF_CHANCE:  if (e->chance < 255) e->chance++; break;
                     case EF_QUEST:
                         if (e->questId == 0xFF) e->questId = 0;

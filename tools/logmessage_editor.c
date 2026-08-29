@@ -7,6 +7,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -138,8 +139,12 @@ static void fieldStr(int f, const LogMessage *m, char *out, int sz) {
     switch (f) {
         case 0:  snprintf(out, sz, "%s", m->text); break;
         case 1:  snprintf(out, sz, "%s (%d)", m->trigger < LOGTRIG_COUNT ? trigNames[m->trigger] : "?", m->trigger); break;
-        case 2:  m->actionId == 0xFF ? snprintf(out, sz, "any") : snprintf(out, sz, "%d", m->actionId); break;
-        case 3:  m->enemyDefId == 0xFF ? snprintf(out, sz, "any") : snprintf(out, sz, "%d", m->enemyDefId); break;
+        /* 0xFF is "matches anything" here, not an unset reference, so it gets
+           its own word instead of refLabel's "(none)". */
+        case 2:  m->actionId == 0xFF ? snprintf(out, sz, "any")
+                                     : snprintf(out, sz, "%s", refLabel(REF_ACTION, m->actionId)); break;
+        case 3:  m->enemyDefId == 0xFF ? snprintf(out, sz, "any")
+                                       : snprintf(out, sz, "%s", refLabel(REF_ENEMY, m->enemyDefId)); break;
         case 4:  m->encounterType == 0xFF ? snprintf(out, sz, "any") : snprintf(out, sz, "%d", m->encounterType); break;
         case 5:  snprintf(out, sz, "0x%02X", m->modRequired); break;
         case 6:  snprintf(out, sz, "%d%%", m->chance); break;
@@ -155,8 +160,8 @@ static void fieldStr(int f, const LogMessage *m, char *out, int sz) {
 static void fieldCycle(int f, LogMessage *m, int delta) {
     switch (f) {
         case 1: m->trigger      = (uint8_t)((m->trigger + LOGTRIG_COUNT + delta) % LOGTRIG_COUNT); break;
-        case 2: m->actionId     = (m->actionId == 0xFF && delta > 0) ? 0 : (m->actionId == 0 && delta < 0) ? 0xFF : (uint8_t)(m->actionId + delta); break;
-        case 3: m->enemyDefId   = (m->enemyDefId == 0xFF && delta > 0) ? 0 : (m->enemyDefId == 0 && delta < 0) ? 0xFF : (uint8_t)(m->enemyDefId + delta); break;
+        case 2: m->actionId     = refCycle(REF_ACTION, m->actionId,   delta); break;
+        case 3: m->enemyDefId   = refCycle(REF_ENEMY,  m->enemyDefId, delta); break;
         case 4: m->encounterType= (m->encounterType == 0xFF && delta > 0) ? 0 : (m->encounterType == 0 && delta < 0) ? 0xFF : (uint8_t)(m->encounterType + delta); break;
         case 5: m->modRequired  = (uint8_t)(m->modRequired + delta); break;
         case 6: { int v = (int)m->chance + delta; m->chance = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : v); break; }
@@ -192,7 +197,7 @@ static void drawEdit(void) {
     if (listSel < 0 || listSel >= entryCount) return;
     LogMessage *m = &entries[listSel];
     clear();
-    mvprintw(0, 0, "EDIT ENTRY %d  Up/Down=field  +/-=change  E=edit text  Q=back", listSel);
+    mvprintw(0, 0, "EDIT ENTRY %d  Up/Down=field  +/-=change  Enter=pick/edit  Q=back", listSel);
     mvhline(1, 0, '-', 78);
     char val[64];
     for (int f = 0; f <= EDIT_FIELDS; f++) {
@@ -264,6 +269,16 @@ int main(void) {
             if (ch == KEY_DOWN && editField < EDIT_FIELDS)  editField++;
             if ((ch == '+' || ch == '=') && editField > 0) { fieldCycle(editField, &entries[listSel],  1); dirty = 1; }
             if  (ch == '-'              && editField > 0)   { fieldCycle(editField, &entries[listSel], -1); dirty = 1; }
+            if (ch == '\n' || ch == KEY_ENTER) {
+                LogMessage *m = &entries[listSel];
+                if      (editField == 2) { m->actionId   = refPick(REF_ACTION, m->actionId);   dirty = 1; }
+                else if (editField == 3) { m->enemyDefId = refPick(REF_ENEMY,  m->enemyDefId); dirty = 1; }
+                else if (editField == 0) {
+                    drawEdit();
+                    editStr(2, 26, m->text, 28);
+                    dirty = 1;
+                }
+            }
             if ((ch == 'e' || ch == 'E') && editField == 0) {
                 /* inline text edit */
                 drawEdit();

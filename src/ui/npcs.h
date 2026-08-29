@@ -20,7 +20,8 @@ typedef struct {
     uint8_t tags;           /* NPC_TAG_* bitmask of trait tags */
     uint8_t base_standing;  /* starting standing value for a new game */
     uint8_t npc_flags;      /* reserved */
-    uint8_t _pad[3];
+    uint8_t id;             /* stable id — what other data files reference */
+    uint8_t _pad[2];
 } NpcDef;                   /* 40 bytes */
 
 typedef char _check_npcdef_size[(sizeof(NpcDef) == 40) ? 1 : -1];
@@ -34,6 +35,8 @@ extern NpcDef npcDefs[NPC_DEF_MAX];
 extern int    npcDefCount;
 
 int  loadNpcs(PakData data);
+const NpcDef *npcGetDef(uint8_t id);   /* by stable id; NULL if unknown */
+int  npcIndexById(uint8_t id);         /* slot in npcDefs[]; -1 if unknown */
 void renderNpcs(int tx, int ty, int rCamX, int rCamY);
 int  npcTryInteract(void);   /* starts dialog if adjacent NPC found; returns 1 if triggered */
 int  npcGetPrompt(char *buf, int len); /* fills buf with "[E]: Talk with Name" if adjacent NPC */

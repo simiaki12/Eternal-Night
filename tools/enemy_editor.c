@@ -7,6 +7,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -158,7 +159,7 @@ static const char *fieldNames[] = {
 /* +/- editing for one behavior field; part: 0=state 1=fx 2=val 3=chance */
 static void adjustBehavior(EnemyBehavior *b, int part, int dir) {
     switch (part) {
-        case 0: b->stateId = (uint8_t)((b->stateId + (dir > 0 ? 1 : 4)) % 5); break;
+        case 0: b->stateId = refCycle(REF_STATE_COMBAT, b->stateId, dir); break;
         case 1: b->fx.type = (uint8_t)((b->fx.type + (dir > 0 ? 1 : EFX_COUNT - 1)) % EFX_COUNT); break;
         case 2: b->fx.value  = (uint8_t)(b->fx.value + dir);                  break;
         case 3: {
@@ -191,10 +192,8 @@ static void renderEdit(EnemyDef *e, int sel, const char *status) {
             case F_XP:    mvprintw(row, 2, "%-18s  %d",  fieldNames[i], e->xpReward); break;
             case F_GOLD:  mvprintw(row, 2, "%-18s  %d",  fieldNames[i], e->goldDrop); break;
             case F_LOOT:
-                if (e->lootTableId == 0xFF)
-                    mvprintw(row, 2, "%-18s  none", fieldNames[i]);
-                else
-                    mvprintw(row, 2, "%-18s  %d",  fieldNames[i], e->lootTableId);
+                mvprintw(row, 2, "%-18s  %s", fieldNames[i],
+                         refLabel(REF_LOOT_TABLE, e->lootTableId));
                 break;
             case F_FLAG_WEAPON: mvprintw(row, 2, "%-18s  %s", fieldNames[i], (e->flags & EDEF_HAS_WEAPON) ? "[X]" : "[ ]"); break;
             case F_FLAG_EXEC:   mvprintw(row, 2, "%-18s  %s", fieldNames[i], (e->flags & EDEF_EXECUTABLE) ? "[X]" : "[ ]"); break;
@@ -209,7 +208,7 @@ static void renderEdit(EnemyDef *e, int sel, const char *status) {
                                       e->tenacity ? e->tenacity : 100);                  break;
             case F_B1_STATE: case F_B2_STATE: {
                 const EnemyBehavior *b = (i == F_B1_STATE) ? &e->behaviors[0] : &e->behaviors[1];
-                mvprintw(row, 2, "%-22s  %s", fieldNames[i], cstateNames[b->stateId % 5]);
+                mvprintw(row, 2, "%-22s  %s", fieldNames[i], refLabel(REF_STATE_COMBAT, b->stateId));
                 break;
             }
             case F_B1_FX: case F_B2_FX: {
@@ -257,8 +256,25 @@ static void screenEdit(int idx) {
                     if (editString(sel + 4, 22, e->name, 16)) dirty = 1;
                 } else if (sel == F_IMG) {
                     if (editString(sel + 4, 22, e->imgName, 16)) dirty = 1;
+                } else if (sel == F_LOOT) {
+                    e->lootTableId = refPick(REF_LOOT_TABLE, e->lootTableId); dirty = 1;
+                } else if (sel == F_B1_STATE || sel == F_B2_STATE) {
+                    EnemyBehavior *b = &e->behaviors[sel == F_B1_STATE ? 0 : 1];
+                    b->stateId = refPick(REF_STATE_COMBAT, b->stateId); dirty = 1;
                 }
                 break;
+
+            /* Left/Right step through referenced records */
+            case KEY_RIGHT: case KEY_LEFT: {
+                int dir = (ch == KEY_RIGHT) ? 1 : -1;
+                if (sel == F_LOOT) {
+                    e->lootTableId = refCycle(REF_LOOT_TABLE, e->lootTableId, dir); dirty = 1;
+                } else if (sel == F_B1_STATE || sel == F_B2_STATE) {
+                    EnemyBehavior *b = &e->behaviors[sel == F_B1_STATE ? 0 : 1];
+                    b->stateId = refCycle(REF_STATE_COMBAT, b->stateId, dir); dirty = 1;
+                }
+                break;
+            }
 
             case '+': case '=':
                 dirty = 1;
@@ -273,10 +289,7 @@ static void screenEdit(int idx) {
                     case F_XP:    if (e->xpReward   < 255) e->xpReward++;    break;
                     case F_GOLD:  if (e->goldDrop   < 255) e->goldDrop++;    break;
                     case F_LOOT:
-                        e->lootTableId = (e->lootTableId == 0xFF) ? 0
-                                       : (e->lootTableId < 254)   ? e->lootTableId + 1
-                                       : 0xFF;
-                        break;
+                        e->lootTableId = refCycle(REF_LOOT_TABLE, e->lootTableId, 1); break;
                     case F_FLAG_WEAPON: e->flags ^= EDEF_HAS_WEAPON; break;
                     case F_FLAG_EXEC:   e->flags ^= EDEF_EXECUTABLE; break;
                     case F_FLAG_BLOCK:  e->flags ^= EDEF_BLOCKABLE;  break;
@@ -306,10 +319,7 @@ static void screenEdit(int idx) {
                     case F_XP:    if (e->xpReward    > 0) e->xpReward--;    break;
                     case F_GOLD:  if (e->goldDrop    > 0) e->goldDrop--;    break;
                     case F_LOOT:
-                        e->lootTableId = (e->lootTableId == 0)    ? 0xFF
-                                       : (e->lootTableId == 0xFF) ? 254
-                                       : e->lootTableId - 1;
-                        break;
+                        e->lootTableId = refCycle(REF_LOOT_TABLE, e->lootTableId, -1); break;
                     case F_FLAG_WEAPON: e->flags ^= EDEF_HAS_WEAPON; break;
                     case F_FLAG_EXEC:   e->flags ^= EDEF_EXECUTABLE; break;
                     case F_FLAG_BLOCK:  e->flags ^= EDEF_BLOCKABLE;  break;

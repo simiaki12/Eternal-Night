@@ -13,6 +13,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -387,7 +388,8 @@ static void drawState(void) {
         int pos = 0;
         for (int a = 0; a < ENV_ACTION_MAX; a++) {
             if (edge->actionIds[a] == 0xFF) continue;
-            pos += snprintf(acts + pos, sizeof(acts) - pos, "%d ", edge->actionIds[a]);
+            pos += snprintf(acts + pos, sizeof(acts) - pos, "%s ",
+                            refLabel(REF_ACTION, edge->actionIds[a]));
         }
         if (edge->nextState == 0xFF)
             mvprintw(row, 38, "[%d] acts:[%-6s]  -> RESOLVE  flag:%d  item:%d",
@@ -506,7 +508,7 @@ static void drawEdge(void) {
     EnvEdge     *edge = &st->edges[selEdge];
     mvprintw(0, 0, "EDGE [%d]  state:[%d]  enc:[%d]  [%s]",
         selEdge, selSt, selEnc, dirty ? "unsaved" : "saved");
-    mvprintw(1, 0, "Up/Down=field  +/-=change  Bksp/Q=back  S=save");
+    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=pick from list  Bksp/Q=back  S=save");
 
     for (int i = 0; i < EDF_COUNT; i++) {
         int row = 3 + i;
@@ -514,17 +516,21 @@ static void drawEdge(void) {
         switch (i) {
             case EDF_ACT0: case EDF_ACT1: case EDF_ACT2: {
                 int j = i - EDF_ACT0;
-                if (edge->actionIds[j] == 0xFF)
-                    mvprintw(row,2,"%-16s  none (0xFF)", edgeFldLbl[i]);
-                else
-                    mvprintw(row,2,"%-16s  %d", edgeFldLbl[i], edge->actionIds[j]);
+                mvprintw(row,2,"%-16s  %s", edgeFldLbl[i],
+                    refLabel(REF_ACTION, edge->actionIds[j]));
                 break;
             }
             case EDF_NEXT_STATE:
+                /* States are local to this encounter, not states.dat, so this
+                   resolves against our own state array rather than refs.h. */
                 if (edge->nextState == 0xFF)
                     mvprintw(row,2,"%-16s  RESOLVE (terminal)", edgeFldLbl[i]);
+                else if (edge->nextState < encs[selEnc].stateCount)
+                    mvprintw(row,2,"%-16s  -> [%d] %s", edgeFldLbl[i], edge->nextState,
+                        encs[selEnc].states[edge->nextState].description);
                 else
-                    mvprintw(row,2,"%-16s  -> state %d", edgeFldLbl[i], edge->nextState);
+                    mvprintw(row,2,"%-16s  -> state %d  (?? out of range)",
+                        edgeFldLbl[i], edge->nextState);
                 break;
             case EDF_SET_FLAG:
                 if (edge->setFlag == 0xFF)
@@ -533,10 +539,8 @@ static void drawEdge(void) {
                     mvprintw(row,2,"%-16s  flag %d", edgeFldLbl[i], edge->setFlag);
                 break;
             case EDF_REWARD_ITEM:
-                if (edge->rewardItem == 0xFF)
-                    mvprintw(row,2,"%-16s  none (0xFF)", edgeFldLbl[i]);
-                else
-                    mvprintw(row,2,"%-16s  item %d", edgeFldLbl[i], edge->rewardItem);
+                mvprintw(row,2,"%-16s  %s", edgeFldLbl[i],
+                    refLabel(REF_ITEM, edge->rewardItem));
                 break;
         }
         if (i == selEdgeFld) attroff(A_REVERSE);
@@ -560,25 +564,33 @@ static void handleEdge(int ch) {
         case '+': case '=':
             dirty = 1;
             switch (selEdgeFld) {
-                case EDF_ACT0: edge->actionIds[0] = cycleUp(edge->actionIds[0]); break;
-                case EDF_ACT1: edge->actionIds[1] = cycleUp(edge->actionIds[1]); break;
-                case EDF_ACT2: edge->actionIds[2] = cycleUp(edge->actionIds[2]); break;
+                case EDF_ACT0: edge->actionIds[0] = refCycle(REF_ACTION, edge->actionIds[0], 1); break;
+                case EDF_ACT1: edge->actionIds[1] = refCycle(REF_ACTION, edge->actionIds[1], 1); break;
+                case EDF_ACT2: edge->actionIds[2] = refCycle(REF_ACTION, edge->actionIds[2], 1); break;
                 case EDF_NEXT_STATE: edge->nextState  = cycleUp(edge->nextState);  break;
                 case EDF_SET_FLAG:   edge->setFlag    = cycleUp(edge->setFlag);    break;
-                case EDF_REWARD_ITEM:edge->rewardItem = cycleUp(edge->rewardItem); break;
+                case EDF_REWARD_ITEM:edge->rewardItem = refCycle(REF_ITEM, edge->rewardItem, 1); break;
                 default: dirty = 0; break;
             }
             break;
         case '-':
             dirty = 1;
             switch (selEdgeFld) {
-                case EDF_ACT0: edge->actionIds[0] = cycleDown(edge->actionIds[0]); break;
-                case EDF_ACT1: edge->actionIds[1] = cycleDown(edge->actionIds[1]); break;
-                case EDF_ACT2: edge->actionIds[2] = cycleDown(edge->actionIds[2]); break;
+                case EDF_ACT0: edge->actionIds[0] = refCycle(REF_ACTION, edge->actionIds[0], -1); break;
+                case EDF_ACT1: edge->actionIds[1] = refCycle(REF_ACTION, edge->actionIds[1], -1); break;
+                case EDF_ACT2: edge->actionIds[2] = refCycle(REF_ACTION, edge->actionIds[2], -1); break;
                 case EDF_NEXT_STATE: edge->nextState  = cycleDown(edge->nextState);  break;
                 case EDF_SET_FLAG:   edge->setFlag    = cycleDown(edge->setFlag);    break;
-                case EDF_REWARD_ITEM:edge->rewardItem = cycleDown(edge->rewardItem); break;
+                case EDF_REWARD_ITEM:edge->rewardItem = refCycle(REF_ITEM, edge->rewardItem, -1); break;
                 default: dirty = 0; break;
+            }
+            break;
+        case '\n': case KEY_ENTER:
+            if (selEdgeFld <= EDF_ACT2) {
+                int j = selEdgeFld - EDF_ACT0;
+                edge->actionIds[j] = refPick(REF_ACTION, edge->actionIds[j]); dirty = 1;
+            } else if (selEdgeFld == EDF_REWARD_ITEM) {
+                edge->rewardItem = refPick(REF_ITEM, edge->rewardItem); dirty = 1;
             }
             break;
         case KEY_BACKSPACE: case 127: case 'q': case 'Q':

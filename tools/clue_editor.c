@@ -9,6 +9,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -69,6 +70,7 @@ static void save(void) {
     fwrite(clues, sizeof(ClueDef), (size_t)clueCount, f);
     fclose(f);
     dirty = 0;
+    refInvalidate();   /* the "invalidates" field picks from the file we just wrote */
 }
 
 /* ---- inline text input ---- */
@@ -218,13 +220,13 @@ static void drawEdit(void) {
                 if (c->requiredItem == 0xFF)
                     mvprintw(row, 2, "%-16s  none (0xFF)", fldLabels[i]);
                 else
-                    mvprintw(row, 2, "%-16s  %d", fldLabels[i], c->requiredItem);
+                    mvprintw(row, 2, "%-16s  %s", fldLabels[i], refLabel(REF_ITEM, c->requiredItem));
                 break;
             case F_INVALIDATES:
                 if (c->invalidates == 0xFF)
                     mvprintw(row, 2, "%-16s  none (0xFF)", fldLabels[i]);
                 else
-                    mvprintw(row, 2, "%-16s  clue %d", fldLabels[i], c->invalidates);
+                    mvprintw(row, 2, "%-16s  %s", fldLabels[i], refLabel(REF_CLUE, c->invalidates));
                 break;
             case F_FLAG_KEY:
                 mvprintw(row, 2, "%-16s  %s  (T to toggle)",
@@ -256,8 +258,18 @@ static void handleEdit(int ch) {
                 if (editString(3 + F_TEXT, 20, c->text, 32)) dirty = 1;
             } else if (selFld == F_HINT) {
                 if (editString(3 + F_HINT, 20, c->itemHint, 32)) dirty = 1;
+            } else if (selFld == F_REQ_ITEM) {
+                c->requiredItem = refPick(REF_ITEM, c->requiredItem); dirty = 1;
+            } else if (selFld == F_INVALIDATES) {
+                c->invalidates = refPick(REF_CLUE, c->invalidates); dirty = 1;
             }
             break;
+        case KEY_RIGHT: case KEY_LEFT: {
+            int d = (ch == KEY_RIGHT) ? 1 : -1;
+            if      (selFld == F_REQ_ITEM)    { c->requiredItem = refCycle(REF_ITEM, c->requiredItem, d); dirty = 1; }
+            else if (selFld == F_INVALIDATES) { c->invalidates  = refCycle(REF_CLUE, c->invalidates,  d); dirty = 1; }
+            break;
+        }
 
         case 't': case 'T':
             dirty = 1;
@@ -283,12 +295,10 @@ static void handleEdit(int ch) {
                     break;
                 }
                 case F_REQ_ITEM:
-                    c->requiredItem = (c->requiredItem == 0xFF) ? 0
-                        : (c->requiredItem < 255 ? c->requiredItem + 1 : 0xFF);
+                    c->requiredItem = refCycle(REF_ITEM, c->requiredItem, 1);
                     break;
                 case F_INVALIDATES:
-                    c->invalidates = (c->invalidates == 0xFF) ? 0
-                        : (c->invalidates < 255 ? c->invalidates + 1 : 0xFF);
+                    c->invalidates = refCycle(REF_CLUE, c->invalidates, 1);
                     break;
                 default: dirty = 0; break;
             }
@@ -308,12 +318,10 @@ static void handleEdit(int ch) {
                     break;
                 }
                 case F_REQ_ITEM:
-                    c->requiredItem = (c->requiredItem == 0) ? 0xFF
-                        : (c->requiredItem == 0xFF ? 254 : c->requiredItem - 1);
+                    c->requiredItem = refCycle(REF_ITEM, c->requiredItem, -1);
                     break;
                 case F_INVALIDATES:
-                    c->invalidates = (c->invalidates == 0) ? 0xFF
-                        : (c->invalidates == 0xFF ? 254 : c->invalidates - 1);
+                    c->invalidates = refCycle(REF_CLUE, c->invalidates, -1);
                     break;
                 default: dirty = 0; break;
             }

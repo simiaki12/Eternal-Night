@@ -6,6 +6,19 @@
 #include "world_enemies.h"
 
 EnemyDef  enemyDefs[ENEMY_DEF_MAX];
+
+const EnemyDef *enemyGetDef(uint8_t id) {
+    for (int i = 0; i < enemyDefCount; i++)
+        if (enemyDefs[i].id == id) return &enemyDefs[i];
+    return NULL;
+}
+
+int enemyIndexById(uint8_t id) {
+    for (int i = 0; i < enemyDefCount; i++)
+        if (enemyDefs[i].id == id) return i;
+    return -1;
+}
+
 int       enemyDefCount = 0;
 EnemyPool enemyPools[ENEMY_POOL_MAX];
 int       enemyPoolCount = 0;
@@ -15,11 +28,11 @@ static void initBuiltinEnemies(void) {
     /* --- defs --- */
     /* stateMask bits = combat graph S0..S4; 0x17 = no Frenzy, 0x1F = all */
     static const EnemyDef builtins[] = {
-        /*  name          hp  atk def siz spd int per flags                                              xp gold loot  imgName     states dmg ten  behaviors           pad */
-        { "Goblin",       12,  4,  1,  1,  3,  1,  2, EDEF_EXECUTABLE | EDEF_STUNNABLE,                 8,  1,  0,  "goblin",   0x17,  3, 100, {{0,{0,0,0}},{0,{0,0,0}}}, {0} },
-        { "Wolf",         10,  5,  0,  2,  4,  1,  3, EDEF_STUNNABLE,                                   7,  1, 0xFF,"wolf",     0x1F,  4, 100, {{0,{0,0,0}},{0,{0,0,0}}}, {0} },
-        { "Skeleton",     20,  6,  2,  2,  2,  1,  1, EDEF_HAS_WEAPON|EDEF_BLOCKABLE|EDEF_EXECUTABLE,  14,  3, 0xFF,"skeleton", 0x17,  5,  80, {{0,{0,0,0}},{0,{0,0,0}}}, {0} },
-        { "Bandit",       18,  7,  2,  2,  3,  3,  3, EDEF_HAS_WEAPON|EDEF_EXECUTABLE|EDEF_STUNNABLE,  16,  5, 0xFF,"bandit",   0x1F,  6, 100, {{0,{0,0,0}},{0,{0,0,0}}}, {0} },
+        /*  name          hp  atk def siz spd int per flags                                              xp gold loot  imgName     states dmg ten  behaviors            id */
+        { "Goblin",       12,  4,  1,  1,  3,  1,  2, EDEF_EXECUTABLE | EDEF_STUNNABLE,                 8,  1,  0,  "goblin",   0x17,  3, 100, {{0,{0,0,0}},{0,{0,0,0}}}, 0, 0 },
+        { "Wolf",         10,  5,  0,  2,  4,  1,  3, EDEF_STUNNABLE,                                   7,  1, 0xFF,"wolf",     0x1F,  4, 100, {{0,{0,0,0}},{0,{0,0,0}}}, 1, 0 },
+        { "Skeleton",     20,  6,  2,  2,  2,  1,  1, EDEF_HAS_WEAPON|EDEF_BLOCKABLE|EDEF_EXECUTABLE,  14,  3, 0xFF,"skeleton", 0x17,  5,  80, {{0,{0,0,0}},{0,{0,0,0}}}, 2, 0 },
+        { "Bandit",       18,  7,  2,  2,  3,  3,  3, EDEF_HAS_WEAPON|EDEF_EXECUTABLE|EDEF_STUNNABLE,  16,  5, 0xFF,"bandit",   0x1F,  6, 100, {{0,{0,0,0}},{0,{0,0,0}}}, 3, 0 },
     };
     int n = (int)(sizeof(builtins) / sizeof(builtins[0]));
     memcpy(enemyDefs, builtins, (size_t)n * sizeof(EnemyDef));
@@ -76,9 +89,9 @@ void encounterStartFromPool(uint8_t poolId, int triggerX, int triggerY) {
         return;
     }
     EnemyPool *pool = &enemyPools[idx];
-    uint8_t defId = pool->enemyIds[rand() % pool->count];
-    if (defId >= (uint8_t)enemyDefCount) defId = 0;
-    encounterStartCombat(&enemyDefs[defId]);
+    const EnemyDef *def = enemyGetDef(pool->enemyIds[rand() % pool->count]);
+    if (!def) def = &enemyDefs[0];
+    encounterStartCombat(def);
     encounter.fromWorldEnemy[0] = 1;
     encounter.worldEnemyX[0]    = (uint8_t)triggerX;
     encounter.worldEnemyY[0]    = (uint8_t)triggerY;
@@ -92,9 +105,9 @@ void encounterStartFromPool(uint8_t poolId, int triggerX, int triggerY) {
         int nidx = (int)nwe->pool_id - 1;
         if (nidx < 0 || nidx >= enemyPoolCount || enemyPools[nidx].count == 0) continue;
         EnemyPool *np  = &enemyPools[nidx];
-        uint8_t nDefId = np->enemyIds[rand() % np->count];
-        if (nDefId >= (uint8_t)enemyDefCount) continue;
-        encounterAddEnemy(&enemyDefs[nDefId], (uint8_t)nx, (uint8_t)ny);
+        const EnemyDef *ndef = enemyGetDef(np->enemyIds[rand() % np->count]);
+        if (!ndef) continue;
+        encounterAddEnemy(ndef, (uint8_t)nx, (uint8_t)ny);
     }
 }
 
@@ -112,12 +125,11 @@ void encounterStartFromPoolN(uint8_t poolId, int n) {
         return;
     }
     EnemyPool *pool = &enemyPools[idx];
-    uint8_t defId = pool->enemyIds[rand() % pool->count];
-    if (defId >= (uint8_t)enemyDefCount) defId = 0;
-    encounterStartCombat(&enemyDefs[defId]);
+    const EnemyDef *def = enemyGetDef(pool->enemyIds[rand() % pool->count]);
+    if (!def) def = &enemyDefs[0];
+    encounterStartCombat(def);
     for (int i = 1; i < n; i++) {
-        defId = pool->enemyIds[rand() % pool->count];
-        if (defId >= (uint8_t)enemyDefCount) defId = 0;
-        encounterAddEnemy(&enemyDefs[defId], 0, 0);
+        const EnemyDef *d2 = enemyGetDef(pool->enemyIds[rand() % pool->count]);
+        encounterAddEnemy(d2 ? d2 : &enemyDefs[0], 0, 0);
     }
 }

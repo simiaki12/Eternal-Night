@@ -11,6 +11,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -107,7 +108,7 @@ static void render(int idx, int sel, const char *status) {
     clear();
     mvprintw(0, 0, "HUNT EDITOR - %s (%d/%d)%s",
              e->name[0] ? e->name : "(unnamed)", idx + 1, encCount, dirty ? " *" : "");
-    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=text  Tab=next  E=new  D=del  S=save  Q=quit");
+    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=text/pick  Tab=next  E=new  D=del  S=save  Q=quit");
     if (status) mvprintw(2, 0, "%s", status);
 
     for (int i = 0; i < F_TOTAL; i++) {
@@ -119,8 +120,8 @@ static void render(int idx, int sel, const char *status) {
                 case F_ID:      mvprintw(row, 2, "%-40s  %d", headNames[i], e->id); break;
                 case F_NAME:    mvprintw(row, 2, "%-40s  %s", headNames[i], e->name); break;
                 case F_POOL:
-                    if (e->enemyPoolId == 0xFF) mvprintw(row, 2, "%-40s  none", headNames[i]);
-                    else mvprintw(row, 2, "%-40s  %d", headNames[i], e->enemyPoolId);
+                    mvprintw(row, 2, "%-40s  %s", headNames[i],
+                             refLabel(REF_ENEMY_POOL, e->enemyPoolId));
                     break;
                 case F_GROUP_SIZE:  mvprintw(row, 2, "%-40s  %d", headNames[i], e->enemyCount); break;
                 case F_TENACITY:    mvprintw(row, 2, "%-40s  %d", headNames[i], e->tenacity); break;
@@ -153,7 +154,7 @@ static void bump(HuntEncounterDef *e, int sel, int dir) {
     if (sel < F_HEAD_COUNT) {
         switch (sel) {
             case F_ID:          e->id            = (uint8_t)(e->id + dir); break;
-            case F_POOL:        e->enemyPoolId   = (uint8_t)(e->enemyPoolId + dir); break;
+            case F_POOL:        e->enemyPoolId   = refCycle(REF_ENEMY_POOL, e->enemyPoolId, dir); break;
             case F_GROUP_SIZE:  e->enemyCount    = (uint8_t)(e->enemyCount + dir); break;
             case F_TENACITY:    e->tenacity      = (uint8_t)(e->tenacity + dir); break;
             case F_ESC_EVERY:   e->escalateEvery = (uint8_t)(e->escalateEvery + dir); break;
@@ -221,8 +222,12 @@ int main(void) {
                 }
                 break;
             case '\n': case KEY_ENTER:
-                if (sel == F_NAME && editString(F_NAME + 4, 44, encs[idx].name, 24))
+                if (sel == F_NAME) {
+                    if (editString(F_NAME + 4, 44, encs[idx].name, 24)) dirty = 1;
+                } else if (sel == F_POOL) {
+                    encs[idx].enemyPoolId = refPick(REF_ENEMY_POOL, encs[idx].enemyPoolId);
                     dirty = 1;
+                }
                 break;
         }
     }

@@ -9,6 +9,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -218,12 +219,9 @@ static void drawEdit(void) {
             case F_CLUE4: case F_CLUE5: case F_CLUE6: case F_CLUE7: {
                 int j = i - F_CLUE0;
                 int isKey = (inv->keyMask >> j) & 1;
-                if (inv->clueIds[j] == 0xFF)
-                    mvprintw(row, 2, "%-16s  none (0xFF)  key:%s",
-                        fldLabels[i], isKey ? "Y" : "n");
-                else
-                    mvprintw(row, 2, "%-16s  %d  key:%s",
-                        fldLabels[i], inv->clueIds[j], isKey ? "Y" : "n");
+                mvprintw(row, 2, "%-16s  %-28s  key:%s",
+                    fldLabels[i], refLabel(REF_CLUE, inv->clueIds[j]),
+                    isKey ? "Y" : "n");
                 break;
             }
             case F_CLUE_COUNT:
@@ -238,13 +236,11 @@ static void drawEdit(void) {
                 if (inv->rewardItem == 0xFF)
                     mvprintw(row, 2, "%-16s  none (0xFF)", fldLabels[i]);
                 else
-                    mvprintw(row, 2, "%-16s  %d", fldLabels[i], inv->rewardItem);
+                    mvprintw(row, 2, "%-16s  %s", fldLabels[i], refLabel(REF_ITEM, inv->rewardItem));
                 break;
             case F_REWARD_QUEST:
-                if (inv->rewardQuest == 0xFF)
-                    mvprintw(row, 2, "%-16s  none (0xFF)", fldLabels[i]);
-                else
-                    mvprintw(row, 2, "%-16s  %d", fldLabels[i], inv->rewardQuest);
+                mvprintw(row, 2, "%-16s  %s", fldLabels[i],
+                    refLabel(REF_QUEST, inv->rewardQuest));
                 break;
             case F_PRESSURE_TYPE:
                 mvprintw(row, 2, "%-16s  %s (%d)",
@@ -261,7 +257,7 @@ static void drawEdit(void) {
     }
 
     mvprintw(3 + F_COUNT + 1, 0,
-        "Clue slot +/-: cycle clue ID (0xFF=none)  Bitmask: +/- on slot row toggles key bit");
+        "Clue/reward fields: +/- cycles, Enter opens the full list to browse");
     mvprintw(3 + F_COUNT + 2, 0,
         "STAGED=scene has misleading clues  RETURNABLE=player may re-enter after abandoning");
     mvprintw(3 + F_COUNT + 3, 0,
@@ -279,6 +275,20 @@ static void handleEdit(int ch) {
                 if (editString(3 + F_NAME, 20, inv->name, 24)) dirty = 1;
             } else if (selFld == F_PRESSURE_TEXT) {
                 if (editString(3 + F_PRESSURE_TEXT, 20, inv->pressureText, 36)) dirty = 1;
+            } else if (selFld == F_REWARD_ITEM) {
+                inv->rewardItem = refPick(REF_ITEM, inv->rewardItem); dirty = 1;
+            } else if (selFld == F_REWARD_QUEST) {
+                inv->rewardQuest = refPick(REF_QUEST, inv->rewardQuest); dirty = 1;
+            } else if (selFld >= F_CLUE0 && selFld <= F_CLUE7) {
+                int j = selFld - F_CLUE0;
+                inv->clueIds[j] = refPick(REF_CLUE, inv->clueIds[j]); dirty = 1;
+            }
+            break;
+        case KEY_RIGHT: case KEY_LEFT:
+            if (selFld == F_REWARD_ITEM) {
+                inv->rewardItem = refCycle(REF_ITEM, inv->rewardItem,
+                                           ch == KEY_RIGHT ? 1 : -1);
+                dirty = 1;
             }
             break;
 
@@ -295,12 +305,7 @@ static void handleEdit(int ch) {
             dirty = 1;
             if (selFld >= F_CLUE0 && selFld <= F_CLUE7) {
                 int j = selFld - F_CLUE0;
-                /* + on clue slot: if at end of range, wrap to 0xFF; else increment */
-                if (inv->clueIds[j] == 0xFF) inv->clueIds[j] = 0;
-                else if (inv->clueIds[j] < 255) inv->clueIds[j]++;
-                else inv->clueIds[j] = 0xFF;
-                /* Sync key mask toggle: pressing + when on a clue slot also toggles key bit */
-                /* (users can use T for flags; leave + for cycling ID) */
+                inv->clueIds[j] = refCycle(REF_CLUE, inv->clueIds[j], 1);
             } else {
                 switch (selFld) {
                     case F_CLUE_COUNT:
@@ -310,12 +315,10 @@ static void handleEdit(int ch) {
                     case F_KEY_MASK:
                         if (inv->keyMask < 0xFF) inv->keyMask++; break;
                     case F_REWARD_ITEM:
-                        inv->rewardItem = (inv->rewardItem == 0xFF) ? 0
-                            : (inv->rewardItem < 255 ? inv->rewardItem + 1 : 0xFF);
+                        inv->rewardItem = refCycle(REF_ITEM, inv->rewardItem, 1);
                         break;
                     case F_REWARD_QUEST:
-                        inv->rewardQuest = (inv->rewardQuest == 0xFF) ? 0
-                            : (inv->rewardQuest < 255 ? inv->rewardQuest + 1 : 0xFF);
+                        inv->rewardQuest = refCycle(REF_QUEST, inv->rewardQuest, 1);
                         break;
                     case F_PRESSURE_TYPE:
                         inv->pressureType = (uint8_t)((inv->pressureType + 1) % PRESSURE_COUNT); break;
@@ -328,9 +331,7 @@ static void handleEdit(int ch) {
             dirty = 1;
             if (selFld >= F_CLUE0 && selFld <= F_CLUE7) {
                 int j = selFld - F_CLUE0;
-                if (inv->clueIds[j] == 0) inv->clueIds[j] = 0xFF;
-                else if (inv->clueIds[j] == 0xFF) inv->clueIds[j] = 254;
-                else inv->clueIds[j]--;
+                inv->clueIds[j] = refCycle(REF_CLUE, inv->clueIds[j], -1);
             } else {
                 switch (selFld) {
                     case F_CLUE_COUNT:
@@ -340,12 +341,10 @@ static void handleEdit(int ch) {
                     case F_KEY_MASK:
                         if (inv->keyMask > 0) inv->keyMask--; break;
                     case F_REWARD_ITEM:
-                        inv->rewardItem = (inv->rewardItem == 0) ? 0xFF
-                            : (inv->rewardItem == 0xFF ? 254 : inv->rewardItem - 1);
+                        inv->rewardItem = refCycle(REF_ITEM, inv->rewardItem, -1);
                         break;
                     case F_REWARD_QUEST:
-                        inv->rewardQuest = (inv->rewardQuest == 0) ? 0xFF
-                            : (inv->rewardQuest == 0xFF ? 254 : inv->rewardQuest - 1);
+                        inv->rewardQuest = refCycle(REF_QUEST, inv->rewardQuest, -1);
                         break;
                     case F_PRESSURE_TYPE:
                         inv->pressureType = (uint8_t)((inv->pressureType + PRESSURE_COUNT - 1) % PRESSURE_COUNT);

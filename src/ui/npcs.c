@@ -12,6 +12,19 @@
 #include "quests.h"
 
 NpcDef npcDefs[NPC_DEF_MAX];
+
+const NpcDef *npcGetDef(uint8_t id) {
+    for (int i = 0; i < npcDefCount; i++)
+        if (npcDefs[i].id == id) return &npcDefs[i];
+    return NULL;
+}
+
+int npcIndexById(uint8_t id) {
+    for (int i = 0; i < npcDefCount; i++)
+        if (npcDefs[i].id == id) return i;
+    return -1;
+}
+
 int    npcDefCount = 0;
 
 /* Returns 1 if mapId exactly matches the base filename of currentMapName.

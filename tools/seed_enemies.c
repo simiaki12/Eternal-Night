@@ -56,23 +56,23 @@ typedef struct {
 
 static EnemyDef defs[] = {
     /* name           hp  atk def siz spd int per  flags                                              xp gold loot  imgName        states       dmg ten  behaviors */
-    { "Goblin",       12,  4,  1,  1,  3,  1,  2,  EDEF_EXECUTABLE | EDEF_STUNNABLE,                 8,  1,  0,  "goblin",      BASE_STATES,  3, 100, { NOB, NOB }, {0} },
+    { "Goblin",       12,  4,  1,  1,  3,  1,  2,  EDEF_EXECUTABLE | EDEF_STUNNABLE,                 8,  1,  0,  "goblin",      BASE_STATES,  3, 100, { NOB, NOB }, 0, 0 },
     { "Wolf",         10,  5,  0,  2,  4,  1,  3,  EDEF_STUNNABLE,                                   7,  1, 0xFF,"wolf",        ALL_STATES,   4, 100,
-        { B(CS_FRENZY, EFX_DAMAGE_HP, 3, 50), NOB }, {0} },
-    { "Skeleton",     20,  6,  2,  2,  2,  1,  1,  EDEF_HAS_WEAPON|EDEF_BLOCKABLE|EDEF_EXECUTABLE,  14,  3, 0xFF,"skeleton",    BASE_STATES,  5,  80, { NOB, NOB }, {0} },
+        { B(CS_FRENZY, EFX_DAMAGE_HP, 3, 50), NOB }, 1, 0 },
+    { "Skeleton",     20,  6,  2,  2,  2,  1,  1,  EDEF_HAS_WEAPON|EDEF_BLOCKABLE|EDEF_EXECUTABLE,  14,  3, 0xFF,"skeleton",    BASE_STATES,  5,  80, { NOB, NOB }, 2, 0 },
     { "Bandit",       18,  7,  2,  2,  3,  3,  3,  EDEF_HAS_WEAPON|EDEF_EXECUTABLE|EDEF_STUNNABLE,  16,  5, 0xFF,"bandit",      ALL_STATES,   6, 100,
-        { B(CS_FRENZY, EFX_DAMAGE_HP, 4, 40), NOB }, {0} },
+        { B(CS_FRENZY, EFX_DAMAGE_HP, 4, 40), NOB }, 3, 0 },
     { "Giant Spider",  16,  5,  1,  2,  3,  1,  4,  EDEF_EXECUTABLE | EDEF_STUNNABLE,                10,  2, 0xFF,"giant_spider",ALL_STATES,   4,  90,
-        { B(CS_TRADE, EFX_APPLY_STATUS, STATUS_POISONED, 20), NOB }, {0} },
+        { B(CS_TRADE, EFX_APPLY_STATUS, STATUS_POISONED, 20), NOB }, 4, 0 },
     { "Dark Mage",    25,  8,  1,  1,  2,  5,  2,  EDEF_EXECUTABLE,                                 18,  4, 0xFF,"dark_mage",   BASE_STATES,  7,  70,
-        { B(CS_TRADE, EFX_DAMAGE_HP, 4, 30), NOB }, {0} },
+        { B(CS_TRADE, EFX_DAMAGE_HP, 4, 30), NOB }, 5, 0 },
 };
 
 /* Pool 1 (loc 0x01): outdoor / forest */
 /* Pool 2 (loc 0x02): dungeon / underground */
 /* Pool 3 (loc 0x03): cave / spider nests  */
 static EnemyPool pools[] = {
-    { {0, 1, 0xFF, 0xFF}, 2, {0}, "enemy_forest"  },  /* pool 1: Goblin, Wolf         */
+    { {0, 1, 0xFF, 0xFF}, 2, {0}, "enemy_forest"  },  /* pool 1 (enemy ids): Goblin, Wolf         */
     { {2, 3, 0xFF, 0xFF}, 2, {0}, "enemy_dungeon" },  /* pool 2: Skeleton, Bandit     */
     { {4, 0, 0xFF, 0xFF}, 2, {0}, "enemy_cave"    },  /* pool 3: Giant Spider, Goblin */
     { {5, 3, 0xFF, 0xFF}, 2, {0}, "enemy_mage"    },  /* pool 4: Dark Mage, Bandit    */

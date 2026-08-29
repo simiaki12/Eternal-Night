@@ -20,7 +20,8 @@ typedef struct {
     uint8_t tags;
     uint8_t base_standing;
     uint8_t npc_flags;
-    uint8_t _pad[3];
+    uint8_t id;
+    uint8_t _pad[2];
 } NpcDef;
 
 typedef char check_size[(sizeof(NpcDef) == 40) ? 1 : -1];
@@ -38,9 +39,9 @@ typedef char check_size[(sizeof(NpcDef) == 40) ? 1 : -1];
 #define NPC_MOVE_LEAVE    (1<<2)
 
 static NpcDef defs[] = {
-    /*  name            img  tree  x   y  mapId    res  pat  pow  mov  tags               stand  flags  pad */
-    { "Village Elder", "op",  1,   1,  1, "map1",   40,  0,   1, NPC_MOVE_DISMISS, NPC_TAG_NOBLE,  60,  0, {0} },
-    { "Merchant",      "sh",  0,   3,  3, "map1",   30, 14,   2,  0,  NPC_TAG_CRIMINAL,  50,  0, {0} },
+    /*  name            img  tree  x   y  mapId    res  pat  pow  mov  tags               stand  flags  id  pad */
+    { "Village Elder", "op",  1,   1,  1, "map1",   40,  0,   1, NPC_MOVE_DISMISS, NPC_TAG_NOBLE,  60,  0,  0, {0} },
+    { "Merchant",      "sh",  0,   3,  3, "map1",   30, 14,   2,  0,  NPC_TAG_CRIMINAL,  50,  0,  1, {0} },
 };
 
 int main(void) {

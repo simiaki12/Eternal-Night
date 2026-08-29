@@ -7,6 +7,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -164,7 +165,7 @@ static void renderEdit(ItemDef *it, int sel, const char *status) {
                 if (it->actions[j] == 0xFF)
                     mvprintw(i+4,2,"%-16s  none", fieldNames[i]);
                 else
-                    mvprintw(i+4,2,"%-16s  %d", fieldNames[i], it->actions[j]);
+                    mvprintw(i+4,2,"%-16s  %s", fieldNames[i], refLabel(REF_ACTION, it->actions[j]));
                 break;
             }
         }
@@ -196,6 +197,10 @@ static void screenEdit(int idx) {
                     if (editString(sel + 4, 20, it->name, 16)) dirty = 1;
                 } else if (sel == F_DESC) {
                     if (editString(sel + 4, 20, it->description, 24)) dirty = 1;
+                } else if (sel >= F_ACT0 && sel <= F_ACT3) {
+                    int j = sel - F_ACT0;
+                    it->actions[j] = refPick(REF_ACTION, it->actions[j]);
+                    dirty = 1;
                 }
                 break;
 
@@ -214,9 +219,7 @@ static void screenEdit(int idx) {
                     case F_PRICE: if (it->price < 65535) it->price++;      break;
                     case F_ACT0: case F_ACT1: case F_ACT2: case F_ACT3: {
                         int j = sel - F_ACT0;
-                        it->actions[j] = (it->actions[j] == 0xFF) ? 0
-                                       : (it->actions[j] < 254)   ? it->actions[j] + 1
-                                       : 0xFF;
+                        it->actions[j] = refCycle(REF_ACTION, it->actions[j], 1);
                         break;
                     }
                     default: dirty = 0; break;
@@ -238,9 +241,7 @@ static void screenEdit(int idx) {
                     case F_PRICE: if (it->price > 0) it->price--;          break;
                     case F_ACT0: case F_ACT1: case F_ACT2: case F_ACT3: {
                         int j = sel - F_ACT0;
-                        it->actions[j] = (it->actions[j] == 0)    ? 0xFF
-                                       : (it->actions[j] == 0xFF) ? 254
-                                       : it->actions[j] - 1;
+                        it->actions[j] = refCycle(REF_ACTION, it->actions[j], -1);
                         break;
                     }
                     default: dirty = 0; break;

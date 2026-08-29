@@ -236,7 +236,10 @@ static void objTargetName(const QuestObjective *o, char *buf, int bufLen) {
     switch (o->type) {
         case OBJ_KILL:
             if (o->targetId < (uint8_t)enemyDefCount)
-                snprintf(buf, (size_t)bufLen, "%s", enemyDefs[o->targetId].name);
+                {
+                    const EnemyDef *ed = enemyGetDef(o->targetId);
+                    snprintf(buf, (size_t)bufLen, "%s", ed ? ed->name : "?");
+                }
             else
                 snprintf(buf, (size_t)bufLen, "enemy #%d", o->targetId);
             break;

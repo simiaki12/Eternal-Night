@@ -7,6 +7,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -126,7 +127,7 @@ static const char *fieldNames[] = {
 static void renderEdit(NpcDef *n, int sel, const char *status) {
     clear();
     mvprintw(0, 0, "NPC EDITOR — %s", n->name[0] ? n->name : "(unnamed)");
-    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=edit text  Bksp=back  S=save");
+    mvprintw(1, 0, "Up/Down=field  +/-=change  Enter=edit text / pick  Bksp=back  S=save");
     if (status) mvprintw(2, 0, "%s", status);
 
     for (int i = 0; i < F_COUNT; i++) {
@@ -137,10 +138,8 @@ static void renderEdit(NpcDef *n, int sel, const char *status) {
             case F_IMG:   mvprintw(row, 2, "%-22s  %s",  fieldNames[i], n->imgName); break;
             case F_MAPID: mvprintw(row, 2, "%-22s  %s",  fieldNames[i], n->mapId);  break;
             case F_TREE:
-                if (n->treeId == 0xFF)
-                    mvprintw(row, 2, "%-22s  none", fieldNames[i]);
-                else
-                    mvprintw(row, 2, "%-22s  %d", fieldNames[i], n->treeId);
+                mvprintw(row, 2, "%-22s  %s", fieldNames[i],
+                         refLabel(REF_DIALOG, n->treeId));
                 break;
             case F_X:            mvprintw(row, 2, "%-22s  %d",   fieldNames[i], n->x);             break;
             case F_Y:            mvprintw(row, 2, "%-22s  %d",   fieldNames[i], n->y);             break;
@@ -188,6 +187,7 @@ static void screenEdit(int idx) {
                 if (sel == F_NAME)  { if (editString(sel + 4, 26, n->name,   16)) dirty = 1; }
                 if (sel == F_IMG)   { if (editString(sel + 4, 26, n->imgName, 3)) dirty = 1; }
                 if (sel == F_MAPID) { if (editString(sel + 4, 26, n->mapId,   8)) dirty = 1; }
+                if (sel == F_TREE)  { n->treeId = refPick(REF_DIALOG, n->treeId); dirty = 1; }
                 break;
 
             case '+': case '=':
@@ -201,11 +201,7 @@ static void screenEdit(int idx) {
                     case F_MOVE_MASK:    n->move_mask = (n->move_mask + 1) & 0x07;       break;
                     case F_TAGS:         n->tags      = (n->tags      + 1) & 0x1F;       break;
                     case F_BASE_STANDING:if (n->base_standing < 255) n->base_standing++; break;
-                    case F_TREE:
-                        n->treeId = (n->treeId == 0xFF) ? 0
-                                  : (n->treeId < 254)   ? n->treeId + 1
-                                  : 0xFF;
-                        break;
+                    case F_TREE: n->treeId = refCycle(REF_DIALOG, n->treeId,  1); break;
                     default: dirty = 0; break;
                 }
                 break;
@@ -221,11 +217,7 @@ static void screenEdit(int idx) {
                     case F_MOVE_MASK:    n->move_mask = (n->move_mask - 1) & 0x07;       break;
                     case F_TAGS:         n->tags      = (n->tags      - 1) & 0x1F;       break;
                     case F_BASE_STANDING:if (n->base_standing > 0)   n->base_standing--; break;
-                    case F_TREE:
-                        n->treeId = (n->treeId == 0)    ? 0xFF
-                                  : (n->treeId == 0xFF) ? 254
-                                  : n->treeId - 1;
-                        break;
+                    case F_TREE: n->treeId = refCycle(REF_DIALOG, n->treeId, -1); break;
                     default: dirty = 0; break;
                 }
                 break;
@@ -245,16 +237,13 @@ static void renderList(int sel, int scroll, const char *status) {
 
     for (int i = scroll; i < npcCount && i < scroll + visible; i++) {
         if (i == sel) attron(A_REVERSE);
-        mvprintw((i - scroll) + 4, 2, "%2d  %-15s  (%3d,%3d)  map:%-7s  tree:%s  img:%s",
+        mvprintw((i - scroll) + 4, 2, "%2d  %-15s  (%3d,%3d)  map:%-7s  tree:%-14s  img:%s",
             i,
             npcs[i].name[0] ? npcs[i].name : "(unnamed)",
             npcs[i].x, npcs[i].y,
             npcs[i].mapId[0] ? npcs[i].mapId : "--",
-            npcs[i].treeId == 0xFF ? "none" : (char[4]){""},
+            refLabel(REF_DIALOG, npcs[i].treeId),
             npcs[i].imgName[0] ? npcs[i].imgName : "--");
-        if (npcs[i].treeId != 0xFF) {
-            mvprintw((i - scroll) + 4, 63, "%d", npcs[i].treeId);
-        }
         if (i == sel) attroff(A_REVERSE);
     }
 

@@ -9,6 +9,7 @@
  */
 
 #include <ncurses.h>
+#include "refs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -169,7 +170,8 @@ static void drawEdit(void) {
         if (i == selFld) attron(A_REVERSE);
         switch (i) {
             case FLD_NPC_ID:
-                mvprintw(3 + i, 2, "%-16s: %d", fldLabels[i], s->npc_id); break;
+                mvprintw(3 + i, 2, "%-16s: %s", fldLabels[i],
+                         refLabel(REF_NPC, s->npc_id)); break;
             case FLD_REWARD_PARTIAL:
                 mvprintw(3 + i, 2, "%-16s: %d", fldLabels[i], s->reward_partial); break;
             case FLD_REWARD_FULL:
@@ -201,6 +203,15 @@ static void handleEdit(int ch) {
     switch (ch) {
         case KEY_UP:   if (selFld > 0) selFld--; break;
         case KEY_DOWN: if (selFld < FLD_COUNT - 1) selFld++; break;
+        case '\n': case KEY_ENTER:
+            if (selFld == FLD_NPC_ID) { s->npc_id = refPick(REF_NPC, s->npc_id); dirty = 1; }
+            break;
+        case KEY_RIGHT:
+            if (selFld == FLD_NPC_ID) { s->npc_id = refCycle(REF_NPC, s->npc_id,  1); dirty = 1; }
+            break;
+        case KEY_LEFT:
+            if (selFld == FLD_NPC_ID) { s->npc_id = refCycle(REF_NPC, s->npc_id, -1); dirty = 1; }
+            break;
         case 't': case 'T':
             dirty = 1;
             switch (selFld) {
@@ -213,7 +224,7 @@ static void handleEdit(int ch) {
         case '+': case '=':
             dirty = 1;
             switch (selFld) {
-                case FLD_NPC_ID:         if (s->npc_id < 255)        s->npc_id++;         break;
+                case FLD_NPC_ID:         s->npc_id = refCycle(REF_NPC, s->npc_id,  1); break;
                 case FLD_REWARD_PARTIAL: if (s->reward_partial < 255) s->reward_partial++; break;
                 case FLD_REWARD_FULL:    if (s->reward_full < 255)    s->reward_full++;    break;
                 case FLD_DISP_START:     if (s->disp_start < 100)     s->disp_start++;     break;
@@ -223,7 +234,7 @@ static void handleEdit(int ch) {
         case '-':
             dirty = 1;
             switch (selFld) {
-                case FLD_NPC_ID:         if (s->npc_id > 0)          s->npc_id--;         break;
+                case FLD_NPC_ID:         s->npc_id = refCycle(REF_NPC, s->npc_id, -1); break;
                 case FLD_REWARD_PARTIAL: if (s->reward_partial > 0)   s->reward_partial--; break;
                 case FLD_REWARD_FULL:    if (s->reward_full > 0)      s->reward_full--;    break;
                 case FLD_DISP_START:     if (s->disp_start > 0)       s->disp_start--;     break;

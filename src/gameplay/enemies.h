@@ -39,7 +39,8 @@ typedef struct {
     uint8_t damage;          /* added to its state's pressure each turn */
     uint8_t tenacity;        /* % scaling of progress banked against it; 0 = 100 */
     EnemyBehavior behaviors[2]; /* state-keyed effects on the player */
-    uint8_t _pad[2];
+    uint8_t id;              /* stable id — what other data files reference */
+    uint8_t _pad;
 } EnemyDef;                  /* 56 bytes */
 
 typedef char _check_enemydef_size[(sizeof(EnemyDef) == 56) ? 1 : -1];
@@ -65,5 +66,7 @@ extern EnemyPool enemyPools[ENEMY_POOL_MAX];
 extern int       enemyPoolCount;
 
 int  loadEnemies(PakData data);
+const EnemyDef *enemyGetDef(uint8_t id);   /* by stable id; NULL if unknown */
+int  enemyIndexById(uint8_t id);           /* slot in enemyDefs[]; -1 if unknown */
 void encounterStartFromPool(uint8_t poolId, int triggerX, int triggerY);
 void encounterStartFromPoolN(uint8_t poolId, int n); /* spawn exactly n enemies from pool */
